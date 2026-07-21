@@ -1410,7 +1410,7 @@
 <div class="modal-backdrop" id="m-drive">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <h3 id="driveTitle">Connect Google Drive</h3>
-    <div class="sub">One-time setup. Follow the README's Google Cloud walkthrough to create a free OAuth Client ID, then paste it here — it is saved on this device.</div>
+    <div class="sub" id="driveModalSub">One-time setup. Create a free Google OAuth Client ID (see the setup guide), then paste it here — it is saved on this device.</div>
     <div class="field"><label for="gClientId">OAuth Client ID</label><input id="gClientId" placeholder="xxxxxxxx.apps.googleusercontent.com"></div>
     <div class="modal-foot">
       <a href="#" class="foot-link" id="driveForget" style="font-size:.78rem">Forget saved ID</a>
@@ -4225,10 +4225,13 @@ function scheduleSync(){
   syncTimer=setTimeout(pushToDrive, 4000);
 }
 $('#btnDrive').addEventListener('click',()=>{
-  if(!driveCfg()){ $('#gClientId').value=''; openModal('m-drive'); return; }
-  if(!gToken){ connectDrive(true); return; }
-  clearTimeout(syncTimer);
-  pushToDrive();
+  if(gToken){ clearTimeout(syncTimer); pushToDrive(); return; }
+  const saved = driveCfg();
+  $('#gClientId').value = saved; // always visible and editable — never a silent hidden retry
+  $('#driveModalSub').textContent = saved
+    ? 'Not connected yet, or the last attempt failed. Check the Client ID below, fix it if needed, then Save & connect.'
+    : 'One-time setup. Create a free Google OAuth Client ID (see the setup guide), then paste it here — it is saved on this device.';
+  openModal('m-drive');
 });
 $('#driveConnect').addEventListener('click',()=>{
   const id=$('#gClientId').value.trim();
