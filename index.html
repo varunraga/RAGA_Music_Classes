@@ -4234,7 +4234,11 @@ $('#btnDrive').addEventListener('click',()=>{
   openModal('m-drive');
 });
 $('#driveConnect').addEventListener('click',()=>{
-  const id=$('#gClientId').value.trim();
+  const raw = $('#gClientId').value;
+  const id = raw.replace(/\s+/g,''); // strip ALL whitespace anywhere, not just edges —
+  // a real Client ID never contains any whitespace, so this rules out hidden line-breaks/stray
+  // characters from copy-paste, which .trim() alone would miss if they land in the middle of the string
+  if(raw.length !== id.length) toast('Cleaned up '+(raw.length-id.length)+' hidden character(s) from the pasted ID');
   if(!id || !id.includes('.apps.googleusercontent.com')){ toast('That does not look like a Google OAuth Client ID'); return; }
   try{ localStorage.setItem(KEY+'.gclient', id); }catch(e){}
   closeModal('m-drive');
