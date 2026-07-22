@@ -4047,6 +4047,15 @@ function initTokenClient(){
 }
 function connectDrive(interactive){
   if(!driveCfg()){ $('#gClientId').value=''; openModal('m-drive'); return; }
+  const libReady = !!(window.google && google.accounts && google.accounts.oauth2);
+  if(interactive && !libReady){
+    // Never fire the interactive sign-in popup from a delayed callback — mobile browsers require
+    // it to be a DIRECT continuation of the tap that triggered it, or they silently mishandle it,
+    // which can surface as a confusing downstream error instead of a clear "popup blocked" message.
+    // Ask for one more tap instead of auto-continuing once the library finishes loading via a timer.
+    setDriveStatus('still loading Google sign-in — tap Connect again in a second', 'var(--red)');
+    return;
+  }
   setDriveStatus('connecting…');
   gisReady(()=>{
     if(!gTokenClient) initTokenClient();
