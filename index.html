@@ -5254,7 +5254,13 @@ async function startRecording(){
     toast('Recording is not supported in this browser'); return;
   }
   try{
-    recStream = await navigator.mediaDevices.getUserMedia({audio:true});
+    recStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    });
   }catch(e){ toast('Microphone access was blocked — check your browser site settings'); return; }
 
   const wantTanpura = $('#recTanpuraToggle') ? $('#recTanpuraToggle').checked : false;
