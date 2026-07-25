@@ -1534,7 +1534,7 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="driveTitle">
     <h3 id="driveTitle">Connect Google Drive</h3>
     <div class="sub" id="driveModalSub">One-time setup. Create a free Google OAuth Client ID (see the setup guide), then paste it here — it is saved on this device.</div>
-    <div class="field"><label for="gClientId">OAuth Client ID</label><input id="gClientId" placeholder="xxxxxxxx.apps.googleusercontent.com"></div>
+    <div class="field"><label for="gClientId">OAuth Client ID</label><input id="gClientId" type="text" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" inputmode="text" placeholder="xxxxxxxx.apps.googleusercontent.com"></div>
     <div class="modal-foot">
       <a href="#" class="foot-link" id="driveForget" style="font-size:.78rem">Forget saved ID</a>
       <div class="right">
@@ -4369,11 +4369,21 @@ $('#btnDrive').addEventListener('click',()=>{
 });
 $('#driveConnect').addEventListener('click',()=>{
   const raw = $('#gClientId').value;
-  const id = raw.replace(/\s+/g,''); // strip ALL whitespace anywhere, not just edges —
+  let id = raw.replace(/\s+/g,''); // strip ALL whitespace anywhere, not just edges —
   // a real Client ID never contains any whitespace, so this rules out hidden line-breaks/stray
   // characters from copy-paste, which .trim() alone would miss if they land in the middle of the string
-  if(raw.length !== id.length) toast('Cleaned up '+(raw.length-id.length)+' hidden character(s) from the pasted ID');
-  if(!id || !id.includes('.apps.googleusercontent.com')){ toast('That does not look like a Google OAuth Client ID'); return; }
+  const beforePrefixStrip = id;
+  id = id.replace(/^https?:\/\//i, ''); // Android keyboards/clipboard managers sometimes "helpfully"
+  id = id.replace(/\/+$/, '');          // recognize the ID as a hostname and prepend http(s):// or add a trailing slash
+  const cleanedCount = raw.length - beforePrefixStrip.length;
+  const prefixStripped = beforePrefixStrip !== id;
+  if(cleanedCount > 0) toast('Cleaned up '+cleanedCount+' hidden character(s) from the pasted ID');
+  if(prefixStripped) toast('Removed an accidental "http://" your keyboard or browser added — a Client ID is never a URL');
+  // a real Client ID is always digits, a dash, then the app identifier, ending in .apps.googleusercontent.com —
+  // an exact anchored match catches stray leftover characters that whitespace-stripping alone would miss
+  if(!id || !/^\d+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(id)){
+    toast('That does not look like a Google OAuth Client ID'); return;
+  }
   let storageError = null;
   try{ localStorage.setItem(KEY+'.gclient', id); }catch(e){ storageError = e.message; }
   const readBack = driveCfg();
