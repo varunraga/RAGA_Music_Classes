@@ -641,7 +641,7 @@
     <div class="side-foot">
       <button class="btn small gold" id="btnDrive">Connect Google Drive</button>
       <div class="tiny" id="driveStatus">Drive: not connected</div>
-      <div class="tiny"><a href="#" class="foot-link" id="lnkExport">backup file</a> · <a href="#" class="foot-link" id="lnkImport">restore file</a> · <a href="#" class="foot-link" id="lnkSnapshots">snapshots</a></div>
+      <div class="tiny"><a href="#" class="foot-link" id="lnkExport">backup file</a> · <a href="#" class="foot-link" id="lnkImport">restore file</a> · <a href="#" class="foot-link" id="lnkSnapshots">snapshots</a> · <a href="#" class="foot-link" id="lnkChangeClientId">change Client ID</a></div>
       <input type="file" id="importFile" accept="application/json" style="display:none">
       <div class="tiny" id="backupStatus">Data is stored in this browser.</div>
     </div>
@@ -4141,11 +4141,15 @@ $('#importReplace').addEventListener('click',()=>{
    GOOGLE DRIVE SYNC (auto-save)
    ===================================================== */
 const DRIVE_FILE='raga-music-classes-data.json';
+// Registered in Google Cloud Console against https://varunraga.github.io — the fixed address this
+// app is hosted at. An explicit override (saved via "change Client ID") always takes precedence.
+const RAGA_GOOGLE_CLIENT_ID='1070966217158-pia4db0kai1h3j0903ml27m25q1rctj8.apps.googleusercontent.com';
 let gToken=null, gTokenClient=null, syncTimer=null, lastPushedJSON=null, driveBusy=false, pendingRemote=null;
-function driveCfg(){ try{ return localStorage.getItem(KEY+'.gclient')||''; }catch(e){ return ''; } }
+function driveCfg(){ try{ return localStorage.getItem(KEY+'.gclient')||RAGA_GOOGLE_CLIENT_ID; }catch(e){ return RAGA_GOOGLE_CLIENT_ID; } }
+function hasCustomDriveCfg(){ try{ return !!localStorage.getItem(KEY+'.gclient'); }catch(e){ return false; } }
 function updateDriveBtn(){
   const b=$('#btnDrive'); if(!b) return;
-  b.textContent = !driveCfg() ? 'Connect Google Drive' : (gToken ? 'Sync now' : 'Reconnect Drive');
+  b.textContent = gToken ? 'Sync now' : ((S.meta && S.meta.driveModified) ? 'Reconnect Drive' : 'Connect Google Drive');
 }
 function setDriveStatus(t, color){
   const el=$('#driveStatus'); if(el){ el.textContent='Drive: '+t; el.style.color=color||''; }
@@ -4154,7 +4158,7 @@ function setDriveStatus(t, color){
 function gisReady(cb, tries){
   tries = tries===undefined ? 15 : tries;
   if(window.google && google.accounts && google.accounts.oauth2) return cb();
-  if(tries<=0){ setDriveStatus('unavailable — check internet', 'var(--red)'); return; }
+  if(tries<=0){ setDriveStatus('Offline — check your connection', 'var(--red)'); return; }
   setTimeout(()=>gisReady(cb, tries-1), 500);
 }
 function initTokenClient(){
@@ -4164,10 +4168,10 @@ function initTokenClient(){
     client_id: idInUse,
     scope: 'https://www.googleapis.com/auth/drive.appdata',
     callback: resp=>{
-      if(resp && resp.access_token){ gToken=resp.access_token; setDriveStatus('connected'); initialSync(); }
-      else setDriveStatus('sign-in failed — click to retry', 'var(--red)');
+      if(resp && resp.access_token){ gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); }
+      else setDriveStatus('Sign-in failed — tap to retry', 'var(--red)');
     },
-    error_callback: ()=>setDriveStatus('click Reconnect to sign in')
+    error_callback: ()=>setDriveStatus('Tap Reconnect to sign in')
   });
 }
 function connectDrive(interactive){
@@ -4178,10 +4182,10 @@ function connectDrive(interactive){
     // it to be a DIRECT continuation of the tap that triggered it, or they silently mishandle it,
     // which can surface as a confusing downstream error instead of a clear "popup blocked" message.
     // Ask for one more tap instead of auto-continuing once the library finishes loading via a timer.
-    setDriveStatus('still loading Google sign-in — tap Connect again in a second', 'var(--red)');
+    setDriveStatus('Still loading Google sign-in — tap Connect again in a second', 'var(--red)');
     return;
   }
-  setDriveStatus('connecting…');
+  setDriveStatus('Connecting…');
   gisReady(()=>{
     if(!gTokenClient) initTokenClient();
     gTokenClient.requestAccessToken(interactive ? {prompt:'consent'} : {prompt:''});
@@ -4190,7 +4194,7 @@ function connectDrive(interactive){
 async function dFetch(url, opts){
   opts=opts||{}; opts.headers=Object.assign({}, opts.headers||{}, {Authorization:'Bearer '+gToken});
   const r=await fetch(url, opts);
-  if(r.status===401){ gToken=null; setDriveStatus('session expired — click Reconnect', 'var(--gold-ink)'); throw new Error('auth'); }
+  if(r.status===401){ gToken=null; setDriveStatus('Session expired — tap Reconnect', 'var(--gold-ink)'); throw new Error('auth'); }
   if(!r.ok) throw new Error('drive http '+r.status);
   return r;
 }
@@ -4219,7 +4223,7 @@ async function driveUpload(id, body, name){
 }
 async function pushToDrive(){
   if(!gToken || driveBusy) return;
-  driveBusy=true; setDriveStatus('syncing…');
+  driveBusy=true; setDriveStatus('Syncing…');
   try{
     const f=await driveFind();
     if(f && S.meta.driveModified && f.modifiedTime!==S.meta.driveModified){
@@ -4233,7 +4237,7 @@ async function pushToDrive(){
     S.meta.driveModified=res.modifiedTime;
     persist();
     lastPushedJSON=JSON.stringify(S);
-    setDriveStatus('synced just now');
+    setDriveStatus('Synced just now');
     if(S.meta.lastSnapshotDate!==TODAY){
       try{
         await driveUpload(null, body, 'raga-snapshot-'+TODAY+'.json');
@@ -4244,22 +4248,22 @@ async function pushToDrive(){
       }catch(e){}
     }
   }catch(e){
-    if(e.message!=='auth') setDriveStatus(navigator.onLine===false?'offline — will sync when online':'sync error — will retry', 'var(--gold-ink)');
+    if(e.message!=='auth') setDriveStatus(navigator.onLine===false?'Offline — will sync when back online':'Sync error — will retry automatically', 'var(--gold-ink)');
   }
   driveBusy=false;
 }
 async function initialSync(){
   try{
-    setDriveStatus('checking Drive…');
+    setDriveStatus('Connecting…');
     const f=await driveFind();
     if(!f){
       if(hasAnyData()) await pushToDrive();
-      else { lastPushedJSON=JSON.stringify(S); setDriveStatus('connected'); }
+      else { lastPushedJSON=JSON.stringify(S); setDriveStatus('Connected'); }
       return;
     }
     if(S.meta.driveModified===f.modifiedTime){
       lastPushedJSON=JSON.stringify(S);
-      setDriveStatus('synced');
+      setDriveStatus('Synced');
       scheduleSync();
       return;
     }
@@ -4269,17 +4273,17 @@ async function initialSync(){
       S.meta.driveModified=f.modifiedTime;
       renderAll();
       lastPushedJSON=JSON.stringify(S);
-      setDriveStatus('synced — loaded from Drive');
+      setDriveStatus('Synced — loaded from Drive');
       toast('Your data was loaded from Google Drive');
       return;
     }
     offerConflict(remote, f);
-  }catch(e){ if(e.message!=='auth') setDriveStatus('sync error', 'var(--red)'); }
+  }catch(e){ if(e.message!=='auth') setDriveStatus('Sync error — will retry automatically', 'var(--red)'); }
 }
 function offerConflict(remote, f){
   pendingRemote={data:normalizeData(remote), modifiedTime:f.modifiedTime};
   $('#conflictSummary').textContent='Drive holds '+pendingRemote.data.students.length+' students · '+pendingRemote.data.classes.length+' classes · '+pendingRemote.data.payments.length+' payments. This device holds '+S.students.length+' · '+S.classes.length+' · '+S.payments.length+'.';
-  setDriveStatus('needs your decision', 'var(--gold-ink)');
+  setDriveStatus('Needs your decision', 'var(--gold-ink)');
   openModal('m-conflict');
 }
 $('#conflictMerge').addEventListener('click',()=>{
@@ -4308,7 +4312,7 @@ $('#conflictUseRemote').addEventListener('click',()=>{
   closeModal('m-conflict');
   renderAll();
   lastPushedJSON=JSON.stringify(S);
-  setDriveStatus('synced — using Drive copy');
+  setDriveStatus('Synced — using Drive copy');
 });
 async function listSnapshots(){
   const q=encodeURIComponent("name contains 'raga-snapshot-'");
@@ -4354,17 +4358,21 @@ function scheduleSync(){
   if(!gToken) return;
   const cur=JSON.stringify(S);
   if(cur===lastPushedJSON) return;
-  setDriveStatus('sync pending…');
+  setDriveStatus('Syncing…');
   clearTimeout(syncTimer);
   syncTimer=setTimeout(pushToDrive, 4000);
 }
 $('#btnDrive').addEventListener('click',()=>{
   if(gToken){ clearTimeout(syncTimer); pushToDrive(); return; }
+  connectDrive(true); // embedded Client ID — straight to Google sign-in, no setup screen
+});
+$('#lnkChangeClientId').addEventListener('click', e=>{
+  e.preventDefault();
   const saved = driveCfg();
   $('#gClientId').value = saved; // always visible and editable — never a silent hidden retry
-  $('#driveModalSub').textContent = saved
-    ? 'Not connected yet, or the last attempt failed. Check the Client ID below, fix it if needed, then Save & connect.'
-    : 'One-time setup. Create a free Google OAuth Client ID (see the setup guide), then paste it here — it is saved on this device.';
+  $('#driveModalSub').textContent = hasCustomDriveCfg()
+    ? 'Using a custom Client ID on this device. Fix it below if needed, then Save & connect.'
+    : 'Using the built-in Client ID. Only change this if you are running your own copy of this app elsewhere.';
   openModal('m-drive');
 });
 $('#driveConnect').addEventListener('click',()=>{
@@ -4406,10 +4414,14 @@ $('#driveForget').addEventListener('click',e=>{
   try{ localStorage.removeItem(KEY+'.gclient'); }catch(e2){}
   gToken=null; gTokenClient=null;
   closeModal('m-drive');
-  setDriveStatus('not connected');
+  setDriveStatus('Not connected');
 });
-window.addEventListener('online',()=>{ if(gToken){ setDriveStatus('back online'); scheduleSync(); } });
-window.addEventListener('offline',()=>{ if(gToken) setDriveStatus('offline — will sync when online'); });
+window.addEventListener('online',()=>{ if(gToken){ setDriveStatus('Back online — syncing…'); scheduleSync(); } });
+window.addEventListener('offline',()=>{ if(gToken) setDriveStatus('Offline — will sync when back online'); });
+// Belt-and-suspenders: scheduleSync() is a cheap no-op when nothing's pending, so polling this
+// periodically costs nothing in the common case, but quietly recovers from a one-off network
+// hiccup that isn't tied to a fresh edit or a browser online/offline transition.
+setInterval(()=>{ if(gToken && navigator.onLine!==false) scheduleSync(); }, 45000);
 
 /* ---------- day-rollover detection ----------
    TODAY/CURM are computed once at load. If this tab stays open past midnight,
@@ -6219,7 +6231,7 @@ if($('#talaHandImgBack')) $('#talaHandImgBack').src = TALA_HAND_BACK;
 if($('#talaHandImgPalm')) $('#talaHandImgPalm').src = TALA_HAND_PALM;
 renderAll();
 maybeShowReminder();
-if(driveCfg()){ connectDrive(false); } else { setDriveStatus('not connected'); }
+if(driveCfg()){ connectDrive(false); } else { setDriveStatus('Not connected'); }
 if(!storageOK) toast('Heads up: this browser is blocking storage, so data will not persist. Use Export to save your work.');
 </script>
 <script>
