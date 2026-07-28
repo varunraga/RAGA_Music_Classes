@@ -1441,10 +1441,19 @@
 <div class="modal-backdrop" id="m-tala-export">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="talaExportTitle">
     <h3 id="talaExportTitle">Exporting video…</h3>
-    <div class="sub" id="talaExportSub">Capturing 10 loops in real time — this takes as long as the pattern itself plays. Keep this tab open.</div>
-    <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="talaExportProgressFill"></div></div>
-    <div class="tala-export-status" id="talaExportStatus">Loop 1 of 10</div>
-    <div class="modal-foot"><div class="right"><button class="btn" id="talaExportCancelBtn">Cancel export</button></div></div>
+    <div id="talaExportInProgress">
+      <div class="sub" id="talaExportSub">Capturing 10 loops in real time — this takes as long as the pattern itself plays. Keep this tab open.</div>
+      <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="talaExportProgressFill"></div></div>
+      <div class="tala-export-status" id="talaExportStatus">Loop 1 of 10</div>
+      <div class="modal-foot"><div class="right"><button class="btn" id="talaExportCancelBtn">Cancel export</button></div></div>
+    </div>
+    <div id="talaExportComplete" style="display:none">
+      <div class="sub">Your video is ready — already saved to your downloads.</div>
+      <div class="modal-foot"><div class="right">
+        <button class="btn" id="talaExportCloseBtn">Close</button>
+        <button class="btn gold" id="talaExportShareBtn">Share video</button>
+      </div></div>
+    </div>
   </div>
 </div>
 
@@ -1660,6 +1669,7 @@ S.students ||= []; S.classes ||= []; S.payments ||= []; S.seq ||= {stu:1,cls:1,p
 S.students.forEach(s=>{ s.country ||= ''; s.timezone ||= ''; });
 S.withdrawals ||= []; S.seq.wd ||= 1; S.meta ||= {};
 S.notations ||= []; S.seq.not ||= 1;
+S.talaExports ||= []; S.seq.talaExport ||= 1;
 S.notations.forEach(n=>{ n.hasPdf ||= false; n.pdfName ||= null; });
 S.recordings ||= []; S.seq.rec ||= 1;
 S.recordings.forEach(r=>{ r.raga ||= ''; r.tala ||= ''; r.composer ||= ''; });
@@ -4076,8 +4086,8 @@ $('#lnkImport').addEventListener('click',e=>{e.preventDefault();$('#importFile')
 
 let pendingImport=null;
 function normalizeData(d){
-  d.students ||= []; d.classes ||= []; d.payments ||= []; d.withdrawals ||= []; d.notations ||= []; d.recordings ||= []; d.talaPatterns ||= [];
-  d.seq ||= {}; d.seq.stu ||= 1; d.seq.cls ||= 1; d.seq.pay ||= 1; d.seq.wd ||= 1; d.seq.not ||= 1; d.seq.rec ||= 1; d.seq.tala ||= 1;
+  d.students ||= []; d.classes ||= []; d.payments ||= []; d.withdrawals ||= []; d.notations ||= []; d.recordings ||= []; d.talaPatterns ||= []; d.talaExports ||= [];
+  d.seq ||= {}; d.seq.stu ||= 1; d.seq.cls ||= 1; d.seq.pay ||= 1; d.seq.wd ||= 1; d.seq.not ||= 1; d.seq.rec ||= 1; d.seq.tala ||= 1; d.seq.talaExport ||= 1;
   d.meta ||= {};
   (d.classes||[]).forEach(cl=>cl.mat ||= {});
   (d.notations||[]).forEach(n=>{ n.hasPdf ||= false; n.pdfName ||= null; });
@@ -4104,7 +4114,8 @@ function mergeData(inc){
   mergeArr(S.notations, inc.notations, 'id');
   mergeArr(S.recordings, inc.recordings, 'id');
   mergeArr(S.talaPatterns, inc.talaPatterns, 'id');
-  ['stu','cls','pay','wd','not','rec','tala'].forEach(k=>{ S.seq[k]=Math.max(S.seq[k]||1,(inc.seq&&inc.seq[k])||1); });
+  mergeArr(S.talaExports, inc.talaExports, 'id');
+  ['stu','cls','pay','wd','not','rec','tala','talaExport'].forEach(k=>{ S.seq[k]=Math.max(S.seq[k]||1,(inc.seq&&inc.seq[k])||1); });
   resyncPartners();
   return stats;
 }
@@ -4193,11 +4204,11 @@ function initTokenClient(){
   toast('Signing in with: '+(idInUse ? idInUse.slice(0,20)+'…'+idInUse.slice(-24) : '(empty — nothing saved!)'));
   gTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: idInUse,
-    scope: 'https://www.googleapis.com/auth/drive.appdata',
+    scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file',
     callback: resp=>{
       silentRefreshInFlight=false;
       if(resp && resp.access_token){
-        gToken=resp.access_token; setDriveStatus('Connected'); initialSync();
+        gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); driveEnsureFileStorageFolders();
         tokenWaiters.forEach(w=>w.resolve(true)); tokenWaiters=[];
       } else {
         setDriveStatus('Sign-in failed — tap to retry', 'var(--red)');
@@ -4257,6 +4268,48 @@ async function dFetch(url, opts, _retried){
   }
   if(!r.ok) throw new Error('drive http '+r.status);
   return r;
+}
+/* ---------- Drive file storage (drive.file scope) — folder setup ---------- */
+// Distinct from driveFind()/pushToDrive() below, which manage the small JSON data
+// blob in the hidden appdata space — this section manages real, visible folders
+// and files for notation PDFs, recording audio, and (later) Tala video exports.
+const RAGA_DRIVE_SUBFOLDERS = ['Notations', 'Recordings', 'Tala Videos'];
+async function driveFindOrCreateFolder(name, parentId){
+  const safeName = name.replace(/'/g, "\\'");
+  const parentClause = parentId ? `'${parentId}' in parents` : `'root' in parents`;
+  const q = encodeURIComponent(`name='${safeName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and ${parentClause}`);
+  const r = await dFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`);
+  const j = await r.json();
+  if(j.files && j.files.length) return j.files[0].id;
+  const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+  if(parentId) body.parents = [parentId];
+  const cr = await dFetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+  const cj = await cr.json();
+  return cj.id;
+}
+// Safe to call every time you connect — finds the existing folders on every call after
+// the first, rather than creating duplicates. Silently does nothing user-visible; the
+// only trace is the folders actually existing in Drive.
+async function driveEnsureFileStorageFolders(){
+  try{
+    const rootId = await driveFindOrCreateFolder('RAGA Music Classes');
+    const folders = { root: rootId };
+    for(const sub of RAGA_DRIVE_SUBFOLDERS){
+      folders[sub] = await driveFindOrCreateFolder(sub, rootId);
+    }
+    S.meta.driveFolders = folders;
+    persist();
+    return folders;
+  }catch(e){
+    // Most likely cause: the person only approved the old appdata permission and declined
+    // the new one on the consent screen — surfaced clearly rather than failing silently.
+    toast('Could not set up Drive folders — reconnect Drive and approve the file-storage permission');
+    return null;
+  }
 }
 async function driveFind(){
   const q=encodeURIComponent("name='"+DRIVE_FILE+"'");
@@ -6086,6 +6139,7 @@ const TALA_HIGHLIGHT_POS = {
 let talaExportDest = null; // set during export so click sounds also route into the recording
 let talaExporting = false;
 let talaExportCancelled = false;
+let talaExportBlob = null;
 
 function talaLoadImg(src){
   return new Promise((resolve,reject)=>{
@@ -6226,6 +6280,8 @@ async function talaExportVideo(){
   $('#talaExportProgressFill').style.width = '0%';
   $('#talaExportStatus').textContent = 'Loop 1 of '+totalLoops;
   $('#talaExportSub').textContent = 'Capturing '+totalLoops+' loop'+(totalLoops===1?'':'s')+' in real time — this takes as long as the pattern itself plays. Keep this tab open.';
+  $('#talaExportInProgress').style.display = '';
+  $('#talaExportComplete').style.display = 'none';
   openModal('m-tala-export');
 
   let rafId = null;
@@ -6263,13 +6319,16 @@ async function talaExportVideo(){
     talaRenderExportFrame(ctx, canvas.width, canvas.height, beat, beatProgress, count, imgBack, imgPalm);
     rafId = requestAnimationFrame(frame);
   }
-  function cleanup(){
+  function releaseResources(){
     talaExporting = false;
     talaExportDest = null;
     talaExportRecorder = null;
     if(rafId) cancelAnimationFrame(rafId);
     try{ keepAliveOsc.stop(); }catch(e){}
     videoStream.getTracks().forEach(t=>t.stop());
+  }
+  function cleanup(){
+    releaseResources();
     closeModal('m-tala-export');
   }
   recorder.onstop = ()=>{
@@ -6280,7 +6339,10 @@ async function talaExportVideo(){
     a.href = url; a.download = 'tala-pattern.webm';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
-    cleanup();
+    releaseResources();
+    talaExportBlob = blob;
+    $('#talaExportInProgress').style.display = 'none';
+    $('#talaExportComplete').style.display = '';
     toast('Video exported — check your downloads');
   };
   talaExportRecorder = recorder;
@@ -6291,6 +6353,28 @@ $('#talaExportBtn').addEventListener('click', talaExportVideo);
 $('#talaExportCancelBtn').addEventListener('click', ()=>{
   talaExportCancelled = true;
   if(talaExportRecorder && talaExportRecorder.state==='recording') talaExportRecorder.stop(); // actually stop capture, not just the frame loop
+});
+$('#talaExportCloseBtn').addEventListener('click', ()=>{
+  talaExportBlob = null;
+  closeModal('m-tala-export');
+});
+$('#talaExportShareBtn').addEventListener('click', async ()=>{
+  if(!talaExportBlob){ toast('That video is no longer available — export again to share'); return; }
+  const file = new File([talaExportBlob], 'tala-pattern.webm', {type: talaExportBlob.type||'video/webm'});
+  let shared = false;
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file], title:'Tala pattern'}); shared = true; }
+    catch(e){ if(e && e.name==='AbortError') return; /* user cancelled the share sheet — not a failure */ }
+  }
+  if(!shared){
+    try{
+      const url = URL.createObjectURL(talaExportBlob);
+      const a=document.createElement('a'); a.href=url; a.download=file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      toast('Sharing is not available here — saved a fresh copy instead');
+    }catch(e){ toast('Could not share this video — try again'); }
+  }
 });
 
 function renderAll(){
