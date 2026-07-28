@@ -5044,7 +5044,7 @@ function tpScheduler(){
 async function tpEnsureStudioLoaded(){
   if(tpStudioLoading) return;
   if(tpStudioBufPa && tpStudioBufMa) return;
-  if(!tpCtx) tpCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!tpCtx) tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
   tpStudioLoading = true;
   try{ if(!tpStudioBufPa) tpStudioBufPa = await talaDecodeAudioDataCompat(tpCtx, talaDataURItoArrayBuffer(TP_STUDIO_C_PA)); }
   catch(e){ /* leave null — callers fall back to synthesized honestly */ }
@@ -5109,7 +5109,14 @@ function tpRefreshEngine(){
 function tpStart(){
   if(tpPlaying) return;
   if(!tpCtx){
-    tpCtx = new (window.AudioContext||window.webkitAudioContext)();
+    // latencyHint 'playback' (instead of the default 'interactive') asks the browser for a larger
+    // internal audio buffer. Tanpura is a continuous drone, not something needing instant response
+    // to a tap, so we can trade a little extra output latency (imperceptible here) for a lot more
+    // headroom against the audio thread ever missing its deadline — which is what was almost
+    // certainly causing the "grrr" on phones: mobile CPUs have far less spare headroom than a
+    // laptop, and Bluetooth's own buffering/jitter exposes any missed deadline as an audible glitch
+    // far more readily than a wired connection or the phone's built-in speaker does.
+    tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
     tpMasterGain = tpCtx.createGain();
     // Two-stage safety net. The limiter previously engaged early and firmly, which stopped
     // clipping but caused audible pumping of its own (especially noticeable over Bluetooth,
@@ -5120,7 +5127,11 @@ function tpStart(){
     tpLimiter.threshold.value = -3; tpLimiter.knee.value = 6; tpLimiter.ratio.value = 4;
     tpLimiter.attack.value = 0.003; tpLimiter.release.value = 0.25;
     // 2) a hard mathematical ceiling after it — transparent below ~0.92, gently rounds off
-    // anything above that instead of ever hard-clipping, however hot the signal gets upstream
+    // anything above that instead of ever hard-clipping, however hot the signal gets upstream.
+    // oversample is '2x' rather than '4x': this curve only needs to catch aliasing from a signal
+    // that's already been shaped upstream, and this node runs continuously the whole time Tanpura
+    // plays — '4x' was real, constant extra CPU work on every phone, on top of everything else in
+    // this graph, and is the other likely contributor to the mobile-only Bluetooth distortion.
     const tpSafety = tpCtx.createWaveShaper();
     const n = 4096, curve = new Float32Array(n), ceiling = 0.92;
     for(let i=0;i<n;i++){
@@ -5128,7 +5139,7 @@ function tpStart(){
       const ax = Math.abs(x);
       curve[i] = ax<=ceiling ? x : Math.sign(x)*(ceiling+(1-ceiling)*Math.tanh((ax-ceiling)/(1-ceiling)));
     }
-    tpSafety.curve = curve; tpSafety.oversample = '4x';
+    tpSafety.curve = curve; tpSafety.oversample = '2x';
     tpMasterGain.connect(tpLimiter); tpLimiter.connect(tpSafety); tpSafety.connect(tpCtx.destination);
   }
   if(tpCtx.state==='suspended') tpCtx.resume();
@@ -5699,7 +5710,8 @@ function recSyncTanpuraControls(){
 }
 async function recStartTanpuraMix(){
   if(!tpCtx){
-    tpCtx = new (window.AudioContext||window.webkitAudioContext)();
+    // same mobile/Bluetooth-friendly settings as the live Tanpura tab — see tpStart for the full reasoning
+    tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
     tpMasterGain = tpCtx.createGain();
     const tpLimiter = tpCtx.createDynamicsCompressor();
     tpLimiter.threshold.value=-3; tpLimiter.knee.value=6; tpLimiter.ratio.value=4;
@@ -5707,7 +5719,7 @@ async function recStartTanpuraMix(){
     const tpSafety = tpCtx.createWaveShaper();
     const n=4096, curve=new Float32Array(n), ceiling=0.92;
     for(let i=0;i<n;i++){ const x=(i/(n-1))*2-1, ax=Math.abs(x); curve[i]= ax<=ceiling ? x : Math.sign(x)*(ceiling+(1-ceiling)*Math.tanh((ax-ceiling)/(1-ceiling))); }
-    tpSafety.curve=curve; tpSafety.oversample='4x';
+    tpSafety.curve=curve; tpSafety.oversample='2x';
     tpMasterGain.connect(tpLimiter); tpLimiter.connect(tpSafety); tpSafety.connect(tpCtx.destination);
   }
   if(tpCtx.state==='suspended') await tpCtx.resume();
@@ -5764,22 +5776,35 @@ async function startRecording(){
   if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || typeof MediaRecorder==='undefined'){
     toast('Recording is not supported in this browser'); return;
   }
+  // decided before requesting the mic, since it changes what we ask for
+  const wantTanpura = $('#recTanpuraToggle') ? $('#recTanpuraToggle').checked : false;
   try{
-    recStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        // echoCancellation stays ON: it's the specific signal that gets the OS to negotiate
-        // a bidirectional Bluetooth session (HFP/HSP) instead of output-only (A2DP) — without
-        // it, Bluetooth audio can go silent during recording even though capture works fine.
-        // autoGainControl and noiseSuppression stay OFF — autoGainControl was the actual cause
-        // of the earlier "voice fading" issue, not echoCancellation.
-        echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false
-      }
-    });
+    const audioConstraints = {
+      // echoCancellation is now ONLY switched on when the Tanpura mix is actually going to
+      // play in the background. It's the specific signal that gets the OS to negotiate a
+      // bidirectional Bluetooth session (HFP/HSP) instead of output-only (A2DP) — needed so
+      // you can hear the drone while recording — but it also runs an adaptive filter that
+      // can duck/fade your voice while it works out what's drone and what's you. With no
+      // Tanpura playing there's nothing to cancel, so a plain voice recording now skips this
+      // entirely and stays fully untouched — no fading, no suppression.
+      // autoGainControl and noiseSuppression stay OFF either way — autoGainControl was the
+      // cause of the original "voice fading" issue, before echoCancellation was even a factor.
+      echoCancellation: wantTanpura,
+      noiseSuppression: false,
+      autoGainControl: false
+    };
+    if(wantTanpura){
+      // Best-effort hint, harmless on browsers/devices that don't recognise it (getUserMedia
+      // silently ignores unsupported non-"exact" constraints rather than failing): ask for the
+      // device/OS's own hardware echo canceller — the one built for real phone calls — instead
+      // of the browser's own software AEC, which tends to duck voice more aggressively. Where
+      // it's honoured, this should mean less voice suppression even in the one case (Tanpura
+      // playing live) where some form of echo cancellation is genuinely still needed.
+      audioConstraints.echoCancellationType = { ideal: 'system' };
+    }
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
   }catch(e){ toast('Microphone access was blocked — check your browser site settings'); return; }
 
-  const wantTanpura = $('#recTanpuraToggle') ? $('#recTanpuraToggle').checked : false;
   let captureStream = recStream;
   if(wantTanpura){
     try{
