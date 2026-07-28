@@ -1303,7 +1303,11 @@
       <div class="field span2"><label for="notPdf">Notation PDF (optional)</label>
         <input id="notPdf" type="file" accept="application/pdf">
         <div class="tiny" id="notPdfCurrent" style="color:var(--muted);margin-top:4px"></div>
-        <div class="tiny" style="color:var(--muted);margin-top:4px">Stored on this device only — it won't travel with your Google Drive backup.</div>
+        <div id="notPdfUploadProgress" style="display:none;margin-top:6px">
+          <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="notPdfUploadFill"></div></div>
+          <div class="tiny" id="notPdfUploadStatus" style="color:var(--muted)">Uploading to Drive…</div>
+        </div>
+        <div class="tiny" style="color:var(--muted);margin-top:4px">Saved to your Google Drive — available on every device you sign in on.</div>
       </div>
     </div>
     <div class="modal-foot">
@@ -1379,6 +1383,10 @@
       <div id="recReviewBlock" class="rec-review" style="display:none">
         <audio id="recPreviewAudio" controls></audio>
         <div class="field"><label for="recTitleInput">Title</label><input id="recTitleInput" placeholder="e.g. Varnam demo for Ananya"></div>
+        <div id="recUploadProgress" style="display:none;margin:6px 0">
+          <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="recUploadFill"></div></div>
+          <div class="tiny" id="recUploadStatus" style="color:var(--muted)">Uploading to Drive…</div>
+        </div>
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
           <button class="btn" id="recReRecordBtn">Re-record</button>
           <button class="btn gold" id="recKeepBtn">Keep recording</button>
@@ -4311,6 +4319,50 @@ async function driveEnsureFileStorageFolders(){
     return null;
   }
 }
+// Folders are normally set up right after sign-in, but a fresh device or a brand-new
+// account might reach an upload before that's finished — this fills the gap on demand.
+async function driveGetFolderId(name){
+  if(S.meta.driveFolders && S.meta.driveFolders[name]) return S.meta.driveFolders[name];
+  const folders = await driveEnsureFileStorageFolders();
+  return folders ? folders[name] : null;
+}
+// Real upload progress needs XHR, not fetch — browsers don't yet expose reliable upload
+// progress events on fetch() request bodies, only on XHR's upload.onprogress.
+function driveUploadResumable(blob, filename, mimeType, folderName, onProgress){
+  return new Promise((resolve, reject) => {
+    (async () => {
+      if(!gToken){ reject(new Error('not signed in')); return; }
+      const folderId = await driveGetFolderId(folderName);
+      if(!folderId){ reject(new Error('could not resolve Drive folder')); return; }
+      let sessionUrl;
+      try{
+        const initRes = await dFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json; charset=UTF-8'},
+          body: JSON.stringify({ name: filename, parents: [folderId] })
+        });
+        sessionUrl = initRes.headers.get('Location');
+        if(!sessionUrl) throw new Error('no upload session returned');
+      }catch(e){ reject(e); return; }
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', sessionUrl, true);
+      xhr.setRequestHeader('Content-Type', mimeType || 'application/octet-stream');
+      xhr.setRequestHeader('Authorization', 'Bearer '+gToken);
+      xhr.upload.onprogress = (e) => { if(onProgress && e.lengthComputable) onProgress(e.loaded/e.total); };
+      xhr.onload = () => {
+        if(xhr.status>=200 && xhr.status<300){
+          try{ resolve(JSON.parse(xhr.responseText)); }
+          catch(e){ reject(new Error('could not parse Drive response')); }
+        } else {
+          reject(new Error('upload failed — status '+xhr.status));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload failed — network error'));
+      xhr.send(blob);
+    })();
+  });
+}
 async function driveFind(){
   const q=encodeURIComponent("name='"+DRIVE_FILE+"'");
   const r=await dFetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields=files(id,modifiedTime)');
@@ -5058,11 +5110,28 @@ $('#notSave').addEventListener('click', async ()=>{
   if(file){
     if(file.type!=='application/pdf'){ toast('That file is not a PDF — the rest of the entry was saved'); }
     else{
+      const rec = S.notations.find(x=>x.id===id);
+      $('#notSave').disabled = true;
       try{
-        await mediaPut('notation-pdf:'+id, file, {name:file.name, size:file.size});
-        const rec = S.notations.find(x=>x.id===id);
-        rec.hasPdf = true; rec.pdfName = file.name;
-      }catch(e){ toast('Could not save the PDF on this device — the rest of the entry was saved'); }
+        if(gToken){
+          $('#notPdfUploadProgress').style.display = '';
+          $('#notPdfUploadFill').style.width = '0%';
+          $('#notPdfUploadStatus').textContent = 'Uploading to Drive…';
+          try{
+            const driveFile = await driveUploadResumable(file, file.name, file.type, 'Notations', (frac)=>{
+              $('#notPdfUploadFill').style.width = Math.round(frac*100)+'%';
+            });
+            rec.driveFileId = driveFile.id;
+          }catch(e){
+            toast('Could not upload the PDF to Drive — saved on this device only for now');
+          }
+          $('#notPdfUploadProgress').style.display = 'none';
+        }
+        try{
+          await mediaPut('notation-pdf:'+id, file, {name:file.name, size:file.size}); // local cache either way
+          rec.hasPdf = true; rec.pdfName = file.name;
+        }catch(e){ toast('Could not save the PDF on this device — the rest of the entry was saved'); }
+      } finally { $('#notSave').disabled = false; }
     }
   }
   const wasEditing = !!editingNotationId;
@@ -5493,10 +5562,29 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
   if(!recBlob){ toast('Nothing recorded yet'); return; }
   const title = $('#recTitleInput').value.trim() || 'Untitled recording';
   const id = 'REC'+pad(S.seq.rec).padStart(3,'0'); S.seq.rec++;
+  $('#recKeepBtn').disabled = true;
+  let driveFileId = null;
   try{
-    await mediaPut('recording-audio:'+id, recBlob, {mimeType:recBlob.type, size:recBlob.size});
-  }catch(e){ toast('Could not save the recording on this device'); return; }
-  S.recordings.push({id, title, raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now()});
+    if(gToken){
+      $('#recUploadProgress').style.display = '';
+      $('#recUploadFill').style.width = '0%';
+      $('#recUploadStatus').textContent = 'Uploading to Drive…';
+      const ext = (recBlob.type||'').includes('mp4') ? 'm4a' : 'webm';
+      try{
+        const driveFile = await driveUploadResumable(recBlob, (title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, recBlob.type||'audio/webm', 'Recordings', (frac)=>{
+          $('#recUploadFill').style.width = Math.round(frac*100)+'%';
+        });
+        driveFileId = driveFile.id;
+      }catch(e){
+        toast('Could not upload to Drive — saved on this device only for now');
+      }
+      $('#recUploadProgress').style.display = 'none';
+    }
+    try{
+      await mediaPut('recording-audio:'+id, recBlob, {mimeType:recBlob.type, size:recBlob.size}); // local cache either way
+    }catch(e){ toast('Could not save the recording on this device'); return; }
+  } finally { $('#recKeepBtn').disabled = false; }
+  S.recordings.push({id, title, raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId});
   closeModal('m-recording-capture');
   toast('Recording saved — '+title);
   renderAll();
