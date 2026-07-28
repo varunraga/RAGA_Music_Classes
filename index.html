@@ -371,6 +371,7 @@
   .tp-playrow{padding:14px 4px 4px;text-align:center}
   .tala-loop-field{display:inline-flex;align-items:center;gap:6px;margin:0 8px;font-size:.82rem;color:var(--muted);font-weight:600;vertical-align:middle}
   .tala-loop-field input{width:56px;padding:7px 6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;text-align:center}
+  .tala-loop-field select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-weight:600}
   #tpPlay{min-width:140px;font-size:1rem;padding:10px 22px}
   @media (max-width:760px){
     .tanpura-strings{gap:12px}
@@ -641,7 +642,7 @@
     <div class="side-foot">
       <button class="btn small gold" id="btnDrive">Connect Google Drive</button>
       <div class="tiny" id="driveStatus">Drive: not connected</div>
-      <div class="tiny" id="driveAccountRow" style="display:none"><a href="#" class="foot-link" id="lnkDriveSwitch">switch account</a> · <a href="#" class="foot-link" id="lnkDriveSignOut">sign out</a></div>
+      <div class="tiny" id="driveAccountRow" style="display:none"><a href="#" class="foot-link" id="lnkDriveSwitch">switch account</a> · <a href="#" class="foot-link" id="lnkDriveSignOut">sign out</a> · <a href="#" class="foot-link" id="lnkDriveMigrate">upload existing files</a></div>
       <div class="tiny"><a href="#" class="foot-link" id="lnkExport">backup file</a> · <a href="#" class="foot-link" id="lnkImport">restore file</a> · <a href="#" class="foot-link" id="lnkSnapshots">snapshots</a> · <a href="#" class="foot-link" id="lnkChangeClientId">change Client ID</a></div>
       <input type="file" id="importFile" accept="application/json" style="display:none">
       <div class="tiny" id="backupStatus">Data is stored in this browser.</div>
@@ -1082,7 +1083,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:34px;height:34px;margin-bottom:8px"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M9 22h6"/></svg>
             <div id="recordingsEmptyMsg">No recordings yet — tap New recording to make your first one.</div>
           </div>
-          <div class="note">Recordings are stored on this device only — they won't travel with your Google Drive backup.</div>
+          <div class="note">Saved to your Google Drive — available on every device you sign in on.</div>
         </div>
       </div>
 
@@ -1224,10 +1225,27 @@
             <button type="button" class="btn gold" id="talaPlay">&#9658; Play</button>
             <button type="button" class="btn" id="talaSaveBtn">Save this pattern</button>
             <span class="tala-loop-field"><label for="talaLoopCount">Loops</label><input type="number" id="talaLoopCount" min="1" max="50" value="10"></span>
+            <span class="tala-loop-field"><label for="talaExportQuality">Quality</label>
+              <select id="talaExportQuality">
+                <option value="high">High</option>
+                <option value="standard" selected>Standard</option>
+                <option value="small">Small — best for sharing</option>
+              </select>
+            </span>
             <button type="button" class="btn" id="talaExportBtn" title="Exports the chosen number of loops of the current pattern as a video">Export video</button>
           </div>
 
           <div class="tala-saved-row" id="talaSavedRow"></div>
+
+          <div class="panel-head" style="margin-top:22px"><h3>Exported videos</h3><span class="hint">every video you've exported, searchable and shareable anytime</span></div>
+          <div class="not-toolbar">
+            <input id="talaVideoSearch" class="search-input" placeholder="Search by title…" style="flex:1 1 220px;min-width:0">
+          </div>
+          <div class="rec-list" id="talaVideoList"></div>
+          <div class="empty" id="talaVideoEmpty" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:34px;height:34px;margin-bottom:8px"><path d="M4 6h16v12H4z"/><path d="m10 9 5 3-5 3z"/></svg>
+            <div id="talaVideoEmptyMsg">No exported videos yet — use Export video above to make your first one.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -1330,6 +1348,7 @@
         <button class="btn" id="notMsgBtn">Message student</button>
         <button class="btn" id="notShareBtn">Share text</button>
         <button class="btn" id="notSharePdfBtn" style="display:none">Share PDF</button>
+        <button class="btn" id="notVersionsBtn" style="display:none">Version history</button>
         <button class="btn gold" id="notPracticeSheetBtn">Print practice sheet</button>
       </div>
       <div class="right" style="display:flex;gap:8px">
@@ -1338,6 +1357,15 @@
         <button class="btn" data-close="m-notation-view">Close</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-notation-versions">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="notVersionsTitle">
+    <h3 id="notVersionsTitle">Version history</h3>
+    <div class="sub">Restoring an older version makes it current again — it doesn't erase anything, Drive just keeps building on this same history.</div>
+    <div id="notVersionsList" style="margin:12px 0;max-height:340px;overflow-y:auto"></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-notation-versions">Close</button></div></div>
   </div>
 </div>
 
@@ -1456,11 +1484,48 @@
       <div class="modal-foot"><div class="right"><button class="btn" id="talaExportCancelBtn">Cancel export</button></div></div>
     </div>
     <div id="talaExportComplete" style="display:none">
-      <div class="sub">Your video is ready — already saved to your downloads.</div>
+      <div class="sub">Your video is ready — already saved to your downloads and to your video library.</div>
+      <div class="field"><label for="talaExportTitleInput">Title</label><input id="talaExportTitleInput"></div>
+      <div id="talaExportUploadProgress" style="display:none;margin:6px 0">
+        <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="talaExportUploadFill"></div></div>
+        <div class="tiny" style="color:var(--muted)">Uploading to Drive…</div>
+      </div>
       <div class="modal-foot"><div class="right">
         <button class="btn" id="talaExportCloseBtn">Close</button>
         <button class="btn gold" id="talaExportShareBtn">Share video</button>
       </div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-drive-migrate">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="driveMigrateTitle">
+    <h3 id="driveMigrateTitle">Uploading existing files to Drive…</h3>
+    <div id="driveMigrateInProgress">
+      <div class="sub" id="driveMigrateSub">Your local copies stay exactly where they are the whole time — this only adds a Drive copy alongside them.</div>
+      <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="driveMigrateFill"></div></div>
+      <div class="tala-export-status" id="driveMigrateStatus">Preparing…</div>
+      <div class="modal-foot"><div class="right"><button class="btn" id="driveMigrateCancelBtn">Stop</button></div></div>
+    </div>
+    <div id="driveMigrateComplete" style="display:none">
+      <div class="sub" id="driveMigrateSummary"></div>
+      <div class="modal-foot"><div class="right"><button class="btn gold" id="driveMigrateCloseBtn">Close</button></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-tala-video-view">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="talaVideoViewTitle">
+    <h3 id="talaVideoViewTitle">Exported video</h3>
+    <div class="field"><label for="talaVideoTitleInput">Title</label><input id="talaVideoTitleInput"></div>
+    <div class="sub" id="talaVideoViewSub"></div>
+    <video id="talaVideoPlayer" controls style="width:100%;border-radius:10px;margin:10px 0;background:#000"></video>
+    <div class="modal-foot" style="flex-wrap:wrap;gap:10px">
+      <button class="btn" id="talaVideoDeleteBtn" style="color:var(--red)">Delete</button>
+      <div class="right" style="display:flex;gap:8px">
+        <button class="btn" id="talaVideoShareBtn">Share video</button>
+        <button class="btn gold" data-close="m-tala-video-view">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1727,6 +1792,12 @@ async function mediaDelete(key){
 
 /* ---------- date helpers ---------- */
 const pad = n => String(n).padStart(2,'0');
+// Guards against a real multi-device bug: two devices offline at once both generating the
+// same sequential ID (e.g. both create "REC001" from the same last-synced counter) causes one
+// record to silently vanish when their data merges — mergeData keys by id and only keeps the
+// newer updatedAt. This suffix makes that collision astronomically unlikely without changing
+// the readable prefix+number scheme anywhere it's already displayed.
+function uniqueSuffix(){ return Math.random().toString(36).slice(2,6); }
 const dstr = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const parseD = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
 const now = new Date();
@@ -1962,7 +2033,9 @@ function openModal(id, fromPop){
   if(!fromPop) history.pushState({t:'modal', modalId:id}, '');
 }
 function closeModal(id, fromPop){
-  $('#'+id).classList.remove('open');
+  const el = $('#'+id);
+  el.querySelectorAll('audio, video').forEach(m => { try{ m.pause(); }catch(e){} });
+  el.classList.remove('open');
   modalOpenCount=Math.max(0,modalOpenCount-1);
   if(modalOpenCount===0) document.body.classList.remove('modal-lock');
   if(!fromPop && history.state && history.state.t==='modal' && history.state.modalId===id){
@@ -4263,16 +4336,25 @@ function connectDrive(interactive){
     gTokenClient.requestAccessToken(interactive ? {} : {prompt:''});
   });
 }
-async function dFetch(url, opts, _retried){
+async function dFetch(url, opts, _retried, _backoffAttempt){
   const merged=Object.assign({}, opts||{});
   merged.headers=Object.assign({}, merged.headers||{}, {Authorization:'Bearer '+gToken});
   const r=await fetch(url, merged);
   if(r.status===401){
     if(!_retried){
       const refreshed=await requestSilentTokenRefresh();
-      if(refreshed) return dFetch(url, opts, true); // rebuilds headers fresh with the new gToken
+      if(refreshed) return dFetch(url, opts, true, _backoffAttempt); // rebuilds headers fresh with the new gToken
     }
     gToken=null; setDriveStatus('Session expired — tap Reconnect', 'var(--gold-ink)'); throw new Error('auth');
+  }
+  // Rate-limited (429) or a transient server-side hiccup (5xx) — these are exactly the errors
+  // real Drive traffic produces under load, and they're worth retrying rather than failing
+  // outright. Capped at 4 attempts with jittered exponential backoff (roughly 0.5s/1s/2s/4s).
+  if((r.status===429 || r.status>=500) && (_backoffAttempt||0) < 4){
+    const attempt = _backoffAttempt||0;
+    const waitMs = Math.min(8000, 500*Math.pow(2,attempt)) + Math.random()*250;
+    await new Promise(res=>setTimeout(res, waitMs));
+    return dFetch(url, opts, _retried, attempt+1);
   }
   if(!r.ok) throw new Error('drive http '+r.status);
   return r;
@@ -4328,18 +4410,31 @@ async function driveGetFolderId(name){
 }
 // Real upload progress needs XHR, not fetch — browsers don't yet expose reliable upload
 // progress events on fetch() request bodies, only on XHR's upload.onprogress.
-function driveUploadResumable(blob, filename, mimeType, folderName, onProgress){
+function driveUploadResumable(blob, filename, mimeType, folderName, onProgress, existingFileId){
   return new Promise((resolve, reject) => {
     (async () => {
       if(!gToken){ reject(new Error('not signed in')); return; }
-      const folderId = await driveGetFolderId(folderName);
-      if(!folderId){ reject(new Error('could not resolve Drive folder')); return; }
+      let initUrl, method, body;
+      if(existingFileId){
+        // Replacing the content of a file that already exists in Drive — this is exactly
+        // what makes Drive keep a revision of the previous content, powering real version
+        // history below. A brand new file (the "else" branch) has no revisions to speak of.
+        initUrl = 'https://www.googleapis.com/upload/drive/v3/files/'+existingFileId+'?uploadType=resumable&fields=id,modifiedTime';
+        method = 'PATCH';
+        body = JSON.stringify({});
+      } else {
+        const folderId = await driveGetFolderId(folderName);
+        if(!folderId){ reject(new Error('could not resolve Drive folder')); return; }
+        initUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,modifiedTime';
+        method = 'POST';
+        body = JSON.stringify({ name: filename, parents: [folderId] });
+      }
       let sessionUrl;
       try{
-        const initRes = await dFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-          method: 'POST',
+        const initRes = await dFetch(initUrl, {
+          method,
           headers: {'Content-Type': 'application/json; charset=UTF-8'},
-          body: JSON.stringify({ name: filename, parents: [folderId] })
+          body
         });
         sessionUrl = initRes.headers.get('Location');
         if(!sessionUrl) throw new Error('no upload session returned');
@@ -4362,6 +4457,88 @@ function driveUploadResumable(blob, filename, mimeType, folderName, onProgress){
       xhr.send(blob);
     })();
   });
+}
+async function driveGetFileMetadata(fileId){
+  const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime');
+  return await r.json();
+}
+async function driveListRevisions(fileId){
+  const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'/revisions?fields=revisions(id,modifiedTime,size)');
+  const j = await r.json();
+  return (j.revisions||[]).sort((a,b)=> new Date(b.modifiedTime)-new Date(a.modifiedTime));
+}
+async function driveDownloadRevision(fileId, revisionId){
+  const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'/revisions/'+revisionId+'?alt=media');
+  return await r.blob();
+}
+async function driveDownloadFile(fileId){
+  const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media');
+  return await r.blob();
+}
+// Best-effort — used alongside a local delete, never blocks it. If this fails (offline,
+// already gone, etc.) the local record still gets removed either way; worst case is a
+// harmless leftover file sitting in Drive rather than a delete that silently fails outright.
+async function driveDeleteFile(fileId){
+  if(!fileId || !gToken) return;
+  try{ await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId, {method:'DELETE'}); }catch(e){ /* ignore — see note above */ }
+}
+// Cache-first read: instant if already cached locally (the common case — most files are
+// opened on the same device they were created on); falls back to Drive only on a cache miss
+// (a different device, or a cleared cache), then caches the result so next time is instant
+// too. Matches mediaGet's exact return shape ({blob, meta, savedAt} or null) so every existing
+// caller works unchanged — just pass the record's driveFileId alongside its cache key.
+async function mediaGetWithDriveFallback(key, driveFileId){
+  let local = null;
+  try{ local = await mediaGet(key); }catch(e){ /* fall through to Drive if possible */ }
+  if(local) return local;
+  if(!driveFileId || !gToken) return null;
+  try{
+    const blob = await driveDownloadFile(driveFileId);
+    try{ await mediaPut(key, blob, {size: blob.size, fromDrive:true}); }catch(e){ /* caching is best-effort */ }
+    return { blob, meta:{size:blob.size, fromDrive:true}, savedAt: Date.now() };
+  }catch(e){
+    return null;
+  }
+}
+/* ---------- Migrating existing local-only files to Drive ---------- */
+// Deliberately upload-only: the local IndexedDB copy is never touched or removed here,
+// regardless of outcome. It's already just a performance cache at this point (Step 3), so
+// leaving it in place costs nothing and means there is zero risk of losing a file even if
+// a migration run is interrupted or something fails partway through.
+function driveFilesNeedingMigration(){
+  const tasks = [];
+  S.notations.forEach(n=>{ if(n.hasPdf && !n.driveFileId) tasks.push({type:'notation', rec:n, key:'notation-pdf:'+n.id, folder:'Notations'}); });
+  S.recordings.forEach(r=>{ if(!r.driveFileId) tasks.push({type:'recording', rec:r, key:'recording-audio:'+r.id, folder:'Recordings'}); });
+  return tasks;
+}
+async function driveMigrateExistingFiles(onProgress, isCancelled){
+  const tasks = driveFilesNeedingMigration();
+  const result = { total: tasks.length, uploaded: 0, failed: 0, skippedNoLocalCopy: 0, cancelled: false };
+  for(let i=0;i<tasks.length;i++){
+    if(isCancelled && isCancelled()){ result.cancelled = true; break; }
+    const t = tasks[i];
+    if(onProgress) onProgress({index:i, total:tasks.length, label: t.rec.title || t.rec.pdfName || t.key});
+    let media = null;
+    try{ media = await mediaGet(t.key); }catch(e){ media = null; }
+    if(!media){ result.skippedNoLocalCopy++; continue; } // nothing local to migrate — genuinely nothing to do here
+    const isNotation = t.type==='notation';
+    const ext = isNotation ? 'pdf' : ((media.blob.type||'').includes('mp4') ? 'm4a' : 'webm');
+    const filename = isNotation
+      ? (t.rec.pdfName || (t.rec.title||'notation')+'.pdf')
+      : (t.rec.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext;
+    const mimeType = media.blob.type || (isNotation ? 'application/pdf' : 'audio/webm');
+    try{
+      const driveFile = await driveUploadResumable(media.blob, filename, mimeType, t.folder);
+      t.rec.driveFileId = driveFile.id;
+      result.uploaded++;
+      persist(); // save progress after every single file, not just at the end — a later
+                 // interruption never loses track of files already successfully uploaded
+    }catch(e){
+      result.failed++;
+    }
+  }
+  if(onProgress) onProgress({index:tasks.length, total:tasks.length, done:true});
+  return result;
 }
 async function driveFind(){
   const q=encodeURIComponent("name='"+DRIVE_FILE+"'");
@@ -4600,6 +4777,38 @@ $('#lnkDriveSwitch').addEventListener('click', e=>{
 });
 window.addEventListener('online',()=>{ if(gToken){ setDriveStatus('Back online — syncing…'); scheduleSync(); } });
 window.addEventListener('offline',()=>{ if(gToken) setDriveStatus('Offline — will sync when back online'); });
+let driveMigrateCancelled = false;
+$('#lnkDriveMigrate').addEventListener('click', async e=>{
+  e.preventDefault();
+  if(!gToken){ toast('Connect Google Drive first'); return; }
+  const pending = driveFilesNeedingMigration();
+  if(!pending.length){ toast('Everything is already on Drive — nothing to upload'); return; }
+  driveMigrateCancelled = false;
+  $('#driveMigrateInProgress').style.display = '';
+  $('#driveMigrateComplete').style.display = 'none';
+  $('#driveMigrateFill').style.width = '0%';
+  $('#driveMigrateStatus').textContent = 'Preparing…';
+  openModal('m-drive-migrate');
+  const result = await driveMigrateExistingFiles(
+    (p)=>{
+      if(p.done) return;
+      $('#driveMigrateFill').style.width = Math.round((p.index/p.total)*100)+'%';
+      $('#driveMigrateStatus').textContent = 'File '+(p.index+1)+' of '+p.total+' — '+(p.label||'untitled');
+    },
+    ()=>driveMigrateCancelled
+  );
+  renderAll();
+  $('#driveMigrateInProgress').style.display = 'none';
+  $('#driveMigrateComplete').style.display = '';
+  const parts = [];
+  if(result.uploaded) parts.push(result.uploaded+' uploaded');
+  if(result.failed) parts.push(result.failed+' failed — safe to run again later, nothing was lost');
+  if(result.skippedNoLocalCopy) parts.push(result.skippedNoLocalCopy+' had no local copy to upload');
+  if(result.cancelled) parts.push('stopped early — run again anytime to pick up where this left off');
+  $('#driveMigrateSummary').textContent = parts.length ? parts.join('; ')+'.' : 'Nothing needed uploading.';
+});
+$('#driveMigrateCancelBtn').addEventListener('click', ()=>{ driveMigrateCancelled = true; });
+$('#driveMigrateCloseBtn').addEventListener('click', ()=>{ closeModal('m-drive-migrate'); });
 // Belt-and-suspenders: scheduleSync() is a cheap no-op when nothing's pending, so polling this
 // periodically costs nothing in the common case, but quietly recovers from a one-off network
 // hiccup that isn't tied to a fresh edit or a browser online/offline transition.
@@ -4877,7 +5086,11 @@ async function tpStartStudioLoop(){
   const src = tpCtx.createBufferSource();
   src.buffer = buf; src.loop = true;
   const g = tpCtx.createGain();
-  g.gain.value = (+$('#tpVol').value)/100;
+  // A real studio recording is already a properly mastered track, unlike the synthesized
+  // engine's stacked partials — but feeding it in at full volume-slider level with no headroom
+  // was pushing it hard into the limiter above. This ~12% ceiling reduction is deliberately
+  // small — barely audible on its own — just enough to stop it arriving already too hot.
+  g.gain.value = (+$('#tpVol').value)/100 * 0.88;
   src.connect(g); g.connect(tpMasterGain);
   src.start();
   tpStudioSrcNode = src; tpStudioGainNode = g;
@@ -4898,11 +5111,14 @@ function tpStart(){
   if(!tpCtx){
     tpCtx = new (window.AudioContext||window.webkitAudioContext)();
     tpMasterGain = tpCtx.createGain();
-    // Two-stage safety net, deliberately conservative since this has clipped before:
-    // 1) a limiter that engages early and firmly, rather than waiting until right at the ceiling
+    // Two-stage safety net. The limiter previously engaged early and firmly, which stopped
+    // clipping but caused audible pumping of its own (especially noticeable over Bluetooth,
+    // whose codecs make that kind of gain-riding more obvious) — this is now a genuine safety
+    // net that mostly stays out of the way, since the WaveShaper ceiling right after it is
+    // still the true, hard, never-clips backstop regardless of how gently this stage behaves.
     const tpLimiter = tpCtx.createDynamicsCompressor();
-    tpLimiter.threshold.value = -8; tpLimiter.knee.value = 4; tpLimiter.ratio.value = 20;
-    tpLimiter.attack.value = 0.001; tpLimiter.release.value = 0.15;
+    tpLimiter.threshold.value = -3; tpLimiter.knee.value = 6; tpLimiter.ratio.value = 4;
+    tpLimiter.attack.value = 0.003; tpLimiter.release.value = 0.25;
     // 2) a hard mathematical ceiling after it — transparent below ~0.92, gently rounds off
     // anything above that instead of ever hard-clipping, however hot the signal gets upstream
     const tpSafety = tpCtx.createWaveShaper();
@@ -4949,7 +5165,7 @@ if($('#tpPitch')){
   $('#tpPitch').addEventListener('change', ()=>{ updateTpSourceVisibility(); tpRefreshEngine(); });
   $('#tpTuning').addEventListener('change', ()=>{ updateTpSourceVisibility(); tpRefreshEngine(); });
   if($('#tpSource')) $('#tpSource').addEventListener('change', tpRefreshEngine);
-  $('#tpVol').addEventListener('input', ()=>{ if(tpStudioGainNode) tpStudioGainNode.gain.value = (+$('#tpVol').value)/100; });
+  $('#tpVol').addEventListener('input', ()=>{ if(tpStudioGainNode) tpStudioGainNode.gain.value = (+$('#tpVol').value)/100 * 0.88; });
 }
 
 /* =====================================================
@@ -5103,7 +5319,7 @@ $('#notSave').addEventListener('click', async ()=>{
   let id = editingNotationId;
   if(id){ Object.assign(S.notations.find(x=>x.id===id), data); }
   else{
-    id = 'NOT'+pad(S.seq.not).padStart(3,'0'); S.seq.not++;
+    id = 'NOT'+pad(S.seq.not).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.not++;
     S.notations.push({id, hasPdf:false, pdfName:null, createdAt:Date.now(), ...data});
   }
   const file = $('#notPdf').files[0];
@@ -5116,12 +5332,31 @@ $('#notSave').addEventListener('click', async ()=>{
         if(gToken){
           $('#notPdfUploadProgress').style.display = '';
           $('#notPdfUploadFill').style.width = '0%';
-          $('#notPdfUploadStatus').textContent = 'Uploading to Drive…';
+          $('#notPdfUploadStatus').textContent = rec.driveFileId ? 'Uploading replacement to Drive…' : 'Uploading to Drive…';
           try{
-            const driveFile = await driveUploadResumable(file, file.name, file.type, 'Notations', (frac)=>{
-              $('#notPdfUploadFill').style.width = Math.round(frac*100)+'%';
-            });
-            rec.driveFileId = driveFile.id;
+            let proceedWithUpload = true;
+            if(rec.driveFileId && rec.driveModifiedTime){
+              // Multi-device safety check: did this file change on Drive since this device last
+              // saw it? If so, another device touched it — ask rather than silently overwrite.
+              try{
+                const meta = await driveGetFileMetadata(rec.driveFileId);
+                if(meta.modifiedTime && meta.modifiedTime !== rec.driveModifiedTime){
+                  proceedWithUpload = confirm('This PDF was changed elsewhere (another device) since you last saw it here.\n\nReplace it with your version now? The other version stays recoverable in Version history either way.');
+                }
+              }catch(e){ /* if the check itself fails (offline, etc.), proceed rather than block a save over a connectivity hiccup */ }
+            }
+            if(proceedWithUpload){
+              // If this notation already has a Drive file, replace ITS content (same file ID,
+              // Drive keeps the old version as a revision) rather than creating a disconnected
+              // second file — that's what makes "Version history" below actually mean something.
+              const driveFile = await driveUploadResumable(file, file.name, file.type, 'Notations', (frac)=>{
+                $('#notPdfUploadFill').style.width = Math.round(frac*100)+'%';
+              }, rec.driveFileId || null);
+              rec.driveFileId = driveFile.id;
+              rec.driveModifiedTime = driveFile.modifiedTime || null;
+            } else {
+              toast('Kept the version already on Drive — your local PDF edit was not uploaded');
+            }
           }catch(e){
             toast('Could not upload the PDF to Drive — saved on this device only for now');
           }
@@ -5157,6 +5392,7 @@ async function openNotationView(id){
   $('#notMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
   $('#notMsgStudent').value = '';
   $('#notSharePdfBtn').style.display = n.hasPdf ? '' : 'none';
+  $('#notVersionsBtn').style.display = n.driveFileId ? '' : 'none';
   openModal('m-notation-view');
 }
 $('#notMsgBtn').addEventListener('click', ()=>{
@@ -5180,9 +5416,9 @@ $('#notShareBtn').addEventListener('click', async ()=>{
 $('#notSharePdfBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   let rec;
-  try{ rec = await mediaGet('notation-pdf:'+n.id); }
+  try{ rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId); }
   catch(e){ toast('Could not read the PDF from storage'); return; }
-  if(!rec){ toast('PDF not found on this device'); return; }
+  if(!rec){ toast('PDF not found on this device or in Drive'); return; }
   const file = new File([rec.blob], n.pdfName||'notation.pdf', {type:'application/pdf'});
   let shared = false;
   if(navigator.canShare && navigator.canShare({files:[file]})){
@@ -5199,6 +5435,54 @@ $('#notSharePdfBtn').addEventListener('click', async ()=>{
     }catch(e){ toast('Could not save this PDF — try again'); }
   }
 });
+function fmtVersionDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})+' at '+d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+}
+function fmtVersionSize(bytes){
+  if(!bytes) return '';
+  const n = +bytes;
+  if(n < 1024*1024) return Math.round(n/1024)+' KB';
+  return (n/1024/1024).toFixed(1)+' MB';
+}
+async function openNotationVersions(){
+  const n = S.notations.find(x=>x.id===viewingNotationId); if(!n || !n.driveFileId) return;
+  const list = $('#notVersionsList');
+  list.innerHTML = '<div class="empty" style="padding:16px 0">Loading version history…</div>';
+  openModal('m-notation-versions');
+  let revisions;
+  try{ revisions = await driveListRevisions(n.driveFileId); }
+  catch(e){ list.innerHTML = '<div class="empty" style="padding:16px 0">Could not load version history — check your connection and try again.</div>'; return; }
+  if(!revisions.length){ list.innerHTML = '<div class="empty" style="padding:16px 0">No previous versions yet — this PDF has never been replaced.</div>'; return; }
+  list.innerHTML = revisions.map((rev,i)=>{
+    const isCurrent = i===0;
+    return '<div class="not-version-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
+      + '<div><div>'+fmtVersionDate(rev.modifiedTime)+(isCurrent?' <b style="color:var(--gold-ink)">— current</b>':'')+'</div>'
+      + '<div class="tiny" style="color:var(--muted)">'+fmtVersionSize(rev.size)+'</div></div>'
+      + (isCurrent ? '' : '<button class="btn tiny" data-restore-rev="'+rev.id+'">Restore this version</button>')
+      + '</div>';
+  }).join('');
+  list.querySelectorAll('[data-restore-rev]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const revId = btn.dataset.restoreRev;
+      btn.disabled = true; btn.textContent = 'Restoring…';
+      try{
+        const blob = await driveDownloadRevision(n.driveFileId, revId);
+        const driveFile = await driveUploadResumable(blob, n.pdfName||'notation.pdf', 'application/pdf', 'Notations', null, n.driveFileId);
+        n.driveFileId = driveFile.id;
+        n.driveModifiedTime = driveFile.modifiedTime || null;
+        try{ await mediaPut('notation-pdf:'+n.id, blob, {size:blob.size}); }catch(e){} // refresh the local cache too
+        toast('Restored — that version is now current');
+        closeModal('m-notation-versions');
+        persist();
+      }catch(e){
+        toast('Could not restore that version — try again');
+        btn.disabled = false; btn.textContent = 'Restore this version';
+      }
+    });
+  });
+}
+$('#notVersionsBtn').addEventListener('click', openNotationVersions);
 $('#notPracticeSheetBtn').addEventListener('click', ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   printCtx = practiceSheetHTML(n);
@@ -5216,6 +5500,7 @@ $('#notDeleteBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   if(!confirm('Delete "'+n.title+'"? This cannot be undone.')) return;
   if(n.hasPdf){ try{ await mediaDelete('notation-pdf:'+n.id); }catch(e){} }
+  if(n.driveFileId){ driveDeleteFile(n.driveFileId); }
   S.notations = S.notations.filter(x=>x.id!==n.id);
   closeModal('m-notation-view');
   toast('Composition deleted');
@@ -5314,8 +5599,9 @@ async function toggleRecordingPlayback(id){
     recSharedAudio.pause(); recPlayingId = null; renderRecordingsList(); return;
   }
   try{
-    const rec = await mediaGet('recording-audio:'+id);
-    if(!rec){ toast('That recording could not be found on this device'); return; }
+    const rInfo = S.recordings.find(x=>x.id===id);
+    const rec = await mediaGetWithDriveFallback('recording-audio:'+id, rInfo && rInfo.driveFileId);
+    if(!rec){ toast('That recording could not be found on this device or in Drive'); return; }
     recSharedAudio.src = URL.createObjectURL(rec.blob);
     await recSharedAudio.play();
     recPlayingId = id;
@@ -5337,7 +5623,8 @@ async function drawRecordingWaveform(id, canvas){
   let peaks = recWaveformCache[id];
   if(!peaks){
     try{
-      const rec = await mediaGet('recording-audio:'+id);
+      const rInfo = S.recordings.find(x=>x.id===id);
+      const rec = await mediaGetWithDriveFallback('recording-audio:'+id, rInfo && rInfo.driveFileId);
       if(!rec) return;
       const arrayBuf = await rec.blob.arrayBuffer();
       if(!recWaveCtx) recWaveCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -5415,8 +5702,8 @@ async function recStartTanpuraMix(){
     tpCtx = new (window.AudioContext||window.webkitAudioContext)();
     tpMasterGain = tpCtx.createGain();
     const tpLimiter = tpCtx.createDynamicsCompressor();
-    tpLimiter.threshold.value=-8; tpLimiter.knee.value=4; tpLimiter.ratio.value=20;
-    tpLimiter.attack.value=0.001; tpLimiter.release.value=0.15;
+    tpLimiter.threshold.value=-3; tpLimiter.knee.value=6; tpLimiter.ratio.value=4;
+    tpLimiter.attack.value=0.003; tpLimiter.release.value=0.25;
     const tpSafety = tpCtx.createWaveShaper();
     const n=4096, curve=new Float32Array(n), ceiling=0.92;
     for(let i=0;i<n;i++){ const x=(i/(n-1))*2-1, ax=Math.abs(x); curve[i]= ax<=ceiling ? x : Math.sign(x)*(ceiling+(1-ceiling)*Math.tanh((ax-ceiling)/(1-ceiling))); }
@@ -5439,7 +5726,7 @@ async function recStartTanpuraMix(){
       const src = tpCtx.createBufferSource();
       src.buffer = buf; src.loop = true;
       const g = tpCtx.createGain();
-      g.gain.value = (+$('#recTanpuraVol').value)/100;
+      g.gain.value = (+$('#recTanpuraVol').value)/100 * 0.88;
       src.connect(g); g.connect(recMixBus);
       src.start();
       recMixStudioSrc = src; recMixStudioGain = g;
@@ -5480,7 +5767,12 @@ async function startRecording(){
   try{
     recStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: false,
+        // echoCancellation stays ON: it's the specific signal that gets the OS to negotiate
+        // a bidirectional Bluetooth session (HFP/HSP) instead of output-only (A2DP) — without
+        // it, Bluetooth audio can go silent during recording even though capture works fine.
+        // autoGainControl and noiseSuppression stay OFF — autoGainControl was the actual cause
+        // of the earlier "voice fading" issue, not echoCancellation.
+        echoCancellation: true,
         noiseSuppression: false,
         autoGainControl: false
       }
@@ -5549,7 +5841,7 @@ $('#recTanpuraToggle').addEventListener('change', ()=>{
 $('#recTpScale').addEventListener('change', recUpdateTanpuraHint);
 $('#recTpTuning').addEventListener('change', recUpdateTanpuraHint);
 $('#recTanpuraVol').addEventListener('input', ()=>{
-  if(recMixStudioGain) recMixStudioGain.gain.value = (+$('#recTanpuraVol').value)/100;
+  if(recMixStudioGain) recMixStudioGain.gain.value = (+$('#recTanpuraVol').value)/100 * 0.88;
 });
 function recAdjustTanpuraVol(delta){
   const el = $('#recTanpuraVol');
@@ -5561,7 +5853,7 @@ $('#recTanpuraVolUp').addEventListener('click', ()=> recAdjustTanpuraVol(5));
 $('#recKeepBtn').addEventListener('click', async ()=>{
   if(!recBlob){ toast('Nothing recorded yet'); return; }
   const title = $('#recTitleInput').value.trim() || 'Untitled recording';
-  const id = 'REC'+pad(S.seq.rec).padStart(3,'0'); S.seq.rec++;
+  const id = 'REC'+pad(S.seq.rec).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.rec++;
   $('#recKeepBtn').disabled = true;
   let driveFileId = null;
   try{
@@ -5609,7 +5901,7 @@ async function openRecordingView(id){
   refreshNotationDatalists();
   $('#recViewAudio').src = '';
   try{
-    const rec = await mediaGet('recording-audio:'+id);
+    const rec = await mediaGetWithDriveFallback('recording-audio:'+id, r.driveFileId);
     if(rec) $('#recViewAudio').src = URL.createObjectURL(rec.blob);
   }catch(e){}
   studentOptions($('#recMsgStudent'), false);
@@ -5641,9 +5933,9 @@ $('#recMsgBtn').addEventListener('click', ()=>{
 $('#recShareBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   let rec;
-  try{ rec = await mediaGet('recording-audio:'+r.id); }
+  try{ rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); }
   catch(e){ toast('Could not read the recording from storage'); return; }
-  if(!rec){ toast('Recording not found on this device'); return; }
+  if(!rec){ toast('Recording not found on this device or in Drive'); return; }
   const ext = (rec.blob.type||'').includes('mp4') ? 'm4a' : 'webm';
   const file = new File([rec.blob], (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, {type: rec.blob.type||'audio/webm'});
   let shared = false;
@@ -5665,6 +5957,7 @@ $('#recDeleteBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   if(!confirm('Delete "'+r.title+'"? This cannot be undone.')) return;
   try{ await mediaDelete('recording-audio:'+r.id); }catch(e){}
+  if(r.driveFileId){ driveDeleteFile(r.driveFileId); }
   S.recordings = S.recordings.filter(x=>x.id!==r.id);
   closeModal('m-recording-view');
   toast('Recording deleted');
@@ -6168,7 +6461,7 @@ $('#talaSaveBtn').addEventListener('click',()=>{
 $('#talaSaveConfirm').addEventListener('click',()=>{
   const name = $('#talaSaveName').value.trim();
   if(!name){ toast('Name is required'); $('#talaSaveName').focus(); return; }
-  const id = 'TAL'+pad(S.seq.tala).padStart(3,'0'); S.seq.tala++;
+  const id = 'TAL'+pad(S.seq.tala).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.tala++;
   S.talaPatterns.push({id, name, type:talaType, chapuPreset:talaChapuPreset, jaati:talaJaati, kalai:talaKalai, nadai:talaNadai, dwiNadai:talaDwiNadai, mukhi:talaMukhi, angas:talaAngas.map(a=>({...a})), createdAt:Date.now(), updatedAt:Date.now()});
   closeModal('m-tala-save');
   toast('Saved — '+name);
@@ -6212,6 +6505,86 @@ function renderTalaSavedRow(){
 renderTalaSequence();
 
 /* =====================================================
+   TALA VIDEO LIBRARY — every export, searchable and shareable
+   anytime, not just in the moment right after exporting.
+   ===================================================== */
+let talaVideoSearchQuery = '', viewingTalaVideoId = null;
+function renderTalaVideoList(){
+  const listEl = $('#talaVideoList'); if(!listEl) return;
+  const q = talaVideoSearchQuery.toLowerCase();
+  const list = (S.talaExports||[]).filter(v => !q || (v.title||'').toLowerCase().includes(q)).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  listEl.innerHTML = '';
+  const empty = $('#talaVideoEmpty');
+  if(!list.length){
+    empty.style.display = '';
+    $('#talaVideoEmptyMsg').textContent = (S.talaExports||[]).length ? 'Nothing matches this search.' : 'No exported videos yet — use Export video above to make your first one.';
+  } else { empty.style.display = 'none'; }
+  list.forEach(v=>{
+    const row = document.createElement('div');
+    row.className = 'rec-row';
+    row.innerHTML =
+      '<button type="button" class="rec-play-btn" aria-label="Open">&#9658;</button>'+
+      '<div class="rec-row-body"><div class="rec-row-title">'+esc(v.title||'(untitled)')+'</div>'+
+      '<div class="rec-row-sub">'+fmtDuration(v.durationSec)+' · '+fmtRecDate(v.createdAt)+(v.driveFileId?'':' · <span style="color:var(--gold-ink)">not yet on Drive</span>')+'</div>'+
+      '</div>';
+    row.addEventListener('click', ()=>openTalaVideoView(v.id));
+    listEl.appendChild(row);
+  });
+}
+$('#talaVideoSearch').addEventListener('input', e=>{ talaVideoSearchQuery = e.target.value.trim(); renderTalaVideoList(); });
+async function openTalaVideoView(id){
+  const v = S.talaExports.find(x=>x.id===id); if(!v) return;
+  viewingTalaVideoId = id;
+  $('#talaVideoTitleInput').value = v.title || '';
+  $('#talaVideoViewSub').textContent = fmtDuration(v.durationSec)+' · recorded '+fmtRecDate(v.createdAt);
+  $('#talaVideoPlayer').src = '';
+  openModal('m-tala-video-view');
+  let rec;
+  try{ rec = await mediaGetWithDriveFallback('tala-video:'+v.id, v.driveFileId); }catch(e){ rec = null; }
+  if(rec) $('#talaVideoPlayer').src = URL.createObjectURL(rec.blob);
+  else toast('Video not found on this device or in Drive');
+}
+$('#talaVideoTitleInput').addEventListener('input', ()=>{
+  const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
+  v.title = $('#talaVideoTitleInput').value.trim() || v.title;
+  v.updatedAt = Date.now();
+  persist();
+  renderTalaVideoList();
+});
+$('#talaVideoShareBtn').addEventListener('click', async ()=>{
+  const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
+  let rec;
+  try{ rec = await mediaGetWithDriveFallback('tala-video:'+v.id, v.driveFileId); }
+  catch(e){ toast('Could not read the video from storage'); return; }
+  if(!rec){ toast('Video not found on this device or in Drive'); return; }
+  const file = new File([rec.blob], (v.title||'tala-video').replace(/[^\w\-]+/g,'_')+'.webm', {type: rec.blob.type||'video/webm'});
+  let shared = false;
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file], title:v.title}); shared = true; }
+    catch(e){ if(e && e.name==='AbortError') return; /* user cancelled the share sheet — not a failure */ }
+  }
+  if(!shared){
+    try{
+      const url = URL.createObjectURL(rec.blob);
+      const a=document.createElement('a'); a.href=url; a.download=file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      toast('Sharing is not available here — saved a fresh copy instead');
+    }catch(e){ toast('Could not share this video — try again'); }
+  }
+});
+$('#talaVideoDeleteBtn').addEventListener('click', async ()=>{
+  const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
+  if(!confirm('Delete "'+v.title+'"? This cannot be undone.')) return;
+  try{ await mediaDelete('tala-video:'+v.id); }catch(e){}
+  if(v.driveFileId){ driveDeleteFile(v.driveFileId); }
+  S.talaExports = S.talaExports.filter(x=>x.id!==v.id);
+  closeModal('m-tala-video-view');
+  toast('Video deleted');
+  renderAll();
+});
+
+/* =====================================================
    EXPORT VIDEO — captures 10 real-time loops of the current
    pattern (visual + click audio) to a downloadable video file.
    Renders onto an offscreen canvas each frame (mirroring the
@@ -6228,6 +6601,7 @@ let talaExportDest = null; // set during export so click sounds also route into 
 let talaExporting = false;
 let talaExportCancelled = false;
 let talaExportBlob = null;
+let talaExportRecordId = null;
 
 function talaLoadImg(src){
   return new Promise((resolve,reject)=>{
@@ -6318,6 +6692,13 @@ function talaRenderExportFrame(ctx, w, h, beat, beatProgress, count, imgBack, im
   }
 }
 let talaExportRecorder = null; // module-level so the Cancel button (registered once) can reach the in-progress recorder
+// Bitrate is scaled to pixel area (not just linear resolution) so all three presets land at
+// roughly the same visual quality-per-pixel — only the file size and resolution change.
+const TALA_EXPORT_QUALITY_PRESETS = {
+  high:     { width:1024, height:1536, bitrate:14000000 },
+  standard: { width:768,  height:1152, bitrate:7000000  },
+  small:    { width:512,  height:768,  bitrate:3000000  }
+};
 async function talaExportVideo(){
   if(talaExporting) return;
   if(talaType==='suladi' && !talaAngas.length){ toast('Build a pattern first'); return; }
@@ -6340,7 +6721,9 @@ async function talaExportVideo(){
   }catch(e){ toast('Could not load the hand images for export'); talaExporting=false; return; }
 
   const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 1536; // matches the source photos' native resolution — no upscaling blur, comfortably past 1080p
+  const qualityKey = $('#talaExportQuality') ? $('#talaExportQuality').value : 'standard';
+  const quality = TALA_EXPORT_QUALITY_PRESETS[qualityKey] || TALA_EXPORT_QUALITY_PRESETS.standard;
+  canvas.width = quality.width; canvas.height = quality.height; // scales cleanly — every draw call in talaRenderExportFrame is proportional to width/height, not fixed pixels
   const ctx = canvas.getContext('2d');
 
   if(!talaCtx) talaCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -6356,11 +6739,11 @@ async function talaExportVideo(){
   keepAliveOsc.connect(keepAliveGain); keepAliveGain.connect(audioDest);
   keepAliveOsc.start();
 
-  const videoStream = canvas.captureStream(60);
+  const videoStream = canvas.captureStream(30);
   const combined = new MediaStream([...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]);
   const mimeCandidates = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   const mime = mimeCandidates.find(m=>MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
-  const recOpts = mime ? {mimeType:mime, videoBitsPerSecond:14000000} : {videoBitsPerSecond:14000000};
+  const recOpts = mime ? {mimeType:mime, videoBitsPerSecond:quality.bitrate} : {videoBitsPerSecond:quality.bitrate};
   const recorder = new MediaRecorder(combined, recOpts);
   const chunks = [];
   recorder.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
@@ -6419,7 +6802,7 @@ async function talaExportVideo(){
     releaseResources();
     closeModal('m-tala-export');
   }
-  recorder.onstop = ()=>{
+  recorder.onstop = async ()=>{
     if(talaExportCancelled){ cleanup(); return; }
     const blob = new Blob(chunks, {type: mime.split(';')[0] || 'video/webm'});
     const url = URL.createObjectURL(blob);
@@ -6429,9 +6812,35 @@ async function talaExportVideo(){
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
     releaseResources();
     talaExportBlob = blob;
+
+    const expId = 'TALX'+pad(S.seq.talaExport).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.talaExport++;
+    const defaultTitle = 'Tala video – '+new Date().toLocaleDateString(undefined,{day:'numeric',month:'short'})+' '+new Date().toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+    talaExportRecordId = expId;
+    S.talaExports.push({id:expId, title:defaultTitle, durationSec:Math.round(totalDurSec), createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null});
+    try{ await mediaPut('tala-video:'+expId, blob, {size:blob.size}); }catch(e){}
+    persist();
+
     $('#talaExportInProgress').style.display = 'none';
     $('#talaExportComplete').style.display = '';
+    $('#talaExportTitleInput').value = defaultTitle;
     toast('Video exported — check your downloads');
+    renderTalaVideoList();
+
+    if(gToken){
+      $('#talaExportUploadProgress').style.display = '';
+      $('#talaExportUploadFill').style.width = '0%';
+      try{
+        const driveFile = await driveUploadResumable(blob, defaultTitle.replace(/[^\w\-]+/g,'_')+'.webm', 'video/webm', 'Tala Videos', (frac)=>{
+          $('#talaExportUploadFill').style.width = Math.round(frac*100)+'%';
+        });
+        const rec = S.talaExports.find(x=>x.id===expId);
+        if(rec) rec.driveFileId = driveFile.id;
+        persist();
+      }catch(e){
+        toast('Could not upload the video to Drive — saved on this device only for now');
+      }
+      $('#talaExportUploadProgress').style.display = 'none';
+    }
   };
   talaExportRecorder = recorder;
   recorder.start();
@@ -6442,16 +6851,22 @@ $('#talaExportCancelBtn').addEventListener('click', ()=>{
   talaExportCancelled = true;
   if(talaExportRecorder && talaExportRecorder.state==='recording') talaExportRecorder.stop(); // actually stop capture, not just the frame loop
 });
+$('#talaExportTitleInput').addEventListener('input', ()=>{
+  const rec = S.talaExports.find(x=>x.id===talaExportRecordId);
+  if(rec){ rec.title = $('#talaExportTitleInput').value.trim() || rec.title; rec.updatedAt = Date.now(); persist(); renderTalaVideoList(); }
+});
 $('#talaExportCloseBtn').addEventListener('click', ()=>{
-  talaExportBlob = null;
+  talaExportBlob = null; talaExportRecordId = null;
   closeModal('m-tala-export');
 });
 $('#talaExportShareBtn').addEventListener('click', async ()=>{
   if(!talaExportBlob){ toast('That video is no longer available — export again to share'); return; }
-  const file = new File([talaExportBlob], 'tala-pattern.webm', {type: talaExportBlob.type||'video/webm'});
+  const rec = S.talaExports.find(x=>x.id===talaExportRecordId);
+  const titleForShare = (rec && rec.title) || 'Tala pattern';
+  const file = new File([talaExportBlob], titleForShare.replace(/[^\w\-]+/g,'_')+'.webm', {type: talaExportBlob.type||'video/webm'});
   let shared = false;
   if(navigator.canShare && navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file], title:'Tala pattern'}); shared = true; }
+    try{ await navigator.share({files:[file], title:titleForShare}); shared = true; }
     catch(e){ if(e && e.name==='AbortError') return; /* user cancelled the share sheet — not a failure */ }
   }
   if(!shared){
@@ -6469,7 +6884,7 @@ function renderAll(){
   persist();
   renderStats(); renderTimeline(); renderUpcoming(); renderRecent(); renderPending();
   renderStudents(); renderCalendar(); renderBilling(); renderPersonalCards(); renderPayments(); renderRaga(); renderReports(); renderInsights(); renderWeekCheck(); renderNavBadge(); renderBackupStatus();
-  renderNotationChips(); renderNotationList(); renderRecordingsFilters(); renderRecordingsList(); renderTalaSavedRow();
+  renderNotationChips(); renderNotationList(); renderRecordingsFilters(); renderRecordingsList(); renderTalaSavedRow(); renderTalaVideoList();
   scheduleSync();
   const pv=document.getElementById('view-student');
   if(pv && pv.classList.contains('active') && profileId) renderProfile();
@@ -6483,17 +6898,6 @@ if($('#talaHandImgBack')) $('#talaHandImgBack').src = TALA_HAND_BACK;
 if($('#talaHandImgPalm')) $('#talaHandImgPalm').src = TALA_HAND_PALM;
 renderAll();
 maybeShowReminder();
-// Reopen on whatever tab/pane was last active, rather than always resetting to Dashboard.
-if(S.meta.lastView && S.meta.lastView!=='dashboard' && titles[S.meta.lastView]){
-  go(S.meta.lastView);
-  if(S.meta.lastView==='studio' && S.meta.lastStudioPane){
-    const pill = document.querySelector('#studioPills [data-pane="'+S.meta.lastStudioPane+'"]');
-    if(pill) showStudioPane(S.meta.lastStudioPane, pill);
-  } else if(S.meta.lastView==='earnings' && S.meta.lastEarningsPane){
-    const pill = document.querySelector('#earningsPills [data-pane="'+S.meta.lastEarningsPane+'"]');
-    if(pill) showStudioPane(S.meta.lastEarningsPane, pill);
-  }
-}
 if(driveCfg()){ connectDrive(false); } else { setDriveStatus('Not connected'); }
 if(!storageOK) toast('Heads up: this browser is blocking storage, so data will not persist. Use Export to save your work.');
 </script>
@@ -6521,6 +6925,22 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
         });
       });
     }).catch(() => {});
+    // Catches the far more common real-world case: you replaced index.html itself (not sw.js).
+    // The browser's native update check only watches sw.js byte-for-byte, so without this, an
+    // index.html-only deploy would never surface an update banner at all. The service worker
+    // already re-fetches and re-caches this content on every load (see sw.js) — this just gets
+    // told when what it fetched actually differs from before.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if(event.data && event.data.type === 'CONTENT_UPDATED'){
+        const bar = document.getElementById('pwaUpdateBar');
+        if(!bar) return;
+        bar.style.display = 'flex';
+        document.getElementById('pwaUpdateBtn').onclick = () => {
+          bar.style.display = 'none';
+          window.location.reload(); // the new content is already cached — a plain reload picks it up
+        };
+      }
+    });
     // Only reload once the person has actually tapped "Update now" (which tells the
     // waiting worker to take over) — this fires once that handover completes.
     let pwaRefreshed = false;
