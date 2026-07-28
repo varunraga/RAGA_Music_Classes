@@ -47,9 +47,23 @@ self.addEventListener('fetch', (event) => {
     // and only fall back to the cached copy when there's genuinely no connectivity.
     event.respondWith(
       fetch(event.request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        .then(async (res) => {
+          const compareClone = res.clone();
+          const cacheClone = res.clone();
+          const cache = await caches.open(CACHE_NAME);
+          const previous = await cache.match(event.request);
+          const [newText, oldText] = await Promise.all([
+            compareClone.text(),
+            previous ? previous.text() : Promise.resolve(null)
+          ]);
+          await cache.put(event.request, cacheClone);
+          // The service worker file itself hasn't changed here — only the app's own content
+          // has. The browser's native update mechanism only watches sw.js byte-for-byte, so
+          // without this explicit check, replacing index.html alone would never be noticed.
+          if (oldText !== null && newText !== oldText) {
+            const clientsList = await self.clients.matchAll({ type: 'window' });
+            clientsList.forEach((client) => client.postMessage({ type: 'CONTENT_UPDATED' }));
+          }
           return res;
         })
         .catch(() => caches.match(event.request).then((cached) => cached || caches.match('./index.html')))
