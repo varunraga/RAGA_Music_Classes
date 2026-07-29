@@ -4359,6 +4359,17 @@ async function dFetch(url, opts, _retried, _backoffAttempt){
   if(!r.ok) throw new Error('drive http '+r.status);
   return r;
 }
+// Turns a caught error into a short, real, human-readable detail — e.g. "drive http 403" becomes
+// "permission problem (403)", "auth" becomes "session expired". Falls back to the raw message for
+// anything unrecognized, so nothing is ever hidden — just made a little more readable when possible.
+function driveErrorDetail(e){
+  const msg = (e && e.message) || String(e);
+  const httpMatch = msg.match(/drive http (\d+)/);
+  if(httpMatch) return 'Drive error '+httpMatch[1]+(httpMatch[1]==='403' ? ' — permission problem' : httpMatch[1]==='404' ? ' — not found' : httpMatch[1]==='401' ? ' — session expired' : '');
+  if(msg==='auth') return 'session expired';
+  if(msg==='not signed in') return 'not signed in to Drive';
+  return msg;
+}
 /* ---------- Drive file storage (drive.file scope) — folder setup ---------- */
 // Distinct from driveFind()/pushToDrive() below, which manage the small JSON data
 // blob in the hidden appdata space — this section manages real, visible folders
@@ -4395,9 +4406,7 @@ async function driveEnsureFileStorageFolders(){
     persist();
     return folders;
   }catch(e){
-    // Most likely cause: the person only approved the old appdata permission and declined
-    // the new one on the consent screen — surfaced clearly rather than failing silently.
-    toast('Could not set up Drive folders — reconnect Drive and approve the file-storage permission');
+    toast('Could not set up Drive folders ('+driveErrorDetail(e)+')');
     return null;
   }
 }
@@ -4535,6 +4544,7 @@ async function driveMigrateExistingFiles(onProgress, isCancelled){
                  // interruption never loses track of files already successfully uploaded
     }catch(e){
       result.failed++;
+      if(!result.firstFailureDetail) result.firstFailureDetail = driveErrorDetail(e);
     }
   }
   if(onProgress) onProgress({index:tasks.length, total:tasks.length, done:true});
@@ -4802,7 +4812,7 @@ $('#lnkDriveMigrate').addEventListener('click', async e=>{
   $('#driveMigrateComplete').style.display = '';
   const parts = [];
   if(result.uploaded) parts.push(result.uploaded+' uploaded');
-  if(result.failed) parts.push(result.failed+' failed — safe to run again later, nothing was lost');
+  if(result.failed) parts.push(result.failed+' failed ('+result.firstFailureDetail+') — safe to run again later, nothing was lost');
   if(result.skippedNoLocalCopy) parts.push(result.skippedNoLocalCopy+' had no local copy to upload');
   if(result.cancelled) parts.push('stopped early — run again anytime to pick up where this left off');
   $('#driveMigrateSummary').textContent = parts.length ? parts.join('; ')+'.' : 'Nothing needed uploading.';
@@ -5369,7 +5379,7 @@ $('#notSave').addEventListener('click', async ()=>{
               toast('Kept the version already on Drive — your local PDF edit was not uploaded');
             }
           }catch(e){
-            toast('Could not upload the PDF to Drive — saved on this device only for now');
+            toast('Could not upload the PDF to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
           }
           $('#notPdfUploadProgress').style.display = 'none';
         }
@@ -5893,7 +5903,7 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
         });
         driveFileId = driveFile.id;
       }catch(e){
-        toast('Could not upload to Drive — saved on this device only for now');
+        toast('Could not upload to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
       }
       $('#recUploadProgress').style.display = 'none';
     }
@@ -6862,7 +6872,7 @@ async function talaExportVideo(){
         if(rec) rec.driveFileId = driveFile.id;
         persist();
       }catch(e){
-        toast('Could not upload the video to Drive — saved on this device only for now');
+        toast('Could not upload the video to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
       }
       $('#talaExportUploadProgress').style.display = 'none';
     }
