@@ -25,6 +25,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Cinzel:wght@700;900&family=Sacramento&family=Karla:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <style>
   :root{
     --paper:#F4F7FB; --card:#FFFFFF; --ink:#0E1420; --muted:#5B6675;
@@ -1342,6 +1343,11 @@
     <h3 id="notViewTitle"></h3>
     <div class="sub" id="notViewTags"></div>
     <div id="notReadWrap"></div>
+    <div id="notPdfViewWrap" style="display:none;margin-top:14px">
+      <div class="not-read-label">Notation PDF</div>
+      <div id="notPdfViewStatus" class="sub" style="margin:4px 0 8px">Loading…</div>
+      <iframe id="notPdfViewFrame" style="width:100%;height:60vh;border:1px solid #D9C79A;border-radius:10px;background:#fff;display:none" title="Notation PDF"></iframe>
+    </div>
     <div class="modal-foot" style="flex-wrap:wrap;gap:10px">
       <div class="not-share-row">
         <select id="notMsgStudent"><option value="">— pick a student —</option></select>
@@ -1444,7 +1450,9 @@
         <select id="recMsgStudent"><option value="">— pick a student —</option></select>
         <button class="btn" id="recMsgBtn">Message student</button>
         <button class="btn" id="recShareBtn">Share audio</button>
+        <button class="btn" id="recFixFormatBtn" style="display:none">Fix playback on other devices</button>
       </div>
+      <div class="sub" id="recFormatNote" style="display:none;width:100%"></div>
       <div class="right" style="display:flex;gap:8px">
         <button class="btn gold" id="recSaveBtn">Save changes</button>
         <button class="btn" id="recDeleteBtn" style="color:var(--red)">Delete</button>
@@ -4430,7 +4438,11 @@ function driveUploadResumable(blob, filename, mimeType, folderName, onProgress, 
         // history below. A brand new file (the "else" branch) has no revisions to speak of.
         initUrl = 'https://www.googleapis.com/upload/drive/v3/files/'+existingFileId+'?uploadType=resumable&fields=id,modifiedTime';
         method = 'PATCH';
-        body = JSON.stringify({});
+        // Also correcting mimeType and name here (not just the bytes): this is what keeps
+        // Drive's own record of the file honest — e.g. after converting an old WebM recording
+        // to WAV, Drive would otherwise keep reporting it as audio/webm forever, which is
+        // exactly the kind of mismatch that broke playback in the first place.
+        body = JSON.stringify({ mimeType, name: filename });
       } else {
         const folderId = await driveGetFolderId(folderName);
         if(!folderId){ reject(new Error('could not resolve Drive folder')); return; }
@@ -4468,8 +4480,22 @@ function driveUploadResumable(blob, filename, mimeType, folderName, onProgress, 
   });
 }
 async function driveGetFileMetadata(fileId){
-  const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime');
+  const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime,name');
   return await r.json();
+}
+// Best-effort rename, keyed off whatever extension the file already has in Drive (so we don't
+// need to re-download the file's bytes just to figure out .wav vs .webm vs .pdf). Used whenever
+// a title changes in the app, so Drive's filename doesn't quietly drift out of sync with it.
+async function driveRenameFileToMatchTitle(fileId, newTitle, fallbackExt){
+  try{
+    const meta = await driveGetFileMetadata(fileId);
+    const ext = (meta.name && meta.name.includes('.')) ? meta.name.split('.').pop() : fallbackExt;
+    await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json; charset=UTF-8'},
+      body: JSON.stringify({ name: newTitle.replace(/[^\w\-]+/g,'_')+'.'+ext })
+    });
+  }catch(e){ /* a stale Drive filename isn't worth interrupting anything over — silently skip */ }
 }
 async function driveListRevisions(fileId){
   const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'/revisions?fields=revisions(id,modifiedTime,size)');
@@ -4501,13 +4527,13 @@ async function mediaGetWithDriveFallback(key, driveFileId){
   try{ local = await mediaGet(key); }catch(e){ /* fall through to Drive if possible */ }
   if(local) return local;
   if(!driveFileId || !gToken) return null;
-  try{
-    const blob = await driveDownloadFile(driveFileId);
-    try{ await mediaPut(key, blob, {size: blob.size, fromDrive:true}); }catch(e){ /* caching is best-effort */ }
-    return { blob, meta:{size:blob.size, fromDrive:true}, savedAt: Date.now() };
-  }catch(e){
-    return null;
-  }
+  // Deliberately NOT caught here anymore — this used to swallow the real reason (permission
+  // problem, wrong/missing file, network error, etc.) and just return null, which is why every
+  // caller could only ever say generic things like "not found". Letting it throw means every
+  // caller now sees driveErrorDetail(e) — the actual reason — instead of a dead end.
+  const blob = await driveDownloadFile(driveFileId);
+  try{ await mediaPut(key, blob, {size: blob.size, fromDrive:true}); }catch(e){ /* caching is best-effort */ }
+  return { blob, meta:{size:blob.size, fromDrive:true}, savedAt: Date.now() };
 }
 /* ---------- Migrating existing local-only files to Drive ---------- */
 // Deliberately upload-only: the local IndexedDB copy is never touched or removed here,
@@ -5239,6 +5265,91 @@ function notationShareText(n){
   if(n.meaning){ lines.push(''); lines.push('Meaning:'); lines.push(n.meaning); }
   return lines.join('\n');
 }
+let cachedBannerPngBytes = null;
+// pdf-lib can only embed PNG/JPG, not the WebP the banner is stored as — this decodes it once
+// via a canvas (browsers can display WebP fine, just can't hand its raw bytes to pdf-lib) and
+// caches the resulting PNG bytes for reuse across every practice sheet built this session.
+async function getBannerPngBytes(){
+  if(cachedBannerPngBytes) return cachedBannerPngBytes;
+  const img = new Image();
+  const loaded = new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; });
+  img.src = BANNER;
+  await loaded;
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  canvas.getContext('2d').drawImage(img,0,0);
+  const blob = await new Promise(res=>canvas.toBlob(res,'image/png'));
+  cachedBannerPngBytes = new Uint8Array(await blob.arrayBuffer());
+  return cachedBannerPngBytes;
+}
+// Builds just the cover page (banner, title, tags, lyrics, meaning, footer) as a real PDF —
+// same content as practiceSheetHTML below, just rendered with pdf-lib instead of the browser's
+// print dialog, so it can be merged with the notation's own PDF pages into one file.
+async function buildPracticeSheetCoverPdfBytes(n){
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const doc = await PDFDocument.create();
+  const pageWidth = 595.28, pageHeight = 841.89, margin = 50;
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const reg = await doc.embedFont(StandardFonts.Helvetica);
+  let page = doc.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+
+  try{
+    const bannerBytes = await getBannerPngBytes();
+    const bannerImg = await doc.embedPng(bannerBytes);
+    const bw = pageWidth - margin*2;
+    const bh = bw * (bannerImg.height/bannerImg.width);
+    page.drawImage(bannerImg, {x:margin, y:y-bh, width:bw, height:bh});
+    y -= bh + 20;
+  }catch(e){ /* the banner is decorative — if it can't be embedded for any reason, just carry on with text */ }
+
+  const drawWrapped = (text, size, font, color, lineGap)=>{
+    const maxWidth = pageWidth - margin*2;
+    const words = String(text).split(/\s+/);
+    let line = '';
+    const flush = ()=>{
+      if(y < margin + size){ page = doc.addPage([pageWidth,pageHeight]); y = pageHeight - margin; }
+      page.drawText(line, {x:margin, y, size, font, color});
+      y -= size + lineGap;
+    };
+    for(const w of words){
+      const test = line ? line+' '+w : w;
+      if(line && font.widthOfTextAtSize(test, size) > maxWidth){ flush(); line = w; }
+      else line = test;
+    }
+    flush();
+  };
+
+  drawWrapped(n.title||'(untitled)', 20, bold, rgb(0.1,0.1,0.1), 6);
+  const tags = notationTagsLine(n);
+  if(tags){ drawWrapped(tags, 11, reg, rgb(0.4,0.4,0.4), 4); y -= 8; }
+  if(n.lyrics){
+    drawWrapped('Sahitya', 13, bold, rgb(0.1,0.1,0.1), 4);
+    n.lyrics.split('\n').forEach(line=> drawWrapped(line || ' ', 11, reg, rgb(0.15,0.15,0.15), 3));
+    y -= 10;
+  }
+  if(n.meaning){
+    drawWrapped('Meaning', 13, bold, rgb(0.1,0.1,0.1), 4);
+    n.meaning.split('\n').forEach(line=> drawWrapped(line || ' ', 11, reg, rgb(0.15,0.15,0.15), 3));
+  }
+  if(!n.lyrics && !n.meaning) drawWrapped('No lyrics or meaning added yet.', 11, reg, rgb(0.4,0.4,0.4), 3);
+
+  page.drawText('Prepared by Varun M Kaginagolli \u00b7 RAGA Music Classes \u00b7 '+fmtDFull(TODAY), {x:margin, y:margin/1.5, size:8, font:reg, color:rgb(0.45,0.4,0.3)});
+  return await doc.save();
+}
+// Merges the cover page(s) above with the notation's own uploaded PDF, cover first — one single
+// downloadable file in place of two separate ones.
+async function buildCombinedPracticeSheetBytes(n){
+  const coverBytes = await buildPracticeSheetCoverPdfBytes(n);
+  const merged = await PDFLib.PDFDocument.create();
+  const coverDoc = await PDFLib.PDFDocument.load(coverBytes);
+  (await merged.copyPages(coverDoc, coverDoc.getPageIndices())).forEach(p=>merged.addPage(p));
+  const rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId);
+  if(!rec) throw new Error('the notation PDF could not be found on this device or in Drive');
+  const srcDoc = await PDFLib.PDFDocument.load(await rec.blob.arrayBuffer());
+  (await merged.copyPages(srcDoc, srcDoc.getPageIndices())).forEach(p=>merged.addPage(p));
+  return await merged.save();
+}
 function practiceSheetHTML(n){
   const tags = notationTagsLine(n);
   const lyricsBlock = n.lyrics ? '<div class="ps-label">Sahitya</div><div class="ps-text">'+esc(n.lyrics)+'</div>' : '';
@@ -5414,6 +5525,25 @@ async function openNotationView(id){
   $('#notMsgStudent').value = '';
   $('#notSharePdfBtn').style.display = n.hasPdf ? '' : 'none';
   $('#notVersionsBtn').style.display = n.driveFileId ? '' : 'none';
+  $('#notPdfViewFrame').style.display = 'none';
+  $('#notPdfViewFrame').src = '';
+  if(n.hasPdf){
+    $('#notPdfViewWrap').style.display = '';
+    $('#notPdfViewStatus').style.display = '';
+    $('#notPdfViewStatus').textContent = 'Loading…';
+    mediaGetWithDriveFallback('notation-pdf:'+id, n.driveFileId).then(rec=>{
+      if(viewingNotationId !== id) return; // the person moved on to another view before this arrived
+      if(!rec){ $('#notPdfViewStatus').textContent = 'PDF not found on this device or in Drive'; return; }
+      $('#notPdfViewFrame').src = URL.createObjectURL(rec.blob);
+      $('#notPdfViewFrame').style.display = '';
+      $('#notPdfViewStatus').style.display = 'none';
+    }).catch(e=>{
+      if(viewingNotationId !== id) return;
+      $('#notPdfViewStatus').textContent = 'Could not load the PDF ('+driveErrorDetail(e)+')';
+    });
+  } else {
+    $('#notPdfViewWrap').style.display = 'none';
+  }
   openModal('m-notation-view');
 }
 $('#notMsgBtn').addEventListener('click', ()=>{
@@ -5438,7 +5568,7 @@ $('#notSharePdfBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   let rec;
   try{ rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId); }
-  catch(e){ toast('Could not read the PDF from storage'); return; }
+  catch(e){ toast('Could not read the PDF from storage ('+driveErrorDetail(e)+')'); return; }
   if(!rec){ toast('PDF not found on this device or in Drive'); return; }
   const file = new File([rec.blob], n.pdfName||'notation.pdf', {type:'application/pdf'});
   let shared = false;
@@ -5504,13 +5634,30 @@ async function openNotationVersions(){
   });
 }
 $('#notVersionsBtn').addEventListener('click', openNotationVersions);
-$('#notPracticeSheetBtn').addEventListener('click', ()=>{
+$('#notPracticeSheetBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
-  printCtx = practiceSheetHTML(n);
-  $('#invTitle').textContent = 'Practice sheet — '+(n.title||'(untitled)');
-  $('#invBody').innerHTML = '<div class="docwrap" style="max-height:55vh;overflow:auto">'+printCtx+'</div>';
-  closeModal('m-notation-view');
-  openModal('m-invoice');
+  if(!n.hasPdf){
+    // No PDF attached — exactly as before, nothing changes here.
+    printCtx = practiceSheetHTML(n);
+    $('#invTitle').textContent = 'Practice sheet — '+(n.title||'(untitled)');
+    $('#invBody').innerHTML = '<div class="docwrap" style="max-height:55vh;overflow:auto">'+printCtx+'</div>';
+    closeModal('m-notation-view');
+    openModal('m-invoice');
+    return;
+  }
+  if(!window.PDFLib){ toast('Still loading the PDF engine — try again in a second'); return; }
+  toast('Building combined practice sheet…');
+  try{
+    const bytes = await buildCombinedPracticeSheetBytes(n);
+    const blob = new Blob([bytes], {type:'application/pdf'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = (n.title||'practice-sheet').replace(/[^\w\-]+/g,'_')+'.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Downloaded — cover and notation PDF combined into one file');
+  }catch(e){
+    toast('Could not build the combined practice sheet ('+((e&&e.message)||e)+')');
+  }
 });
 $('#notEditBtn').addEventListener('click', ()=>{
   const id = viewingNotationId;
@@ -5637,9 +5784,61 @@ async function toggleRecordingPlayback(id){
     await recSharedAudio.play();
     recPlayingId = id;
     renderRecordingsList();
-  }catch(e){ toast('Could not play that recording'); }
+  }catch(e){ toast('Could not play that recording ('+driveErrorDetail(e)+')'); }
+}
+// Shared so upload, share, and anywhere else that names a recording file all agree.
+function audioExtFromType(type){
+  const t = (type||'').toLowerCase();
+  if(t.includes('wav')) return 'wav';
+  if(t.includes('mp4') || t.includes('m4a') || t.includes('aac')) return 'm4a';
+  return 'webm';
 }
 let recWaveCtx = null;
+// Turns a decoded AudioBuffer into a plain 16-bit PCM WAV Blob — no compression library needed,
+// just a standard WAV header followed by raw samples. Uncompressed means bigger files than the
+// original WebM/Opus, but WAV is understood by absolutely every browser/OS, unlike WebM which
+// Safari (and therefore every browser on iPhone/iPad, since they all use WebKit under the hood)
+// has never been able to decode at all — this is what makes recordings actually playable and
+// shareable everywhere, not just on the device that made them.
+function pcmToWavBlob(audioBuffer){
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const numFrames = audioBuffer.length;
+  const interleaved = new Float32Array(numFrames*numChannels);
+  for(let ch=0; ch<numChannels; ch++){
+    const data = audioBuffer.getChannelData(ch);
+    for(let i=0;i<numFrames;i++) interleaved[i*numChannels+ch] = data[i];
+  }
+  const bytesPerSample = 2, blockAlign = numChannels*bytesPerSample, dataSize = interleaved.length*bytesPerSample;
+  const buf = new ArrayBuffer(44+dataSize);
+  const view = new DataView(buf);
+  const writeStr = (offset, str) => { for(let i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i)); };
+  writeStr(0,'RIFF'); view.setUint32(4, 36+dataSize, true); writeStr(8,'WAVE');
+  writeStr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,numChannels,true); view.setUint32(24,sampleRate,true);
+  view.setUint32(28,sampleRate*blockAlign,true); view.setUint16(32,blockAlign,true); view.setUint16(34,16,true);
+  writeStr(36,'data'); view.setUint32(40,dataSize,true);
+  let offset = 44;
+  for(let i=0;i<interleaved.length;i++){
+    const s = Math.max(-1, Math.min(1, interleaved[i]));
+    view.setInt16(offset, s<0 ? s*0x8000 : s*0x7FFF, true);
+    offset += 2;
+  }
+  return new Blob([buf], {type:'audio/wav'});
+}
+// Decodes whatever format a blob is in (WebM/Opus, MP4/AAC, etc.) and re-encodes it as WAV.
+// This only works on a device that can actually decode the source format in the first place —
+// e.g. it can convert a WebM recording on the phone/laptop that made it, but not on an iPad,
+// since the iPad could never decode that WebM audio to begin with (that's the whole problem).
+// Returns null (rather than throwing) if decoding isn't possible here, so callers can fall back
+// gracefully — e.g. keep the original recording as-is, or ask the person to convert it on a
+// device that can.
+async function convertBlobToWav(blob){
+  if(!recWaveCtx) recWaveCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const arrayBuf = await blob.arrayBuffer();
+  const audioBuf = await recWaveCtx.decodeAudioData(arrayBuf);
+  return pcmToWavBlob(audioBuf);
+}
 const recWaveformCache = {}; // recording id -> already-computed peak array, so replaying doesn't re-decode
 async function drawRecordingWaveform(id, canvas){
   if(!canvas) return;
@@ -5861,13 +6060,25 @@ function stopRecording(){
   recStopTanpuraMix();
   if(recMixMicSrc){ try{ recMixMicSrc.disconnect(); }catch(e){} recMixMicSrc=null; }
 }
-function onRecordingStopped(){
+async function onRecordingStopped(){
   recDurationSec = Math.round((Date.now()-recStartMs)/1000);
   stopMicStream();
   const mime = (recRecorder && recRecorder.mimeType) || 'audio/webm';
-  recBlob = new Blob(recChunks, {type: mime});
+  const rawBlob = new Blob(recChunks, {type: mime});
   $('#recActiveBlock').style.display = 'none';
   $('#recReviewBlock').style.display = '';
+  $('#recCapSub').textContent = 'Processing…';
+  // Convert on this same device — the one that just recorded, so it can always decode its own
+  // output — into a universal WAV file. This is what makes the recording actually play and
+  // share correctly on every device later, iPad included, instead of only the device that made
+  // it. If conversion fails for any reason, we fall back to the raw recording rather than block
+  // saving altogether — imperfect cross-device playback beats losing the recording entirely.
+  try{
+    recBlob = await convertBlobToWav(rawBlob);
+  }catch(e){
+    recBlob = rawBlob;
+    toast('Could not convert this recording for universal playback — saved in its original format');
+  }
   $('#recCapSub').textContent = 'Listen back, then keep it or record again.';
   $('#recPreviewAudio').src = URL.createObjectURL(recBlob);
   const now = new Date();
@@ -5906,7 +6117,7 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
       $('#recUploadProgress').style.display = '';
       $('#recUploadFill').style.width = '0%';
       $('#recUploadStatus').textContent = 'Uploading to Drive…';
-      const ext = (recBlob.type||'').includes('mp4') ? 'm4a' : 'webm';
+      const ext = audioExtFromType(recBlob.type);
       try{
         const driveFile = await driveUploadResumable(recBlob, (title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, recBlob.type||'audio/webm', 'Recordings', (frac)=>{
           $('#recUploadFill').style.width = Math.round(frac*100)+'%';
@@ -5945,9 +6156,18 @@ async function openRecordingView(id){
   $('#recEditNotes').value = r.notes || '';
   refreshNotationDatalists();
   $('#recViewAudio').src = '';
+  $('#recFixFormatBtn').style.display = 'none';
+  $('#recFormatNote').style.display = 'none';
   try{
     const rec = await mediaGetWithDriveFallback('recording-audio:'+id, r.driveFileId);
-    if(rec) $('#recViewAudio').src = URL.createObjectURL(rec.blob);
+    if(rec){
+      $('#recViewAudio').src = URL.createObjectURL(rec.blob);
+      if(audioExtFromType(rec.blob.type) !== 'wav'){
+        $('#recFixFormatBtn').style.display = '';
+        $('#recFormatNote').style.display = '';
+        $('#recFormatNote').textContent = 'This was recorded before universal playback support — it may not play or share correctly on some devices (e.g. iPhone/iPad). Fix it on this device if this is where it was recorded.';
+      }
+    }
   }catch(e){}
   studentOptions($('#recMsgStudent'), false);
   $('#recMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
@@ -5958,11 +6178,15 @@ $('#recSaveBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   const title = $('#recEditTitle').value.trim();
   if(!title){ toast('Title is required'); return; }
+  const titleChanged = title !== r.title;
   r.title = title; r.raga = $('#recEditRaga').value.trim(); r.tala = $('#recEditTala').value.trim();
   r.composer = $('#recEditComposer').value.trim(); r.notes = $('#recEditNotes').value.trim(); r.updatedAt = Date.now();
   closeModal('m-recording-view');
   toast('Recording updated');
   renderAll();
+  // Best-effort, doesn't block or delay the save above — keeps Drive's filename matching
+  // the title instead of quietly drifting out of sync with it, the way it used to.
+  if(titleChanged && gToken && r.driveFileId) driveRenameFileToMatchTitle(r.driveFileId, title, 'wav');
 });
 $('#recMsgBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
@@ -5979,9 +6203,9 @@ $('#recShareBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   let rec;
   try{ rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); }
-  catch(e){ toast('Could not read the recording from storage'); return; }
+  catch(e){ toast('Could not read the recording from storage ('+driveErrorDetail(e)+')'); return; }
   if(!rec){ toast('Recording not found on this device or in Drive'); return; }
-  const ext = (rec.blob.type||'').includes('mp4') ? 'm4a' : 'webm';
+  const ext = audioExtFromType(rec.blob.type);
   const file = new File([rec.blob], (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, {type: rec.blob.type||'audio/webm'});
   let shared = false;
   if(navigator.canShare && navigator.canShare({files:[file]})){
@@ -5996,6 +6220,33 @@ $('#recShareBtn').addEventListener('click', async ()=>{
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
       toast('Downloaded — attach it from your files');
     }catch(e){ toast('Could not save this recording — try again'); }
+  }
+});
+$('#recFixFormatBtn').addEventListener('click', async ()=>{
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
+  $('#recFixFormatBtn').disabled = true;
+  $('#recFormatNote').textContent = 'Converting…';
+  try{
+    const rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId);
+    if(!rec) throw new Error('This recording is not available on this device or in Drive');
+    let wavBlob;
+    try{ wavBlob = await convertBlobToWav(rec.blob); }
+    catch(e){ throw new Error('This device could not decode the original recording — try this fix from the device (or a laptop) it was recorded on instead'); }
+    await mediaPut('recording-audio:'+r.id, wavBlob, {mimeType:wavBlob.type, size:wavBlob.size});
+    if(gToken && r.driveFileId){
+      try{
+        const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.wav';
+        await driveUploadResumable(wavBlob, newName, 'audio/wav', 'Recordings', null, r.driveFileId);
+      }catch(e){ toast('Converted on this device, but could not update Drive ('+driveErrorDetail(e)+') — try again when back online'); }
+    }
+    $('#recViewAudio').src = URL.createObjectURL(wavBlob);
+    $('#recFixFormatBtn').style.display = 'none';
+    $('#recFormatNote').style.display = 'none';
+    toast('Fixed — this recording should now play and share correctly on every device');
+  }catch(e){
+    $('#recFormatNote').textContent = (e && e.message) || 'Could not convert this recording';
+  } finally {
+    $('#recFixFormatBtn').disabled = false;
   }
 });
 $('#recDeleteBtn').addEventListener('click', async ()=>{
@@ -6584,10 +6835,10 @@ async function openTalaVideoView(id){
   $('#talaVideoViewSub').textContent = fmtDuration(v.durationSec)+' · recorded '+fmtRecDate(v.createdAt);
   $('#talaVideoPlayer').src = '';
   openModal('m-tala-video-view');
-  let rec;
-  try{ rec = await mediaGetWithDriveFallback('tala-video:'+v.id, v.driveFileId); }catch(e){ rec = null; }
+  let rec, err;
+  try{ rec = await mediaGetWithDriveFallback('tala-video:'+v.id, v.driveFileId); }catch(e){ rec = null; err = e; }
   if(rec) $('#talaVideoPlayer').src = URL.createObjectURL(rec.blob);
-  else toast('Video not found on this device or in Drive');
+  else toast('Video not found on this device or in Drive'+(err ? ' ('+driveErrorDetail(err)+')' : ''));
 }
 $('#talaVideoTitleInput').addEventListener('input', ()=>{
   const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
@@ -6596,11 +6847,18 @@ $('#talaVideoTitleInput').addEventListener('input', ()=>{
   persist();
   renderTalaVideoList();
 });
+$('#talaVideoTitleInput').addEventListener('change', ()=>{
+  // Fires once when you're done editing (on blur), not per keystroke — best-effort, keeps
+  // Drive's filename matching the title instead of it quietly staying stuck at whatever the
+  // title was when this video was first uploaded.
+  const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
+  if(gToken && v.driveFileId) driveRenameFileToMatchTitle(v.driveFileId, v.title, 'webm');
+});
 $('#talaVideoShareBtn').addEventListener('click', async ()=>{
   const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
   let rec;
   try{ rec = await mediaGetWithDriveFallback('tala-video:'+v.id, v.driveFileId); }
-  catch(e){ toast('Could not read the video from storage'); return; }
+  catch(e){ toast('Could not read the video from storage ('+driveErrorDetail(e)+')'); return; }
   if(!rec){ toast('Video not found on this device or in Drive'); return; }
   const file = new File([rec.blob], (v.title||'tala-video').replace(/[^\w\-]+/g,'_')+'.webm', {type: rec.blob.type||'video/webm'});
   let shared = false;

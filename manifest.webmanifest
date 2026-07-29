@@ -1,6 +1,6 @@
 {
   "name": "RAGA Music Classes",
-  "short_name": "RAGA",
+  "short_name": "RAGA Classes",
   "description": "Carnatic vocal music teaching studio — students, billing, Tanpura, Tala, and recordings.",
   "start_url": "./index.html",
   "scope": "./",
