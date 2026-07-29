@@ -1060,6 +1060,9 @@
           </div>
           <div class="not-toolbar" style="padding-top:10px">
             <select id="notFilterType"><option value="">All types</option></select>
+            <select id="notFilterRaga"><option value="">All ragas</option></select>
+            <select id="notFilterTala"><option value="">All talas</option></select>
+            <select id="notFilterComposer"><option value="">All composers</option></select>
           </div>
           <div class="not-list" id="notationList"></div>
           <div class="empty" id="notationEmpty" style="display:none">
@@ -5430,7 +5433,7 @@ $$('.studio-pill').forEach(b=>b.addEventListener('click', ()=>showStudioPane(b.d
    NOTATION LIBRARY
    ===================================================== */
 const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
-let notSearchQuery = '', notTypeFilter = '', editingNotationId = null, viewingNotationId = null;
+let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', editingNotationId = null, viewingNotationId = null;
 
 function waDigits(mobile){
   const d = String(mobile||'').replace(/\D/g,'');
@@ -5654,9 +5657,20 @@ function renderNotationFilters(){
   sel.innerHTML = '<option value="">All types</option>' + ordered.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
   if(ordered.includes(current)) sel.value = current;
   else notTypeFilter = '';
+  const fill=(id,field,varSet)=>{
+    const s = $('#'+id); if(!s) return;
+    const cur = s.value;
+    const vals = Array.from(new Set((S.notations||[]).map(n=>n[field]).filter(Boolean))).sort();
+    s.innerHTML = '<option value="">All '+varSet+'</option>' + vals.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
+    if(vals.includes(cur)) s.value = cur;
+  };
+  fill('notFilterRaga','raga','ragas'); fill('notFilterTala','tala','talas'); fill('notFilterComposer','composer','composers');
 }
 function matchesNotationFilters(n){
   if(notTypeFilter && n.type!==notTypeFilter) return false;
+  if(notRagaFilter && n.raga!==notRagaFilter) return false;
+  if(notTalaFilter && n.tala!==notTalaFilter) return false;
+  if(notComposerFilter && n.composer!==notComposerFilter) return false;
   if(notSearchQuery){
     const q = notSearchQuery.toLowerCase();
     const hay = [n.title,n.raga,n.tala,n.composer,n.deity].filter(Boolean).join(' ').toLowerCase();
@@ -6009,6 +6023,9 @@ $('#notDeleteBtn').addEventListener('click', async ()=>{
 });
 $('#notSearch').addEventListener('input', e=>{ notSearchQuery = e.target.value.trim(); renderNotationList(); });
 $('#notFilterType').addEventListener('change', e=>{ notTypeFilter = e.target.value; renderNotationList(); });
+$('#notFilterRaga').addEventListener('change', e=>{ notRagaFilter = e.target.value; renderNotationList(); });
+$('#notFilterTala').addEventListener('change', e=>{ notTalaFilter = e.target.value; renderNotationList(); });
+$('#notFilterComposer').addEventListener('change', e=>{ notComposerFilter = e.target.value; renderNotationList(); });
 
 /* =====================================================
    RECORDINGS LIBRARY
