@@ -26,6 +26,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
     --paper:#F4F7FB; --card:#FFFFFF; --ink:#0E1420; --muted:#5B6675;
@@ -134,6 +135,8 @@
   /* ---------- cards / panels ---------- */
   .stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:26px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px;box-shadow:var(--shadow);min-width:0}
+  .stat.clickable{cursor:pointer;transition:border-color .15s,transform .15s}
+  .stat.clickable:hover{border-color:var(--gold);transform:translateY(-1px)}
   .stat .label{overflow-wrap:break-word}
   .stat .label{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
   .stat .value{font-size:1.75rem;margin-top:8px;line-height:1}
@@ -676,11 +679,11 @@
     <section class="view active" id="view-dashboard">
       <img id="bannerImg" class="banner" alt="RAGA Music Classes">
       <div class="stat-row">
-        <div class="stat"><div class="label">Active students</div><div class="value num" id="statStudents">0</div><div class="sub"><span class="dot" style="background:var(--green)"></span><b id="statPersonal">0</b> Personal · <span class="dot" style="background:var(--purple)"></span><b id="statRaga">0</b> RAGA</div></div>
-        <div class="stat money"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
-        <div class="stat alert"><div class="label">PERSONAL outstanding</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
-        <div class="stat" id="statRagaCard"><div class="label">RAGA withdrawable</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
-        <div class="stat"><div class="label">Total receivable</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
+        <div class="stat clickable" data-goto="students"><div class="label">Active students</div><div class="value num" id="statStudents">0</div><div class="sub"><span class="dot" style="background:var(--green)"></span><b id="statPersonal">0</b> Personal · <span class="dot" style="background:var(--purple)"></span><b id="statRaga">0</b> RAGA</div></div>
+        <div class="stat money clickable" data-goto="earnings"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
+        <div class="stat alert clickable" data-goto="personal"><div class="label">PERSONAL outstanding</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
+        <div class="stat clickable" id="statRagaCard" data-goto="raga"><div class="label">RAGA withdrawable</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
+        <div class="stat clickable" data-goto="earnings"><div class="label">Total receivable</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
       </div>
 
       <div class="panel">
@@ -1055,7 +1058,9 @@
             <input id="notSearch" class="search-input" placeholder="Search title, raga, tala, composer…" style="flex:1 1 220px;min-width:0">
             <button class="btn gold" id="btnAddNotation">+ Add composition</button>
           </div>
-          <div class="not-chiprow" id="notTypeChips"></div>
+          <div class="not-toolbar" style="padding-top:10px">
+            <select id="notFilterType"><option value="">All types</option></select>
+          </div>
           <div class="not-list" id="notationList"></div>
           <div class="empty" id="notationEmpty" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:34px;height:34px;margin-bottom:8px"><path d="M7 3h10a2 2 0 0 1 2 2v16l-4-2-3 2-3-2-4 2V5a2 2 0 0 1 2-2z"/><path d="M9 8h6M9 12h4"/></svg>
@@ -1075,6 +1080,7 @@
             <button class="btn gold" id="btnNewRecording">&#127908; New recording</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
+            <select id="recFilterType"><option value="">All types</option></select>
             <select id="recFilterRaga"><option value="">All ragas</option></select>
             <select id="recFilterTala"><option value="">All talas</option></select>
             <select id="recFilterComposer"><option value="">All composers</option></select>
@@ -1084,7 +1090,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:34px;height:34px;margin-bottom:8px"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M9 22h6"/></svg>
             <div id="recordingsEmptyMsg">No recordings yet — tap New recording to make your first one.</div>
           </div>
-          <div class="note">Saved to your Google Drive — available on every device you sign in on.</div>
+          <div class="note">Saved to your Google Drive — available on every device you sign in on. <span id="recDriveStorageNote" class="tiny" style="color:var(--muted)"></span></div>
         </div>
       </div>
 
@@ -1311,6 +1317,7 @@
       <div class="field span2"><label for="notType">Type</label>
         <select id="notType">
           <option value="">— select —</option>
+          <option>Varase &amp; Alankaras</option>
           <option>Kriti</option><option>Varnam</option><option>Geetham</option><option>Swarajathi</option>
           <option>Padam</option><option>Javali</option><option>Thillana</option><option>Devarnama</option>
           <option>Abhangam</option><option value="__other">Other</option>
@@ -1356,6 +1363,7 @@
         <button class="btn" id="notSharePdfBtn" style="display:none">Share PDF</button>
         <button class="btn" id="notVersionsBtn" style="display:none">Version history</button>
         <button class="btn gold" id="notPracticeSheetBtn">Print practice sheet</button>
+        <button class="btn gold" id="notStyledSheetBtn" style="display:none">Download styled practice sheet</button>
       </div>
       <div class="right" style="display:flex;gap:8px">
         <button class="btn" id="notEditBtn">Edit</button>
@@ -1372,6 +1380,15 @@
     <div class="sub">Restoring an older version makes it current again — it doesn't erase anything, Drive just keeps building on this same history.</div>
     <div id="notVersionsList" style="margin:12px 0;max-height:340px;overflow-y:auto"></div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-notation-versions">Close</button></div></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-recording-versions">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recVersionsTitle">
+    <h3 id="recVersionsTitle">Version history</h3>
+    <div class="sub">Restoring an older version makes it current again — it doesn't erase anything, Drive just keeps building on this same history.</div>
+    <div id="recVersionsList" style="margin:12px 0;max-height:340px;overflow-y:auto"></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-recording-versions">Close</button></div></div>
   </div>
 </div>
 
@@ -1443,6 +1460,16 @@
       <div class="field"><label for="recEditRaga">Raga</label><input id="recEditRaga" list="dlRaga" placeholder="e.g. Hamsadhwani"></div>
       <div class="field"><label for="recEditTala">Tala</label><input id="recEditTala" list="dlTala" placeholder="e.g. Adi"></div>
       <div class="field span2"><label for="recEditComposer">Composer</label><input id="recEditComposer" list="dlComposer" placeholder="e.g. Muthuswami Dikshitar"></div>
+      <div class="field span2"><label for="recEditType">Type</label>
+        <select id="recEditType">
+          <option value="">— select —</option>
+          <option>Varase &amp; Alankaras</option>
+          <option>Kriti</option><option>Varnam</option><option>Geetham</option><option>Swarajathi</option>
+          <option>Padam</option><option>Javali</option><option>Thillana</option><option>Devarnama</option>
+          <option>Abhangam</option><option value="__other">Other</option>
+        </select>
+        <input id="recEditTypeOther" placeholder="Type it in" style="display:none;margin-top:6px">
+      </div>
       <div class="field span2"><label for="recEditNotes">Notes (optional)</label><textarea id="recEditNotes" placeholder="e.g. which students this suits" style="min-height:64px"></textarea></div>
     </div>
     <div class="modal-foot" style="flex-wrap:wrap;gap:10px">
@@ -1451,6 +1478,7 @@
         <button class="btn" id="recMsgBtn">Message student</button>
         <button class="btn" id="recShareBtn">Share audio</button>
         <button class="btn" id="recFixFormatBtn" style="display:none">Fix playback on other devices</button>
+        <button class="btn" id="recVersionsBtn" style="display:none">Version history</button>
       </div>
       <div class="sub" id="recFormatNote" style="display:none;width:100%"></div>
       <div class="right" style="display:flex;gap:8px">
@@ -2818,14 +2846,23 @@ function renderUpcoming(){
     const prim=sById(c.studentIds[0]);
     const when = c.date===TODAY?'Today':(c.date===TOMORROW?'Tomorrow':fmtD(c.date));
     const tr=document.createElement('tr');
+    tr.style.cursor='pointer';
+    tr.title='View this week on the calendar';
     tr.innerHTML='<td><b>'+when+'</b> <span class="muted num">'+fmtTime12(c.time)+'</span></td>'+
       '<td>'+esc(sessionNames(c))+(c.studentIds.length>1?' <span class="muted">(batch)</span>':'')+'</td>'+
       '<td><span class="badge '+(prim&&prim.cat==='RAGA'?'raga':'personal')+'">'+(prim?prim.cat:'—')+'</span></td>'+
       '<td><span class="badge '+(c.mode==='Online'?'online':'offline')+'">'+c.mode+'</span></td>'+
       '<td class="r"><button class="btn small" data-manage="'+c.cid+'">Manage</button></td>';
+    tr.addEventListener('click', e=>{
+      if(e.target.closest('[data-manage]')) return; // Manage keeps its own direct action
+      weekOffset = weekOffsetForDate(c.date);
+      calMode = 'week';
+      go('calendar');
+      renderCalendar();
+    });
     tb.appendChild(tr);
   });
-  tb.querySelectorAll('[data-manage]').forEach(b=>b.addEventListener('click',()=>openClassModal(b.dataset.manage)));
+  tb.querySelectorAll('[data-manage]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); openClassModal(b.dataset.manage); }));
 }
 function renderRecent(){
   const tb=$('#recentTable tbody'); tb.innerHTML='';
@@ -2970,8 +3007,13 @@ function renderPending(){
   $('#pendingEmpty').style.display = rows.length?'none':'';
   $('#pendingTable').style.display = rows.length?'':'none';
   rows.forEach(({s,o})=>{
-    tb.insertAdjacentHTML('beforeend','<tr><td>'+esc(s.name)+'<div class="muted" style="font-size:.75rem">'+s.level+'</div></td>'+
-      '<td class="r num '+(o>0?'amount-due':'amount-ok')+'">'+(o>0?RUPEE.format(o):(o<0?RUPEE.format(-o)+' advance':'Settled'))+'</td></tr>');
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.title = "View "+s.name+"'s profile";
+    tr.innerHTML = '<td>'+esc(s.name)+'<div class="muted" style="font-size:.75rem">'+s.level+'</div></td>'+
+      '<td class="r num '+(o>0?'amount-due':'amount-ok')+'">'+(o>0?RUPEE.format(o):(o<0?RUPEE.format(-o)+' advance':'Settled'))+'</td>';
+    tr.addEventListener('click', ()=>openProfile(s.id));
+    tb.appendChild(tr);
   });
 }
 
@@ -3006,6 +3048,11 @@ function mondayOf(offset){
   const shift = t.getDay()===0 ? -6 : 1-t.getDay();
   t.setDate(t.getDate()+shift+offset*7);
   return dstr(t);
+}
+function weekOffsetForDate(dateStr){
+  // which week (relative to this week=0) a given date falls in, on the calendar's own Monday-start weeks
+  const days = Math.round((parseD(dateStr) - parseD(mondayOf(0))) / 86400000);
+  return Math.floor(days/7);
 }
 function renderCalendar(){
   renderCalLegend();
@@ -4297,7 +4344,7 @@ function initTokenClient(){
     callback: resp=>{
       silentRefreshInFlight=false;
       if(resp && resp.access_token){
-        gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); driveEnsureFileStorageFolders();
+        gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); driveEnsureFileStorageFolders(); flushPendingDriveDeletes();
         tokenWaiters.forEach(w=>w.resolve(true)); tokenWaiters=[];
       } else {
         setDriveStatus('Sign-in failed — tap to retry', 'var(--red)');
@@ -4403,20 +4450,31 @@ async function driveFindOrCreateFolder(name, parentId){
 // Safe to call every time you connect — finds the existing folders on every call after
 // the first, rather than creating duplicates. Silently does nothing user-visible; the
 // only trace is the folders actually existing in Drive.
-async function driveEnsureFileStorageFolders(){
-  try{
-    const rootId = await driveFindOrCreateFolder('RAGA Music Classes');
-    const folders = { root: rootId };
-    for(const sub of RAGA_DRIVE_SUBFOLDERS){
-      folders[sub] = await driveFindOrCreateFolder(sub, rootId);
+// If two uploads kick off close together (e.g. right after first connecting Drive, before
+// folders are cached yet), both used to independently check "does it exist?", both get "no",
+// and both create it — leaving duplicate folders in Drive. Memoizing the in-flight setup so
+// every concurrent caller awaits the exact same run fixes that at the source.
+let driveFolderSetupPromise = null;
+function driveEnsureFileStorageFolders(){
+  if(driveFolderSetupPromise) return driveFolderSetupPromise;
+  driveFolderSetupPromise = (async ()=>{
+    try{
+      const rootId = await driveFindOrCreateFolder('RAGA Music Classes');
+      const folders = { root: rootId };
+      for(const sub of RAGA_DRIVE_SUBFOLDERS){
+        folders[sub] = await driveFindOrCreateFolder(sub, rootId);
+      }
+      S.meta.driveFolders = folders;
+      persist();
+      return folders;
+    }catch(e){
+      toast('Could not set up Drive folders ('+driveErrorDetail(e)+')');
+      return null;
+    } finally {
+      driveFolderSetupPromise = null; // let a later call try again fresh, e.g. after a transient failure
     }
-    S.meta.driveFolders = folders;
-    persist();
-    return folders;
-  }catch(e){
-    toast('Could not set up Drive folders ('+driveErrorDetail(e)+')');
-    return null;
-  }
+  })();
+  return driveFolderSetupPromise;
 }
 // Folders are normally set up right after sign-in, but a fresh device or a brand-new
 // account might reach an upload before that's finished — this fills the gap on demand.
@@ -4461,21 +4519,77 @@ function driveUploadResumable(blob, filename, mimeType, folderName, onProgress, 
         if(!sessionUrl) throw new Error('no upload session returned');
       }catch(e){ reject(e); return; }
 
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', sessionUrl, true);
-      xhr.setRequestHeader('Content-Type', mimeType || 'application/octet-stream');
-      xhr.setRequestHeader('Authorization', 'Bearer '+gToken);
-      xhr.upload.onprogress = (e) => { if(onProgress && e.lengthComputable) onProgress(e.loaded/e.total); };
-      xhr.onload = () => {
-        if(xhr.status>=200 && xhr.status<300){
-          try{ resolve(JSON.parse(xhr.responseText)); }
-          catch(e){ reject(new Error('could not parse Drive response')); }
-        } else {
-          reject(new Error('upload failed — status '+xhr.status));
+      const total = blob.size;
+
+      // Sends everything from startByte onward. On a genuine network drop this can fail
+      // partway — that used to mean starting over from byte 0. Drive's resumable session
+      // (sessionUrl) actually supports continuing from wherever it left off; this is what
+      // makes that real rather than theoretical.
+      function putFrom(startByte){
+        return new Promise((res, rej) => {
+          const slice = startByte>0 ? blob.slice(startByte) : blob;
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', sessionUrl, true);
+          xhr.setRequestHeader('Content-Type', mimeType || 'application/octet-stream');
+          xhr.setRequestHeader('Authorization', 'Bearer '+gToken);
+          xhr.setRequestHeader('Content-Range', 'bytes '+startByte+'-'+(total-1)+'/'+total);
+          // Two minutes with zero upload progress means genuinely stuck, not just slow mobile
+          // data — before this, a stalled connection could leave the progress bar sitting
+          // there forever with no way to know it wasn't ever going to finish.
+          xhr.timeout = 120000;
+          xhr.upload.onprogress = (e) => { if(onProgress && e.lengthComputable) onProgress((startByte+e.loaded)/total); };
+          xhr.onload = () => {
+            if(xhr.status>=200 && xhr.status<300){
+              try{ res({done:true, data: JSON.parse(xhr.responseText)}); }
+              catch(e){ rej(new Error('could not parse Drive response')); }
+            } else if(xhr.status===308){
+              res({done:false}); // asked to continue — shouldn't normally happen sending it all in one go, but handled just in case
+            } else {
+              rej(new Error('upload failed — status '+xhr.status));
+            }
+          };
+          xhr.onerror = () => rej(new Error('upload failed — network error'));
+          xhr.ontimeout = () => rej(new Error('upload stalled — check your connection'));
+          xhr.send(slice);
+        });
+      }
+      // Asks Drive how many bytes it actually received before the failure, so the retry
+      // only sends what's missing instead of the whole file again.
+      function queryUploadedBytes(){
+        return new Promise((res) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', sessionUrl, true);
+          xhr.setRequestHeader('Authorization', 'Bearer '+gToken);
+          xhr.setRequestHeader('Content-Range', 'bytes */'+total);
+          xhr.timeout = 20000;
+          xhr.onload = () => {
+            if(xhr.status===308){
+              const range = xhr.getResponseHeader('Range');
+              res({bytes: range ? parseInt(range.split('-')[1],10)+1 : 0});
+            } else if(xhr.status>=200 && xhr.status<300){
+              try{ res({complete:true, data: JSON.parse(xhr.responseText)}); }catch(e){ res({bytes:0}); }
+            } else res({bytes:0});
+          };
+          xhr.onerror = () => res({bytes:0});
+          xhr.ontimeout = () => res({bytes:0});
+          xhr.send();
+        });
+      }
+
+      const MAX_ATTEMPTS = 4;
+      let startByte = 0;
+      for(let attempt=1; attempt<=MAX_ATTEMPTS; attempt++){
+        try{
+          const result = await putFrom(startByte);
+          if(result.done){ resolve(result.data); return; }
+        }catch(e){
+          if(attempt===MAX_ATTEMPTS){ reject(e); return; }
+          const status = await queryUploadedBytes();
+          if(status.complete){ resolve(status.data); return; }
+          startByte = status.bytes || 0;
+          await new Promise(r=>setTimeout(r, 800*attempt));
         }
-      };
-      xhr.onerror = () => reject(new Error('upload failed — network error'));
-      xhr.send(blob);
+      }
     })();
   });
 }
@@ -4510,12 +4624,55 @@ async function driveDownloadFile(fileId){
   const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media');
   return await r.blob();
 }
-// Best-effort — used alongside a local delete, never blocks it. If this fails (offline,
-// already gone, etc.) the local record still gets removed either way; worst case is a
-// harmless leftover file sitting in Drive rather than a delete that silently fails outright.
+// Google Drive is allowed to quietly prune old revisions over time unless a revision is
+// explicitly pinned — otherwise "Version history" isn't the permanent safety net it looks
+// like. Called right after any replace-content upload, to protect the version that upload
+// just created, before it can ever be superseded by a later edit.
+// Tradeoff worth knowing: pinned revisions count against Drive storage permanently, same as
+// any other file — replacing the same recording/notation many times means each pinned past
+// version stays taking up space, rather than aging out on its own.
+async function driveKeepLatestRevisionForever(fileId){
+  try{
+    const revisions = await driveListRevisions(fileId);
+    if(!revisions.length) return;
+    await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'/revisions/'+revisions[0].id, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json; charset=UTF-8'},
+      body: JSON.stringify({keepForever: true})
+    });
+  }catch(e){ /* best-effort — a revision Google eventually prunes isn't worth interrupting anything over */ }
+}
+// Deleting a file used to be pure best-effort: if it failed (offline, not signed in on this
+// device, a transient error), the file's ID was discarded right along with the local entry —
+// meaning it could never be retried, and the file would sit in Drive forever with nothing in
+// the app aware it still existed. Now, any failure gets queued and retried the next time Drive
+// is actually reachable, so a delete either succeeds or is remembered until it can.
+function queuePendingDriveDelete(fileId){
+  if(!fileId) return;
+  S.meta.pendingDriveDeletes = S.meta.pendingDriveDeletes || [];
+  if(!S.meta.pendingDriveDeletes.includes(fileId)) S.meta.pendingDriveDeletes.push(fileId);
+  persist();
+}
 async function driveDeleteFile(fileId){
-  if(!fileId || !gToken) return;
-  try{ await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId, {method:'DELETE'}); }catch(e){ /* ignore — see note above */ }
+  if(!fileId) return;
+  if(!gToken){ queuePendingDriveDelete(fileId); return; }
+  try{
+    await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId, {method:'DELETE'});
+  }catch(e){
+    // A 404 means it's already gone (maybe a previous attempt actually succeeded, or it was
+    // removed by hand in Drive) — that's a successful outcome, not a failure to retry.
+    if(!/drive http 404/.test((e&&e.message)||'')) queuePendingDriveDelete(fileId);
+  }
+}
+async function flushPendingDriveDeletes(){
+  if(!gToken || !S.meta.pendingDriveDeletes || !S.meta.pendingDriveDeletes.length) return;
+  const remaining = [];
+  for(const fileId of S.meta.pendingDriveDeletes){
+    try{ await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId, {method:'DELETE'}); }
+    catch(e){ if(!/drive http 404/.test((e&&e.message)||'')) remaining.push(fileId); }
+  }
+  S.meta.pendingDriveDeletes = remaining;
+  persist();
 }
 // Cache-first read: instant if already cached locally (the common case — most files are
 // opened on the same device they were created on); falls back to Drive only on a cache miss
@@ -4616,6 +4773,7 @@ async function pushToDrive(){
     persist();
     lastPushedJSON=JSON.stringify(S);
     setDriveStatus('Synced just now');
+    if(S.meta.pendingDriveDeletes && S.meta.pendingDriveDeletes.length) flushPendingDriveDeletes();
     if(S.meta.lastSnapshotDate!==TODAY){
       try{
         await driveUpload(null, body, 'raga-snapshot-'+TODAY+'.json');
@@ -5077,14 +5235,39 @@ function tpScheduler(){
   tpRunScheduler(state, tpCtx, tpMasterGain, { volElId: '#tpVol' });
   tpNextTime = state.nextTime; tpNextStringIdx = state.nextStringIdx;
 }
+// Makes a recording loop with no audible seam. Native looping just jumps from the last sample
+// straight back to the first — if those two moments in the original recording weren't already a
+// perfect match, that jump is exactly the "cut" you hear on every repeat. This blends a short
+// window (equal-power crossfade, gentler than a straight-line fade) from the very end of the
+// recording into the very start, so the actual loop point moves to somewhere the tanpura was
+// already playing continuously — nothing artificial to hear there at all. Costs a fraction of a
+// second off the loop length (the blended window is shared rather than doubled), which is
+// inaudible on a continuous drone.
+function makeSeamlessLoopBuffer(ctx, buffer, crossfadeSec){
+  const xfSamples = Math.min(Math.floor(crossfadeSec * buffer.sampleRate), Math.floor(buffer.length/4));
+  if(xfSamples <= 0) return buffer;
+  const newLength = buffer.length - xfSamples;
+  const out = ctx.createBuffer(buffer.numberOfChannels, newLength, buffer.sampleRate);
+  for(let ch=0; ch<buffer.numberOfChannels; ch++){
+    const src = buffer.getChannelData(ch);
+    const dst = out.getChannelData(ch);
+    for(let i=0;i<xfSamples;i++){
+      const t = i/xfSamples;
+      const fadeIn = Math.sin(t*Math.PI/2), fadeOut = Math.cos(t*Math.PI/2);
+      dst[i] = src[i]*fadeIn + src[buffer.length-xfSamples+i]*fadeOut;
+    }
+    for(let i=xfSamples;i<newLength;i++) dst[i] = src[i];
+  }
+  return out;
+}
 async function tpEnsureStudioLoaded(){
   if(tpStudioLoading) return;
   if(tpStudioBufPa && tpStudioBufMa) return;
   if(!tpCtx) tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
   tpStudioLoading = true;
-  try{ if(!tpStudioBufPa) tpStudioBufPa = await talaDecodeAudioDataCompat(tpCtx, talaDataURItoArrayBuffer(TP_STUDIO_C_PA)); }
+  try{ if(!tpStudioBufPa){ const raw = await talaDecodeAudioDataCompat(tpCtx, talaDataURItoArrayBuffer(TP_STUDIO_C_PA)); tpStudioBufPa = makeSeamlessLoopBuffer(tpCtx, raw, 0.2); } }
   catch(e){ /* leave null — callers fall back to synthesized honestly */ }
-  try{ if(!tpStudioBufMa) tpStudioBufMa = await talaDecodeAudioDataCompat(tpCtx, talaDataURItoArrayBuffer(TP_STUDIO_C_MA)); }
+  try{ if(!tpStudioBufMa){ const raw = await talaDecodeAudioDataCompat(tpCtx, talaDataURItoArrayBuffer(TP_STUDIO_C_MA)); tpStudioBufMa = makeSeamlessLoopBuffer(tpCtx, raw, 0.2); } }
   catch(e){ /* leave null */ }
   tpStudioLoading = false;
 }
@@ -5246,7 +5429,7 @@ $$('.studio-pill').forEach(b=>b.addEventListener('click', ()=>showStudioPane(b.d
 /* =====================================================
    NOTATION LIBRARY
    ===================================================== */
-const NOTATION_TYPES = ['Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
+const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
 let notSearchQuery = '', notTypeFilter = '', editingNotationId = null, viewingNotationId = null;
 
 function waDigits(mobile){
@@ -5350,6 +5533,101 @@ async function buildCombinedPracticeSheetBytes(n){
   (await merged.copyPages(srcDoc, srcDoc.getPageIndices())).forEach(p=>merged.addPage(p));
   return await merged.save();
 }
+let pdfjsWorkerConfigured = false;
+// Turns each page of an existing PDF into a plain PNG image — this is what lets us place a
+// notation's own pages inside our own bannered template, since pdf-lib can copy pages verbatim
+// but can't draw a background behind content someone else's PDF already has.
+async function renderPdfPagesToPngs(arrayBuffer, scale){
+  if(!pdfjsWorkerConfigured){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsWorkerConfigured = true;
+  }
+  const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  const out = [];
+  for(let i=1;i<=pdf.numPages;i++){
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({scale});
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+    await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
+    const blob = await new Promise(res=>canvas.toBlob(res, 'image/png'));
+    out.push(new Uint8Array(await blob.arrayBuffer()));
+  }
+  return out;
+}
+// The fully-styled version: cream background + banner repeated on every single page — the cover
+// text pages AND every page of the notation itself (rendered as an image so it can sit inside our
+// template). One page of notation in, one bannered page out — nothing gets shrunk to fit together.
+async function buildStyledPracticeSheetBytes(n){
+  if(!window.pdfjsLib) throw new Error('PDF render engine still loading — try again in a second');
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const doc = await PDFDocument.create();
+  const pageWidth = 595.28, pageHeight = 841.89, margin = 40;
+  const bgColor = rgb(0xF7/255, 0xEF/255, 0xDC/255);
+  const borderColor = rgb(0xD9/255, 0xC7/255, 0x9A/255);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const reg = await doc.embedFont(StandardFonts.Helvetica);
+  const bannerBytes = await getBannerPngBytes();
+  const bannerImg = await doc.embedPng(bannerBytes);
+  const bannerW = pageWidth - margin*2;
+  const bannerH = bannerW * (bannerImg.height/bannerImg.width);
+
+  let page, y;
+  const newPage = ()=>{
+    page = doc.addPage([pageWidth, pageHeight]);
+    page.drawRectangle({x:0, y:0, width:pageWidth, height:pageHeight, color:bgColor});
+    page.drawRectangle({x:14, y:14, width:pageWidth-28, height:pageHeight-28, borderColor, borderWidth:1.2});
+    page.drawImage(bannerImg, {x:margin, y:pageHeight-margin-bannerH, width:bannerW, height:bannerH});
+    y = pageHeight - margin - bannerH - 20;
+  };
+  newPage();
+
+  const drawWrapped = (text, size, font, color, lineGap)=>{
+    const maxWidth = pageWidth - margin*2;
+    const words = String(text).split(/\s+/);
+    let line = '';
+    const flush = ()=>{
+      if(y < margin + size) newPage();
+      page.drawText(line, {x:margin, y, size, font, color});
+      y -= size + lineGap;
+    };
+    for(const w of words){
+      const test = line ? line+' '+w : w;
+      if(line && font.widthOfTextAtSize(test, size) > maxWidth){ flush(); line = w; }
+      else line = test;
+    }
+    flush();
+  };
+
+  drawWrapped(n.title||'(untitled)', 20, bold, rgb(0.1,0.1,0.1), 6);
+  const tags = notationTagsLine(n);
+  if(tags){ drawWrapped(tags, 11, reg, rgb(0.4,0.4,0.4), 4); y -= 8; }
+  if(n.lyrics){
+    drawWrapped('Sahitya', 13, bold, rgb(0.1,0.1,0.1), 4);
+    n.lyrics.split('\n').forEach(line=> drawWrapped(line || ' ', 11, reg, rgb(0.15,0.15,0.15), 3));
+    y -= 10;
+  }
+  if(n.meaning){
+    drawWrapped('Meaning', 13, bold, rgb(0.1,0.1,0.1), 4);
+    n.meaning.split('\n').forEach(line=> drawWrapped(line || ' ', 11, reg, rgb(0.15,0.15,0.15), 3));
+  }
+  if(!n.lyrics && !n.meaning) drawWrapped('No lyrics or meaning added yet.', 11, reg, rgb(0.4,0.4,0.4), 3);
+  if(y < margin + 30) newPage();
+  page.drawText('Prepared by Varun M Kaginagolli \u00b7 RAGA Music Classes \u00b7 '+fmtDFull(TODAY), {x:margin, y:margin/1.4, size:8, font:reg, color:rgb(0.45,0.4,0.3)});
+
+  const rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId);
+  if(!rec) throw new Error('the notation PDF could not be found on this device or in Drive');
+  const pageImages = await renderPdfPagesToPngs(await rec.blob.arrayBuffer(), 2);
+  for(const pngBytes of pageImages){
+    newPage();
+    const img = await doc.embedPng(pngBytes);
+    const availW = pageWidth - margin*2, availH = y - margin;
+    const scale = Math.min(availW/img.width, availH/img.height);
+    const w = img.width*scale, h = img.height*scale;
+    page.drawImage(img, {x: margin + (availW-w)/2, y: y-h, width:w, height:h});
+  }
+  return await doc.save();
+}
 function practiceSheetHTML(n){
   const tags = notationTagsLine(n);
   const lyricsBlock = n.lyrics ? '<div class="ps-label">Sahitya</div><div class="ps-text">'+esc(n.lyrics)+'</div>' : '';
@@ -5368,20 +5646,14 @@ function refreshNotationDatalists(){
   };
   fill('dlRaga','raga',[S.recordings]); fill('dlTala','tala',[S.recordings]); fill('dlComposer','composer',[S.recordings]); fill('dlDeity','deity');
 }
-function renderNotationChips(){
-  const wrap = $('#notTypeChips'); if(!wrap) return;
-  wrap.innerHTML = '';
-  const mkChip=(label,val)=>{
-    const b=document.createElement('button');
-    b.type='button'; b.className='not-chip'+(notTypeFilter===val?' on':'');
-    b.textContent=label;
-    b.addEventListener('click',()=>{ notTypeFilter = (notTypeFilter===val ? '' : val); renderNotationChips(); renderNotationList(); });
-    return b;
-  };
-  wrap.appendChild(mkChip('All',''));
+function renderNotationFilters(){
+  const sel = $('#notFilterType'); if(!sel) return;
+  const current = sel.value;
   const used = Array.from(new Set((S.notations||[]).map(n=>n.type).filter(Boolean)));
   const ordered = [...NOTATION_TYPES.filter(t=>used.includes(t)), ...used.filter(t=>!NOTATION_TYPES.includes(t))];
-  ordered.forEach(t=>wrap.appendChild(mkChip(t,t)));
+  sel.innerHTML = '<option value="">All types</option>' + ordered.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
+  if(ordered.includes(current)) sel.value = current;
+  else notTypeFilter = '';
 }
 function matchesNotationFilters(n){
   if(notTypeFilter && n.type!==notTypeFilter) return false;
@@ -5437,6 +5709,7 @@ function openNotationModal(id){
   openModal('m-notation');
 }
 $('#notType').addEventListener('change', ()=>{ $('#notTypeOther').style.display = $('#notType').value==='__other' ? '' : 'none'; });
+$('#recEditType').addEventListener('change', ()=>{ $('#recEditTypeOther').style.display = $('#recEditType').value==='__other' ? '' : 'none'; });
 $('#btnAddNotation').addEventListener('click', ()=>openNotationModal());
 $('#notSave').addEventListener('click', async ()=>{
   const title = $('#notTitle').value.trim();
@@ -5481,11 +5754,13 @@ $('#notSave').addEventListener('click', async ()=>{
               // If this notation already has a Drive file, replace ITS content (same file ID,
               // Drive keeps the old version as a revision) rather than creating a disconnected
               // second file — that's what makes "Version history" below actually mean something.
+              const wasReplace = !!rec.driveFileId;
               const driveFile = await driveUploadResumable(file, file.name, file.type, 'Notations', (frac)=>{
                 $('#notPdfUploadFill').style.width = Math.round(frac*100)+'%';
               }, rec.driveFileId || null);
               rec.driveFileId = driveFile.id;
               rec.driveModifiedTime = driveFile.modifiedTime || null;
+              if(wasReplace) driveKeepLatestRevisionForever(driveFile.id);
             } else {
               toast('Kept the version already on Drive — your local PDF edit was not uploaded');
             }
@@ -5524,6 +5799,7 @@ async function openNotationView(id){
   $('#notMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
   $('#notMsgStudent').value = '';
   $('#notSharePdfBtn').style.display = n.hasPdf ? '' : 'none';
+  $('#notStyledSheetBtn').style.display = n.hasPdf ? '' : 'none';
   $('#notVersionsBtn').style.display = n.driveFileId ? '' : 'none';
   $('#notPdfViewFrame').style.display = 'none';
   $('#notPdfViewFrame').src = '';
@@ -5622,6 +5898,7 @@ async function openNotationVersions(){
         const driveFile = await driveUploadResumable(blob, n.pdfName||'notation.pdf', 'application/pdf', 'Notations', null, n.driveFileId);
         n.driveFileId = driveFile.id;
         n.driveModifiedTime = driveFile.modifiedTime || null;
+        driveKeepLatestRevisionForever(driveFile.id);
         try{ await mediaPut('notation-pdf:'+n.id, blob, {size:blob.size}); }catch(e){} // refresh the local cache too
         toast('Restored — that version is now current');
         closeModal('m-notation-versions');
@@ -5634,6 +5911,46 @@ async function openNotationVersions(){
   });
 }
 $('#notVersionsBtn').addEventListener('click', openNotationVersions);
+async function openRecordingVersions(){
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r || !r.driveFileId) return;
+  const list = $('#recVersionsList');
+  list.innerHTML = '<div class="empty" style="padding:16px 0">Loading version history…</div>';
+  openModal('m-recording-versions');
+  let revisions;
+  try{ revisions = await driveListRevisions(r.driveFileId); }
+  catch(e){ list.innerHTML = '<div class="empty" style="padding:16px 0">Could not load version history — check your connection and try again.</div>'; return; }
+  if(!revisions.length){ list.innerHTML = '<div class="empty" style="padding:16px 0">No previous versions yet — this recording\'s file has never been replaced.</div>'; return; }
+  list.innerHTML = revisions.map((rev,i)=>{
+    const isCurrent = i===0;
+    return '<div class="not-version-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
+      + '<div><div>'+fmtVersionDate(rev.modifiedTime)+(isCurrent?' <b style="color:var(--gold-ink)">— current</b>':'')+'</div>'
+      + '<div class="tiny" style="color:var(--muted)">'+fmtVersionSize(rev.size)+'</div></div>'
+      + (isCurrent ? '' : '<button class="btn tiny" data-restore-rev="'+rev.id+'">Restore this version</button>')
+      + '</div>';
+  }).join('');
+  list.querySelectorAll('[data-restore-rev]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const revId = btn.dataset.restoreRev;
+      btn.disabled = true; btn.textContent = 'Restoring…';
+      try{
+        const blob = await driveDownloadRevision(r.driveFileId, revId);
+        const ext = audioExtFromType(blob.type);
+        const filename = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext;
+        const driveFile = await driveUploadResumable(blob, filename, blob.type||'audio/wav', 'Recordings', null, r.driveFileId);
+        r.driveFileId = driveFile.id;
+        driveKeepLatestRevisionForever(driveFile.id);
+        try{ await mediaPut('recording-audio:'+r.id, blob, {mimeType:blob.type, size:blob.size}); }catch(e){} // refresh the local cache too
+        toast('Restored — that version is now current');
+        closeModal('m-recording-versions');
+        persist();
+      }catch(e){
+        toast('Could not restore that version — try again');
+        btn.disabled = false; btn.textContent = 'Restore this version';
+      }
+    });
+  });
+}
+$('#recVersionsBtn').addEventListener('click', openRecordingVersions);
 $('#notPracticeSheetBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   if(!n.hasPdf){
@@ -5659,6 +5976,22 @@ $('#notPracticeSheetBtn').addEventListener('click', async ()=>{
     toast('Could not build the combined practice sheet ('+((e&&e.message)||e)+')');
   }
 });
+$('#notStyledSheetBtn').addEventListener('click', async ()=>{
+  const n = S.notations.find(x=>x.id===viewingNotationId); if(!n || !n.hasPdf) return;
+  if(!window.PDFLib || !window.pdfjsLib){ toast('Still loading the PDF engines — try again in a second'); return; }
+  toast('Building styled practice sheet — this can take a few seconds…');
+  try{
+    const bytes = await buildStyledPracticeSheetBytes(n);
+    const blob = new Blob([bytes], {type:'application/pdf'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = (n.title||'practice-sheet').replace(/[^\w\-]+/g,'_')+'-styled.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Downloaded — banner and background repeated on every page');
+  }catch(e){
+    toast('Could not build the styled practice sheet ('+((e&&e.message)||e)+')');
+  }
+});
 $('#notEditBtn').addEventListener('click', ()=>{
   const id = viewingNotationId;
   closeModal('m-notation-view');
@@ -5675,11 +6008,12 @@ $('#notDeleteBtn').addEventListener('click', async ()=>{
   renderAll();
 });
 $('#notSearch').addEventListener('input', e=>{ notSearchQuery = e.target.value.trim(); renderNotationList(); });
+$('#notFilterType').addEventListener('change', e=>{ notTypeFilter = e.target.value; renderNotationList(); });
 
 /* =====================================================
    RECORDINGS LIBRARY
    ===================================================== */
-let recSearchQuery = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '';
+let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '';
 let recStream = null, recRecorder = null, recChunks = [], recTimerHandle = null, recStartMs = 0, recDurationSec = 0, recBlob = null;
 /* ---------- recording-time tanpura background mix ---------- */
 let recMixDest = null;          // MediaStreamAudioDestinationNode — recorder captures from here
@@ -5703,20 +6037,30 @@ function fmtRecDate(ts){
   return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
 }
 function recordingTagsLine(r){
-  return [r.raga, r.tala, r.composer].filter(Boolean).join(' · ');
+  return [r.type, r.raga, r.tala, r.composer].filter(Boolean).join(' · ');
 }
 function matchesRecordingFilter(r){
+  if(recTypeFilter && r.type!==recTypeFilter) return false;
   if(recRagaFilter && r.raga!==recRagaFilter) return false;
   if(recTalaFilter && r.tala!==recTalaFilter) return false;
   if(recComposerFilter && r.composer!==recComposerFilter) return false;
   if(recSearchQuery){
     const q = recSearchQuery.toLowerCase();
-    const hay = [r.title,r.raga,r.tala,r.composer,r.notes].filter(Boolean).join(' ').toLowerCase();
+    const hay = [r.title,r.type,r.raga,r.tala,r.composer,r.notes].filter(Boolean).join(' ').toLowerCase();
     if(!hay.includes(q)) return false;
   }
   return true;
 }
 function renderRecordingsFilters(){
+  const typeSel = $('#recFilterType');
+  if(typeSel){
+    const current = typeSel.value;
+    const used = Array.from(new Set((S.recordings||[]).map(r=>r.type).filter(Boolean)));
+    const ordered = [...NOTATION_TYPES.filter(t=>used.includes(t)), ...used.filter(t=>!NOTATION_TYPES.includes(t))];
+    typeSel.innerHTML = '<option value="">All types</option>' + ordered.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
+    if(ordered.includes(current)) typeSel.value = current;
+    else recTypeFilter = '';
+  }
   const fill=(id,field,varSet)=>{
     const sel = $('#'+id); if(!sel) return;
     const current = sel.value;
@@ -5726,7 +6070,50 @@ function renderRecordingsFilters(){
   };
   fill('recFilterRaga','raga','ragas'); fill('recFilterTala','tala','talas'); fill('recFilterComposer','composer','composers');
 }
+function fmtBytesShort(n){
+  if(n==null) return '';
+  if(n < 1024*1024) return Math.round(n/1024)+' KB';
+  if(n < 1024*1024*1024) return (n/1024/1024).toFixed(1)+' MB';
+  return (n/1024/1024/1024).toFixed(2)+' GB';
+}
+// One call, folder-scoped, rather than checking each recording's file individually — cheap
+// even with a large library.
+async function driveFolderTotalSize(folderName){
+  const folderId = await driveGetFolderId(folderName);
+  if(!folderId) return null;
+  let total = 0, pageToken = '';
+  do{
+    const q = encodeURIComponent("'"+folderId+"' in parents and trashed=false");
+    const url = 'https://www.googleapis.com/drive/v3/files?q='+q+'&fields=nextPageToken,files(size)&pageSize=1000'+(pageToken?'&pageToken='+pageToken:'');
+    const r = await dFetch(url);
+    const j = await r.json();
+    (j.files||[]).forEach(f=>{ total += parseInt(f.size||0,10) || 0; });
+    pageToken = j.nextPageToken || '';
+  } while(pageToken);
+  return total;
+}
+let recDriveStorageCache = null, recDriveStorageFetching = false;
+async function refreshRecDriveStorageNote(force){
+  const el = $('#recDriveStorageNote'); if(!el) return;
+  if(!gToken){ el.textContent = ''; return; }
+  const staleMs = 3*60*1000; // avoids re-querying Drive on every single render — this is a nice-to-know, not something that needs to be second-by-second accurate
+  if(!force && recDriveStorageCache && (Date.now()-recDriveStorageCache.at) < staleMs){
+    el.textContent = '· '+fmtBytesShort(recDriveStorageCache.bytes)+' in Drive';
+    return;
+  }
+  if(recDriveStorageFetching) return;
+  recDriveStorageFetching = true;
+  try{
+    const bytes = await driveFolderTotalSize('Recordings');
+    if(bytes!=null){
+      recDriveStorageCache = {bytes, at: Date.now()};
+      el.textContent = '· '+fmtBytesShort(bytes)+' in Drive';
+    }
+  }catch(e){ /* quiet — a nice-to-have figure isn't worth a toast if this particular call fails */ }
+  recDriveStorageFetching = false;
+}
 function renderRecordingsList(){
+  refreshRecDriveStorageNote();
   const listEl = $('#recordingsList'); if(!listEl) return;
   const list = (S.recordings||[]).filter(matchesRecordingFilter).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   listEl.innerHTML = '';
@@ -6111,7 +6498,14 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
   const title = $('#recTitleInput').value.trim() || 'Untitled recording';
   const id = 'REC'+pad(S.seq.rec).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.rec++;
   $('#recKeepBtn').disabled = true;
-  let driveFileId = null;
+  // Entry goes into the list FIRST, before either save is attempted below — mirrors how
+  // Notations and Tala Videos already do this. That way, if the Drive upload succeeds but the
+  // local cache write further down has a hiccup (device storage pressure, etc.), the recording
+  // is never silently lost track of — worst case, it's an entry with no local copy yet, not a
+  // Drive file the app has completely forgotten exists.
+  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null};
+  S.recordings.push(entry);
+  persist();
   try{
     if(gToken){
       $('#recUploadProgress').style.display = '';
@@ -6122,7 +6516,9 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
         const driveFile = await driveUploadResumable(recBlob, (title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, recBlob.type||'audio/webm', 'Recordings', (frac)=>{
           $('#recUploadFill').style.width = Math.round(frac*100)+'%';
         });
-        driveFileId = driveFile.id;
+        entry.driveFileId = driveFile.id;
+        persist();
+        refreshRecDriveStorageNote(true);
       }catch(e){
         toast('Could not upload to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
       }
@@ -6130,15 +6526,17 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
     }
     try{
       await mediaPut('recording-audio:'+id, recBlob, {mimeType:recBlob.type, size:recBlob.size}); // local cache either way
-    }catch(e){ toast('Could not save the recording on this device'); return; }
+    }catch(e){
+      toast('Could not save the recording on this device'+(entry.driveFileId ? ' — it is safe in Drive though' : ''));
+    }
   } finally { $('#recKeepBtn').disabled = false; }
-  S.recordings.push({id, title, raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId});
   closeModal('m-recording-capture');
   toast('Recording saved — '+title);
   renderAll();
 });
 $('#btnNewRecording').addEventListener('click', openRecordingCapture);
 $('#recSearch').addEventListener('input', e=>{ recSearchQuery = e.target.value.trim(); renderRecordingsList(); });
+$('#recFilterType').addEventListener('change', e=>{ recTypeFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterRaga').addEventListener('change', e=>{ recRagaFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterTala').addEventListener('change', e=>{ recTalaFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterComposer').addEventListener('change', e=>{ recComposerFilter = e.target.value; renderRecordingsList(); });
@@ -6153,11 +6551,17 @@ async function openRecordingView(id){
   $('#recEditRaga').value = r.raga || '';
   $('#recEditTala').value = r.tala || '';
   $('#recEditComposer').value = r.composer || '';
+  if(r.type && !NOTATION_TYPES.includes(r.type)){
+    $('#recEditType').value = '__other'; $('#recEditTypeOther').style.display=''; $('#recEditTypeOther').value = r.type;
+  } else {
+    $('#recEditType').value = r.type || ''; $('#recEditTypeOther').style.display='none'; $('#recEditTypeOther').value = '';
+  }
   $('#recEditNotes').value = r.notes || '';
   refreshNotationDatalists();
   $('#recViewAudio').src = '';
   $('#recFixFormatBtn').style.display = 'none';
   $('#recFormatNote').style.display = 'none';
+  $('#recVersionsBtn').style.display = r.driveFileId ? '' : 'none';
   try{
     const rec = await mediaGetWithDriveFallback('recording-audio:'+id, r.driveFileId);
     if(rec){
@@ -6179,8 +6583,9 @@ $('#recSaveBtn').addEventListener('click', ()=>{
   const title = $('#recEditTitle').value.trim();
   if(!title){ toast('Title is required'); return; }
   const titleChanged = title !== r.title;
+  const typeVal = $('#recEditType').value==='__other' ? $('#recEditTypeOther').value.trim() : $('#recEditType').value;
   r.title = title; r.raga = $('#recEditRaga').value.trim(); r.tala = $('#recEditTala').value.trim();
-  r.composer = $('#recEditComposer').value.trim(); r.notes = $('#recEditNotes').value.trim(); r.updatedAt = Date.now();
+  r.composer = $('#recEditComposer').value.trim(); r.type = typeVal; r.notes = $('#recEditNotes').value.trim(); r.updatedAt = Date.now();
   closeModal('m-recording-view');
   toast('Recording updated');
   renderAll();
@@ -6237,6 +6642,7 @@ $('#recFixFormatBtn').addEventListener('click', async ()=>{
       try{
         const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.wav';
         await driveUploadResumable(wavBlob, newName, 'audio/wav', 'Recordings', null, r.driveFileId);
+        driveKeepLatestRevisionForever(r.driveFileId);
       }catch(e){ toast('Converted on this device, but could not update Drive ('+driveErrorDetail(e)+') — try again when back online'); }
     }
     $('#recViewAudio').src = URL.createObjectURL(wavBlob);
@@ -6258,6 +6664,7 @@ $('#recDeleteBtn').addEventListener('click', async ()=>{
   closeModal('m-recording-view');
   toast('Recording deleted');
   renderAll();
+  setTimeout(()=>refreshRecDriveStorageNote(true), 3000); // gives the (not-awaited) Drive delete above a moment to actually land first
 });
 
 /* =====================================================
@@ -7187,7 +7594,7 @@ function renderAll(){
   persist();
   renderStats(); renderTimeline(); renderUpcoming(); renderRecent(); renderPending();
   renderStudents(); renderCalendar(); renderBilling(); renderPersonalCards(); renderPayments(); renderRaga(); renderReports(); renderInsights(); renderWeekCheck(); renderNavBadge(); renderBackupStatus();
-  renderNotationChips(); renderNotationList(); renderRecordingsFilters(); renderRecordingsList(); renderTalaSavedRow(); renderTalaVideoList();
+  renderNotationFilters(); renderNotationList(); renderRecordingsFilters(); renderRecordingsList(); renderTalaSavedRow(); renderTalaVideoList();
   scheduleSync();
   const pv=document.getElementById('view-student');
   if(pv && pv.classList.contains('active') && profileId) renderProfile();
