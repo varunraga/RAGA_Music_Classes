@@ -5619,6 +5619,16 @@ async function toggleRecordingPlayback(id){
   if(recPlayingId === id){
     recSharedAudio.pause(); recPlayingId = null; renderRecordingsList(); return;
   }
+  // iOS Safari only allows starting audio playback if play() happens in the same instant as
+  // the tap that triggered it — if we wait on a network fetch first (the Drive-fallback case,
+  // needed whenever this recording isn't already cached on this device), Safari refuses by the
+  // time we're ready, even though the exact same code works fine on Chrome/desktop. Calling
+  // play() right here, synchronously, on the very next line after the tap — before we've even
+  // fetched anything — registers this as a real user-initiated play with Safari. It's fine that
+  // it has nothing valid to play yet (the .catch just quietly absorbs that); what matters is that
+  // this same <audio> element now carries Safari's "a person asked for this" permission, which
+  // covers the real play() call a moment later once the recording has actually arrived.
+  recSharedAudio.play().catch(()=>{});
   try{
     const rInfo = S.recordings.find(x=>x.id===id);
     const rec = await mediaGetWithDriveFallback('recording-audio:'+id, rInfo && rInfo.driveFileId);
