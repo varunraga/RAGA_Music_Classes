@@ -28,6 +28,7 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.0/lame.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
 <style>
   :root{
     --paper:#F4F7FB; --card:#FFFFFF; --ink:#0E1420; --muted:#5B6675;
@@ -5634,39 +5635,89 @@ async function buildCombinedPracticeSheetBytes(n){
   return await merged.save();
 }
 let pdfjsWorkerConfigured = false;
-// Turns each page of an existing PDF into a plain PNG image — this is what lets us place a
-// notation's own pages inside our own bannered template, since pdf-lib can copy pages verbatim
-// but can't draw a background behind content someone else's PDF already has.
-async function renderPdfPagesToPngs(arrayBuffer, scale){
+// Pulls the actual characters (and their exact x/y position and size) out of each page of an
+// existing PDF, instead of rendering it as a picture. This is what lets a notation's swara grid
+// be redrawn as real, crisp, selectable text on our own bannered page — same column alignment as
+// the source, since every character keeps the position it already had, just rescaled — with no
+// white background to remove in the first place, and no scaling/fitting guesswork either.
+async function extractPdfPageTextItems(arrayBuffer){
   if(!pdfjsWorkerConfigured){
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     pdfjsWorkerConfigured = true;
   }
   const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
-  const out = [];
+  const pages = [];
   for(let i=1;i<=pdf.numPages;i++){
     const page = await pdf.getPage(i);
-    const viewport = page.getViewport({scale});
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
-    await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
-    const blob = await new Promise(res=>canvas.toBlob(res, 'image/png'));
-    out.push(new Uint8Array(await blob.arrayBuffer()));
+    const viewport = page.getViewport({scale:1}); // scale 1 = native PDF point units, same space pdf-lib draws in
+    const content = await page.getTextContent();
+    const items = content.items
+      .filter(it=>it.str && it.str.trim()!=='')
+      .map(it=>({
+        str: it.str,
+        x: it.transform[4],
+        y: it.transform[5],
+        fontSize: Math.hypot(it.transform[2], it.transform[3]) || 10 // vertical scale of the transform ≈ point size
+      }));
+    pages.push({ width: viewport.width, height: viewport.height, items });
   }
-  return out;
+  return pages;
+}
+let cachedMonoFontBytes = null;
+// The notation's swara grid uses accented Latin characters (Ś, Ŕ, Ġ, Ḍ and similar) to mark
+// octaves — pdf-lib's built-in fonts can't encode those at all. DejaVu Sans Mono is fetched
+// instead: genuinely monospace (so the swara columns still line up) and broad enough to cover
+// this whole family of accented characters, verified against everything this notation uses.
+async function getMonoFontBytes(){
+  if(cachedMonoFontBytes) return cachedMonoFontBytes;
+  const res = await fetch('https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSansMono.ttf');
+  if(!res.ok) throw new Error('Could not load the notation font — check your connection and try again');
+  cachedMonoFontBytes = new Uint8Array(await res.arrayBuffer());
+  return cachedMonoFontBytes;
 }
 // The fully-styled version: cream background + banner repeated on every single page — the cover
-// text pages AND every page of the notation itself (rendered as an image so it can sit inside our
-// template). One page of notation in, one bannered page out — nothing gets shrunk to fit together.
+// text pages AND the notation itself, now redrawn as real text (see extractPdfPageTextItems above)
+// rather than a pasted screenshot. Long notations flow across as many bannered pages as needed.
+const COMBINING_MARK_RE = /[\u0300-\u036F]/;
+// Some octave marks (like lower-octave P) have no single precomposed Unicode character at all —
+// they only exist as a plain letter plus a separate combining dot placed after it. A font's own
+// sequencing would otherwise shove that dot into its own full monospace column instead of
+// stacking it under the letter it belongs to, so a multi-character run containing one is drawn
+// character-by-character here, with the mark manually re-centered on the letter right before it.
+// A lone single-character run (even if that single character IS a mark) is left exactly as-is,
+// trusting the position the source PDF already computed for it.
+function drawNotationRun(page, str, x, y, size, font, color){
+  if(str.length<=1 || !COMBINING_MARK_RE.test(str)){
+    try{ page.drawText(str, {x, y, size, font, color}); }catch(e){ /* one unencodable run shouldn't sink the whole page */ }
+    return;
+  }
+  let cursorX = x, lastBaseX = x, lastBaseW = 0;
+  for(const ch of str){
+    if(COMBINING_MARK_RE.test(ch)){
+      const markW = font.widthOfTextAtSize(ch, size);
+      const markX = lastBaseX + (lastBaseW-markW)/2; // centered over the letter just drawn, not the next column over
+      try{ page.drawText(ch, {x:markX, y, size, font, color}); }catch(e){}
+      continue; // the mark doesn't consume a column of its own
+    }
+    const w = font.widthOfTextAtSize(ch, size);
+    try{ page.drawText(ch, {x:cursorX, y, size, font, color}); }catch(e){}
+    lastBaseX = cursorX; lastBaseW = w;
+    cursorX += w;
+  }
+}
 async function buildStyledPracticeSheetBytes(n){
   if(!window.pdfjsLib) throw new Error('PDF render engine still loading — try again in a second');
+  if(!window.fontkit) throw new Error('Font engine still loading — try again in a second');
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
   const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
   const pageWidth = 595.28, pageHeight = 841.89, margin = 40;
   const bgColor = rgb(0xF7/255, 0xEF/255, 0xDC/255);
   const borderColor = rgb(0xD9/255, 0xC7/255, 0x9A/255);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const reg = await doc.embedFont(StandardFonts.Helvetica);
+  const monoFontBytes = await getMonoFontBytes();
+  const mono = await doc.embedFont(monoFontBytes, {subset:true}); // subset: only the glyphs actually used get embedded, keeping the file small
   const bannerBytes = await getBannerPngBytes();
   const bannerImg = await doc.embedPng(bannerBytes);
   const bannerW = pageWidth - margin*2;
@@ -5717,14 +5768,21 @@ async function buildStyledPracticeSheetBytes(n){
 
   const rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId);
   if(!rec) throw new Error('the notation PDF could not be found on this device or in Drive');
-  const pageImages = await renderPdfPagesToPngs(await rec.blob.arrayBuffer(), 2);
-  for(const pngBytes of pageImages){
+  const srcPages = await extractPdfPageTextItems(await rec.blob.arrayBuffer());
+  for(const srcPage of srcPages){
+    const availW = pageWidth - margin*2;
+    const scale = srcPage.width>0 ? availW/srcPage.width : 1; // fit the source page's width exactly to the same margin as the tags/lyrics text above
     newPage();
-    const img = await doc.embedPng(pngBytes);
-    const availW = pageWidth - margin*2, availH = y - margin;
-    const scale = Math.min(availW/img.width, availH/img.height);
-    const w = img.width*scale, h = img.height*scale;
-    page.drawImage(img, {x: margin + (availW-w)/2, y: y-h, width:w, height:h});
+    const contentTop = y; // identical every time newPage() runs, so this stays valid across page breaks below
+    const pageAvailH = contentTop - margin;
+    let pageIndex = 0;
+    for(const it of srcPage.items){
+      const distFromTop = (srcPage.height - it.y) * scale; // it.y is bottom-up in the source; flip to top-down
+      const itemPageIndex = pageAvailH>0 ? Math.floor(distFromTop/pageAvailH) : 0;
+      while(pageIndex < itemPageIndex){ newPage(); pageIndex++; }
+      const localY = distFromTop - itemPageIndex*pageAvailH;
+      drawNotationRun(page, it.str, margin + it.x*scale, contentTop-localY, Math.max(6, it.fontSize*scale), mono, rgb(0.15,0.15,0.15));
+    }
   }
   return await doc.save();
 }
