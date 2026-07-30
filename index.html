@@ -1919,53 +1919,98 @@ async function mediaExistsLocally(key){
 // driveFileId is always kept (the data is recoverable from Drive even if not cached locally).
 async function cleanOrphanedEntries(){
   let cleaned = 0;
+  // Pass 1: remove entries with no driveFileId AND no local blob — definitely ghosts.
   // --- Recordings ---
-  const aliveRecs = [];
+  let recs = [];
   for(const r of (S.recordings||[])){
-    if(r.driveFileId){
-      aliveRecs.push(r); // has a Drive file — data is recoverable, keep it
-    } else {
-      const exists = await mediaExistsLocally('recording-audio:'+r.id);
-      if(exists){ aliveRecs.push(r); }
-      else { cleaned++; }
-    }
+    if(r.driveFileId){ recs.push(r); continue; }
+    const exists = await mediaExistsLocally('recording-audio:'+r.id);
+    if(exists){ recs.push(r); } else { cleaned++; }
   }
-  if(aliveRecs.length !== (S.recordings||[]).length) S.recordings = aliveRecs;
+  if(recs.length !== (S.recordings||[]).length) S.recordings = recs;
 
-  // --- Notations (only those with hasPdf — text-only notations are fine without binary data) ---
-  const aliveNots = [];
+  // --- Notations ---
+  let nots = [];
   for(const n of (S.notations||[])){
-    if(!n.hasPdf){
-      aliveNots.push(n); // no PDF expected — pure text notation, always valid
-    } else if(n.driveFileId){
-      aliveNots.push(n);
-    } else {
-      const exists = await mediaExistsLocally('notation-pdf:'+n.id);
-      if(exists){ aliveNots.push(n); }
-      else { cleaned++; }
-    }
+    if(!n.hasPdf){ nots.push(n); continue; }
+    if(n.driveFileId){ nots.push(n); continue; }
+    const exists = await mediaExistsLocally('notation-pdf:'+n.id);
+    if(exists){ nots.push(n); } else { cleaned++; }
   }
-  if(aliveNots.length !== (S.notations||[]).length) S.notations = aliveNots;
+  if(nots.length !== (S.notations||[]).length) S.notations = nots;
 
-  // --- Tala video exports ---
-  const aliveVids = [];
+  // --- Tala videos ---
+  let vids = [];
   for(const v of (S.talaExports||[])){
-    if(v.driveFileId){
-      aliveVids.push(v);
-    } else {
-      const exists = await mediaExistsLocally('tala-video:'+v.id);
-      if(exists){ aliveVids.push(v); }
-      else { cleaned++; }
-    }
+    if(v.driveFileId){ vids.push(v); continue; }
+    const exists = await mediaExistsLocally('tala-video:'+v.id);
+    if(exists){ vids.push(v); } else { cleaned++; }
   }
-  if(aliveVids.length !== (S.talaExports||[]).length) S.talaExports = aliveVids;
+  if(vids.length !== (S.talaExports||[]).length) S.talaExports = vids;
 
   if(cleaned > 0){
     persist();
     renderRecordingsFilters(); renderRecordingsList();
     renderNotationFilters(); renderNotationList();
     renderTalaVideoList();
-    console.log('Cleaned '+cleaned+' orphaned entries on startup');
+    console.log('Pass 1: cleaned '+cleaned+' orphaned entries (no local data, no driveFileId)');
+  }
+}
+// Pass 2: runs AFTER Drive is connected (gToken is set). For entries that have a driveFileId
+// but no local blob, verifies the Drive file actually still exists. If Drive returns 404 or
+// an error for a file, the entry is a ghost — the file was deleted from Drive but the metadata
+// survived in localStorage. Removes the ghost and persists.
+async function cleanDriveGhosts(){
+  if(!gToken) return; // not connected — skip, will run next time
+  let cleaned = 0;
+  // Helper: check if a Drive file actually exists (quick metadata fetch)
+  async function driveFileStillExists(fileId){
+    try{
+      const r = await dFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=id');
+      return r.ok;
+    }catch(e){ return false; }
+  }
+
+  // --- Recordings with driveFileId but no local blob ---
+  let recs = [];
+  for(const r of (S.recordings||[])){
+    if(!r.driveFileId){ recs.push(r); continue; } // no driveFileId — handled by pass 1
+    const hasLocal = await mediaExistsLocally('recording-audio:'+r.id);
+    if(hasLocal){ recs.push(r); continue; } // has local data — definitely alive
+    const driveOk = await driveFileStillExists(r.driveFileId);
+    if(driveOk){ recs.push(r); } else { cleaned++; }
+  }
+  if(recs.length !== (S.recordings||[]).length) S.recordings = recs;
+
+  // --- Notations with hasPdf + driveFileId but no local blob ---
+  let nots = [];
+  for(const n of (S.notations||[])){
+    if(!n.hasPdf || !n.driveFileId){ nots.push(n); continue; }
+    const hasLocal = await mediaExistsLocally('notation-pdf:'+n.id);
+    if(hasLocal){ nots.push(n); continue; }
+    const driveOk = await driveFileStillExists(n.driveFileId);
+    if(driveOk){ nots.push(n); } else { cleaned++; }
+  }
+  if(nots.length !== (S.notations||[]).length) S.notations = nots;
+
+  // --- Tala videos with driveFileId but no local blob ---
+  let vids = [];
+  for(const v of (S.talaExports||[])){
+    if(!v.driveFileId){ vids.push(v); continue; }
+    const hasLocal = await mediaExistsLocally('tala-video:'+v.id);
+    if(hasLocal){ vids.push(v); continue; }
+    const driveOk = await driveFileStillExists(v.driveFileId);
+    if(driveOk){ vids.push(v); } else { cleaned++; }
+  }
+  if(vids.length !== (S.talaExports||[]).length) S.talaExports = vids;
+
+  if(cleaned > 0){
+    persist();
+    renderRecordingsFilters(); renderRecordingsList();
+    renderNotationFilters(); renderNotationList();
+    renderTalaVideoList();
+    toast(cleaned+' deleted item'+(cleaned>1?'s':'')+' cleaned up');
+    console.log('Pass 2: cleaned '+cleaned+' Drive ghost entries');
   }
 }
 
@@ -4506,6 +4551,7 @@ function initTokenClient(){
       silentRefreshInFlight=false;
       if(resp && resp.access_token){
         gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); driveEnsureFileStorageFolders(); flushPendingDriveDeletes();
+        cleanDriveGhosts().catch(e=>console.warn('Drive ghost cleanup skipped:', e));
         tokenWaiters.forEach(w=>w.resolve(true)); tokenWaiters=[];
       } else {
         setDriveStatus('Sign-in failed — tap to retry', 'var(--red)');
@@ -5753,6 +5799,7 @@ $$('.studio-pill').forEach(b=>b.addEventListener('click', ()=>showStudioPane(b.d
    ===================================================== */
 const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
 let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', editingNotationId = null, viewingNotationId = null;
+let viewingNotationPdfBlob = null;
 
 function waDigits(mobile){
   const d = String(mobile||'').replace(/\D/g,'');
@@ -6028,23 +6075,41 @@ async function buildStyledPracticeSheetBytes(n){
       }
     }
   }
+  // Merge all text items from all source pages into one continuous stream with a running Y
+  // offset, so the styled sheet flows content across pages only when it actually runs out of
+  // space — not at every source-page boundary. This eliminates the wasted empty space at the
+  // bottom of pages that the old per-source-page approach caused.
+  const availW = pageWidth - margin*2;
+  let allItems = [];
+  let cumulativeY = 0; // running Y offset that accumulates across source pages
   for(const srcPage of srcPages){
     const contentW = Math.max(1, srcPage.contentMaxX - srcPage.contentMinX);
-    const availW = pageWidth - margin*2;
-    const scale = availW/contentW; // fit the real content's width — not the source page's, blank margins and all — to the same margin as the tags/lyrics text above
-    newPage();
-    const contentTop = y; // identical every time newPage() runs, so this stays valid across page breaks below
-    const pageAvailH = contentTop - margin;
-    let pageIndex = 0;
+    const contentH = Math.max(1, srcPage.contentMaxY - srcPage.contentMinY);
+    const scale = availW/contentW;
     for(const it of srcPage.items){
-      const distFromTop = (srcPage.contentMaxY - it.y) * scale; // measured from the top of the real content, not the top of the source page
-      const itemPageIndex = pageAvailH>0 ? Math.floor(distFromTop/pageAvailH) : 0;
-      while(pageIndex < itemPageIndex){ newPage(); pageIndex++; }
-      const localY = distFromTop - itemPageIndex*pageAvailH;
-      const drawX = margin + (it.x - srcPage.contentMinX)*scale; // left edge of the real content lands exactly at the margin
-      const itemFont = boldFontNames.has(it.fontName) ? monoBold : mono;
-      drawNotationRun(page, it.str, drawX, contentTop-localY, Math.max(6, it.fontSize*scale), itemFont, rgb(0.15,0.15,0.15));
+      const distFromTop = (srcPage.contentMaxY - it.y) * scale;
+      allItems.push({
+        str: it.str,
+        drawX: margin + (it.x - srcPage.contentMinX)*scale,
+        distFromTop: cumulativeY + distFromTop,
+        fontSize: Math.max(6, it.fontSize*scale),
+        fontName: it.fontName
+      });
     }
+    cumulativeY += contentH * scale + 16; // 16pt gap between source pages (like a section break)
+  }
+
+  // Now lay out all items continuously, only breaking when the page actually fills up
+  newPage();
+  const contentTop = y;
+  const pageAvailH = contentTop - margin;
+  let pageIndex = 0;
+  for(const it of allItems){
+    const itemPageIndex = pageAvailH>0 ? Math.floor(it.distFromTop/pageAvailH) : 0;
+    while(pageIndex < itemPageIndex){ newPage(); pageIndex++; }
+    const localY = it.distFromTop - pageIndex*pageAvailH;
+    const itemFont = boldFontNames.has(it.fontName) ? monoBold : mono;
+    drawNotationRun(page, it.str, it.drawX, contentTop-localY, it.fontSize, itemFont, rgb(0.15,0.15,0.15));
   }
   return await doc.save();
 }
@@ -6240,9 +6305,11 @@ async function openNotationView(id){
     $('#notPdfViewWrap').style.display = '';
     $('#notPdfViewStatus').style.display = '';
     $('#notPdfViewStatus').textContent = 'Loading…';
+    viewingNotationPdfBlob = null;
     mediaGetWithDriveFallback('notation-pdf:'+id, n.driveFileId).then(rec=>{
       if(viewingNotationId !== id) return; // the person moved on to another view before this arrived
       if(!rec){ $('#notPdfViewStatus').textContent = 'PDF not found on this device or in Drive'; return; }
+      viewingNotationPdfBlob = rec.blob;
       const url = trackBlobUrl('notPdfView', URL.createObjectURL(rec.blob));
       const fname = n.pdfName || (n.title||'notation').replace(/[^\w\-]+/g,'_')+'.pdf';
       $('#notPdfOpenBtn').style.display = '';
@@ -6285,27 +6352,31 @@ $('#notSharePdfBtn').addEventListener('click', async ()=>{
   const btn = $('#notSharePdfBtn'); if(btn.disabled) return;
   btn.disabled = true;
   try{
-  let rec;
-  try{ rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId); }
-  catch(e){ toast('Could not read the PDF from storage ('+driveErrorDetail(e)+')'); return; }
-  if(!rec){ toast('PDF not found on this device or in Drive'); return; }
-  const file = new File([rec.blob], n.pdfName||'notation.pdf', {type:'application/pdf'});
+  // Use the pre-cached blob from openNotationView — avoids a slow Drive fetch that would
+  // expire the user gesture and cause navigator.share() to fail on Android.
+  let shareBlob = viewingNotationPdfBlob;
+  if(!shareBlob){
+    try{ const rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId); if(rec) shareBlob = rec.blob; }
+    catch(e){ toast('Could not read the PDF ('+driveErrorDetail(e)+')'); return; }
+  }
+  if(!shareBlob){ toast('PDF not found on this device or in Drive'); return; }
+  const file = new File([shareBlob], n.pdfName||'notation.pdf', {type:'application/pdf'});
   let shared = false;
   if(navigator.share){
-    const canCheck = navigator.canShare ? navigator.canShare({files:[file]}) : true;
-    if(canCheck){
-      try{ await navigator.share({files:[file], title:n.title}); shared = true; }
-      catch(e){ if(e && e.name==='AbortError') return; }
+    try{
+      await navigator.share({files:[file], title:n.title});
+      shared = true;
+    }catch(e){
+      if(e && e.name==='AbortError') return;
+      console.warn('Share failed:', e.name, e.message);
     }
   }
   if(!shared){
-    try{
-      const url = URL.createObjectURL(rec.blob);
-      const a=document.createElement('a'); a.href=url; a.download=n.pdfName||'notation.pdf';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 4000);
-      toast('Downloaded — attach it from your files');
-    }catch(e){ toast('Could not save this PDF — try again'); }
+    const url = URL.createObjectURL(shareBlob);
+    const a=document.createElement('a'); a.href=url; a.download=n.pdfName||'notation.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Downloaded — attach it from your files');
   }
   } finally { btn.disabled = false; }
 });
@@ -7048,6 +7119,7 @@ $('#recFilterTala').addEventListener('change', e=>{ recTalaFilter = e.target.val
 $('#recFilterComposer').addEventListener('change', e=>{ recComposerFilter = e.target.value; renderRecordingsList(); });
 
 let viewingRecordingId = null;
+let viewingRecordingBlob = null;
 async function openRecordingView(id){
   const r = S.recordings.find(x=>x.id===id); if(!r) return;
   viewingRecordingId = id;
@@ -7064,13 +7136,18 @@ async function openRecordingView(id){
   }
   $('#recEditNotes').value = r.notes || '';
   refreshNotationDatalists();
+  viewingRecordingBlob = null;
   $('#recViewAudio').src = '';
+  viewingRecordingBlob = null;
   $('#recFixFormatBtn').style.display = 'none';
   $('#recFormatNote').style.display = 'none';
   $('#recVersionsBtn').style.display = r.driveFileId ? '' : 'none';
+  // Show a loading hint while the audio fetches (especially from Drive on first open)
+  $('#recViewAudio').style.opacity = '0.4';
   try{
     const rec = await mediaGetWithDriveFallback('recording-audio:'+id, r.driveFileId);
     if(rec){
+      viewingRecordingBlob = rec.blob;
       $('#recViewAudio').src = trackBlobUrl('recViewAudio', URL.createObjectURL(rec.blob));
       if(!['wav','mp3'].includes(audioExtFromType(rec.blob.type))){
         $('#recFixFormatBtn').style.display = '';
@@ -7079,6 +7156,7 @@ async function openRecordingView(id){
       }
     }
   }catch(e){}
+  $('#recViewAudio').style.opacity = '1';
   studentOptions($('#recMsgStudent'), false);
   $('#recMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
   $('#recMsgStudent').value = '';
@@ -7129,36 +7207,38 @@ $('#recShareBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   btn.disabled = true;
   try{
-  let rec;
-  try{ rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); }
-  catch(e){ toast('Could not read the recording from storage ('+driveErrorDetail(e)+')'); return; }
-  if(!rec){ toast('Recording not found on this device or in Drive'); return; }
-  let shareBlob = rec.blob;
-  const ext = audioExtFromType(rec.blob.type);
-  if(ext !== 'mp3'){
-    try{
-      toast('Converting to MP3 for sharing…');
-      shareBlob = await convertBlobToMp3(rec.blob, 128);
-    }catch(e){ shareBlob = rec.blob; }
+  // Use the pre-cached blob from openRecordingView if available — this avoids a slow Drive
+  // fetch that would expire the user gesture and cause navigator.share() to fail silently.
+  let shareBlob = viewingRecordingBlob;
+  if(!shareBlob){
+    try{ const rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); if(rec) shareBlob = rec.blob; }
+    catch(e){ toast('Could not read the recording ('+driveErrorDetail(e)+')'); return; }
   }
-  const shareExt = audioExtFromType(shareBlob.type);
-  const file = new File([shareBlob], (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+shareExt, {type: shareBlob.type||'audio/mpeg'});
+  if(!shareBlob){ toast('Recording not found on this device or in Drive'); return; }
+  // Share whatever format we already have — do NOT convert to MP3 inline, because the
+  // conversion takes seconds and Android Chrome expires the user gesture, which makes
+  // navigator.share() throw NotAllowedError and fall through to silent download.
+  // If the user needs MP3 specifically, they can tap "Fix playback" first, then share.
+  const ext = audioExtFromType(shareBlob.type);
+  const mimeMap = {mp3:'audio/mpeg', wav:'audio/wav', m4a:'audio/mp4', webm:'audio/webm'};
+  const mime = mimeMap[ext] || shareBlob.type || 'audio/mpeg';
+  const file = new File([shareBlob], (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, {type: mime});
   let shared = false;
   if(navigator.share){
-    const canCheck = navigator.canShare ? navigator.canShare({files:[file]}) : true;
-    if(canCheck){
-      try{ await navigator.share({files:[file], title:r.title}); shared = true; }
-      catch(e){ if(e && e.name==='AbortError') return; }
+    try{
+      await navigator.share({files:[file], title:r.title});
+      shared = true;
+    }catch(e){
+      if(e && e.name==='AbortError') return; // user cancelled
+      console.warn('Share failed:', e.name, e.message);
     }
   }
   if(!shared){
-    try{
-      const url = URL.createObjectURL(shareBlob);
-      const a=document.createElement('a'); a.href=url; a.download=file.name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 4000);
-      toast('Downloaded — attach it from your files');
-    }catch(e){ toast('Could not save this recording — try again'); }
+    const url = URL.createObjectURL(shareBlob);
+    const a=document.createElement('a'); a.href=url; a.download=file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Downloaded — attach it from your files');
   }
   } finally { btn.disabled = false; }
 });
