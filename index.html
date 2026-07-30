@@ -1902,6 +1902,72 @@ async function mediaDelete(key){
     tx.onerror=()=>reject(tx.error);
   });
 }
+// Checks if a given key has actual binary data either locally (IndexedDB) or in Drive.
+// Returns true if the entry is alive and reachable, false if it's a ghost.
+async function mediaExistsLocally(key){
+  try{
+    const rec = await mediaGet(key);
+    return !!rec;
+  }catch(e){ return false; }
+}
+// Cleans up ghost entries — metadata that exists in S.recordings / S.notations / S.talaExports
+// but has no actual binary data behind it (neither locally in IndexedDB nor in Drive).
+// This can happen if a delete operation succeeded in removing the file but the app was closed
+// before persist() saved the updated S to localStorage (e.g., browser killed the tab, phone
+// ran out of memory, or the user navigated away at the wrong moment).
+// Runs automatically on every app startup — non-destructive by design: an entry with a valid
+// driveFileId is always kept (the data is recoverable from Drive even if not cached locally).
+async function cleanOrphanedEntries(){
+  let cleaned = 0;
+  // --- Recordings ---
+  const aliveRecs = [];
+  for(const r of (S.recordings||[])){
+    if(r.driveFileId){
+      aliveRecs.push(r); // has a Drive file — data is recoverable, keep it
+    } else {
+      const exists = await mediaExistsLocally('recording-audio:'+r.id);
+      if(exists){ aliveRecs.push(r); }
+      else { cleaned++; }
+    }
+  }
+  if(aliveRecs.length !== (S.recordings||[]).length) S.recordings = aliveRecs;
+
+  // --- Notations (only those with hasPdf — text-only notations are fine without binary data) ---
+  const aliveNots = [];
+  for(const n of (S.notations||[])){
+    if(!n.hasPdf){
+      aliveNots.push(n); // no PDF expected — pure text notation, always valid
+    } else if(n.driveFileId){
+      aliveNots.push(n);
+    } else {
+      const exists = await mediaExistsLocally('notation-pdf:'+n.id);
+      if(exists){ aliveNots.push(n); }
+      else { cleaned++; }
+    }
+  }
+  if(aliveNots.length !== (S.notations||[]).length) S.notations = aliveNots;
+
+  // --- Tala video exports ---
+  const aliveVids = [];
+  for(const v of (S.talaExports||[])){
+    if(v.driveFileId){
+      aliveVids.push(v);
+    } else {
+      const exists = await mediaExistsLocally('tala-video:'+v.id);
+      if(exists){ aliveVids.push(v); }
+      else { cleaned++; }
+    }
+  }
+  if(aliveVids.length !== (S.talaExports||[]).length) S.talaExports = aliveVids;
+
+  if(cleaned > 0){
+    persist();
+    renderRecordingsFilters(); renderRecordingsList();
+    renderNotationFilters(); renderNotationList();
+    renderTalaVideoList();
+    console.log('Cleaned '+cleaned+' orphaned entries on startup');
+  }
+}
 
 /* ---------- date helpers ---------- */
 const pad = n => String(n).padStart(2,'0');
@@ -6381,12 +6447,13 @@ $('#notEditBtn').addEventListener('click', ()=>{
 $('#notDeleteBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   if(!confirm('Delete "'+n.title+'"? This cannot be undone.')) return;
-  if(n.hasPdf){ try{ await mediaDelete('notation-pdf:'+n.id); }catch(e){} }
-  if(n.driveFileId){ driveDeleteFile(n.driveFileId); }
   S.notations = S.notations.filter(x=>x.id!==n.id);
+  persist();
   closeModal('m-notation-view');
   toast('Composition deleted');
-  renderAll();
+  if(n.hasPdf){ try{ await mediaDelete('notation-pdf:'+n.id); }catch(e){} }
+  if(n.driveFileId){ driveDeleteFile(n.driveFileId); }
+  renderNotationFilters(); renderNotationList();
 });
 $('#notSearch').addEventListener('input', e=>{ notSearchQuery = e.target.value.trim(); renderNotationList(); });
 $('#notFilterType').addEventListener('change', e=>{ notTypeFilter = e.target.value; renderNotationList(); });
@@ -7126,13 +7193,17 @@ $('#recFixFormatBtn').addEventListener('click', async ()=>{
 $('#recDeleteBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   if(!confirm('Delete "'+r.title+'"? This cannot be undone.')) return;
-  try{ await mediaDelete('recording-audio:'+r.id); }catch(e){}
-  if(r.driveFileId){ driveDeleteFile(r.driveFileId); }
+  // Remove metadata FIRST and persist IMMEDIATELY — this is the critical step that prevents
+  // ghost entries. Even if the app crashes right after this line, the entry is already gone
+  // from S. The binary cleanup (IndexedDB + Drive) is best-effort after that.
   S.recordings = S.recordings.filter(x=>x.id!==r.id);
+  persist();
   closeModal('m-recording-view');
   toast('Recording deleted');
-  renderAll();
-  setTimeout(()=>refreshRecDriveStorageNote(true), 3000); // gives the (not-awaited) Drive delete above a moment to actually land first
+  try{ await mediaDelete('recording-audio:'+r.id); }catch(e){}
+  if(r.driveFileId){ driveDeleteFile(r.driveFileId); }
+  renderRecordingsFilters(); renderRecordingsList();
+  setTimeout(()=>refreshRecDriveStorageNote(true), 3000);
 });
 
 /* =====================================================
@@ -7804,12 +7875,13 @@ $('#talaVideoShareBtn').addEventListener('click', async ()=>{
 $('#talaVideoDeleteBtn').addEventListener('click', async ()=>{
   const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
   if(!confirm('Delete "'+v.title+'"? This cannot be undone.')) return;
-  try{ await mediaDelete('tala-video:'+v.id); }catch(e){}
-  if(v.driveFileId){ driveDeleteFile(v.driveFileId); }
   S.talaExports = S.talaExports.filter(x=>x.id!==v.id);
+  persist();
   closeModal('m-tala-video-view');
   toast('Video deleted');
-  renderAll();
+  try{ await mediaDelete('tala-video:'+v.id); }catch(e){}
+  if(v.driveFileId){ driveDeleteFile(v.driveFileId); }
+  renderTalaVideoList();
 });
 
 /* =====================================================
@@ -8139,6 +8211,10 @@ if(!navigator.share){
 maybeShowReminder();
 if(driveCfg()){ connectDrive(false); } else { setDriveStatus('Not connected'); }
 if(!storageOK) toast('Heads up: this browser is blocking storage, so data will not persist. Use Export to save your work.');
+// Clean up any ghost entries left behind by interrupted delete operations — runs silently on
+// every startup, only removes entries whose binary data is truly gone from both local cache
+// and Drive. See the cleanOrphanedEntries function for the full logic.
+cleanOrphanedEntries().catch(e=>console.warn('Orphan cleanup skipped:', e));
 </script>
 <script>
 /* PWA: register the service worker, and PROMPT (never silently force) when a new version is ready */
