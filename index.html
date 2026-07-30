@@ -7142,10 +7142,19 @@ async function openRecordingView(id){
   $('#recFixFormatBtn').style.display = 'none';
   $('#recFormatNote').style.display = 'none';
   $('#recVersionsBtn').style.display = r.driveFileId ? '' : 'none';
+  // Open the modal FIRST so the user sees it immediately, then fetch the audio in the background.
+  // Without this, the modal only appeared after the 5-6 second Drive download — looking like
+  // nothing happened when you tapped the recording.
+  studentOptions($('#recMsgStudent'), false);
+  $('#recMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
+  $('#recMsgStudent').value = '';
+  openModal('m-recording-view');
   // Show a loading hint while the audio fetches (especially from Drive on first open)
   $('#recViewAudio').style.opacity = '0.4';
+  $('#recViewAudio').style.pointerEvents = 'none';
   try{
     const rec = await mediaGetWithDriveFallback('recording-audio:'+id, r.driveFileId);
+    if(viewingRecordingId !== id) return; // user closed or opened a different recording while we were fetching
     if(rec){
       viewingRecordingBlob = rec.blob;
       $('#recViewAudio').src = trackBlobUrl('recViewAudio', URL.createObjectURL(rec.blob));
@@ -7157,10 +7166,7 @@ async function openRecordingView(id){
     }
   }catch(e){}
   $('#recViewAudio').style.opacity = '1';
-  studentOptions($('#recMsgStudent'), false);
-  $('#recMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
-  $('#recMsgStudent').value = '';
-  openModal('m-recording-view');
+  $('#recViewAudio').style.pointerEvents = '';
 }
 $('#recSaveBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
