@@ -354,6 +354,8 @@
   .rec-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:11px;padding:10px 14px;margin-bottom:9px;background:var(--card);cursor:pointer}
   .rec-row:hover{border-color:var(--gold)}
   .rec-play-btn{flex:0 0 auto;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--gold-bg);color:var(--gold-ink);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem}
+  .annot-swatch{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+  .annot-swatch.active{border-color:var(--ink)}
   .rec-play-btn:hover{border-color:var(--gold)}
   .rec-waveform-wrap{position:relative;margin-top:6px;height:32px;display:none;cursor:pointer}
   .rec-waveform-wrap.on{display:block}
@@ -627,7 +629,7 @@
         <path class="pw dia s4" d="M108 6.5 l2.6 3.2 -2.6 3.2 -2.6 -3.2 z"/>
         <g class="pw s5"><ellipse cx="146" cy="12.5" rx="2.7" ry="2" transform="rotate(-18 146 12.5)"/><rect x="148.2" y="4" width="1.1" height="8.6" rx=".55"/></g>
       </svg>
-      <small>Teacher Console</small>
+      <small id="teacherConsoleLabel">Teacher Console</small>
     </div>
     <button class="nav-btn active" data-view="dashboard">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
@@ -654,8 +656,9 @@
       <button class="btn small gold" id="btnDrive">Connect Google Drive</button>
       <div class="tiny" id="driveStatus">Drive: not connected</div>
       <div class="tiny" id="driveAccountRow" style="display:none"><a href="#" class="foot-link" id="lnkDriveSwitch">switch account</a> · <a href="#" class="foot-link" id="lnkDriveSignOut">sign out</a> · <a href="#" class="foot-link" id="lnkDriveMigrate">upload existing files</a></div>
-      <div class="tiny"><a href="#" class="foot-link" id="lnkExport">backup file</a> · <a href="#" class="foot-link" id="lnkImport">restore file</a> · <a href="#" class="foot-link" id="lnkSnapshots">snapshots</a> · <a href="#" class="foot-link" id="lnkChangeClientId">change Client ID</a></div>
+      <div class="tiny"><a href="#" class="foot-link" id="lnkExport">backup file</a> · <a href="#" class="foot-link" id="lnkImport">restore file</a> · <a href="#" class="foot-link" id="lnkFullBackup">download everything (ZIP)</a> · <a href="#" class="foot-link" id="lnkFullRestore">restore from ZIP</a> · <a href="#" class="foot-link" id="lnkRecentlyDeleted">recently deleted</a> · <a href="#" class="foot-link" id="lnkSnapshots">snapshots</a> · <a href="#" class="foot-link" id="lnkChangeClientId">change Client ID</a></div>
       <input type="file" id="importFile" accept="application/json" style="display:none">
+      <input type="file" id="fullRestoreFile" accept=".zip,application/zip" style="display:none">
       <div class="tiny" id="backupStatus">Data is stored in this browser.</div>
     </div>
   </aside>
@@ -1088,6 +1091,7 @@
           <div class="not-toolbar">
             <input id="recSearch" class="search-input" placeholder="Search title, raga, tala, composer…" style="flex:1 1 220px;min-width:0">
             <button class="btn gold" id="btnNewRecording">&#127908; New recording</button>
+            <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
             <select id="recFilterType"><option value="">All types</option></select>
@@ -1341,6 +1345,7 @@
       </div>
       <div class="field span2"><label for="notLyrics">Lyrics (sahitya)</label><textarea id="notLyrics" maxlength="10000" placeholder="Pallavi, anupallavi, charanam…" style="min-height:120px"></textarea></div>
       <div class="field span2"><label for="notMeaning">Meaning</label><textarea id="notMeaning" maxlength="10000" placeholder="Optional — the meaning, in your own words"></textarea></div>
+      <div class="field span2"><label for="notRefLink">Reference link (optional)</label><input id="notRefLink" type="url" placeholder="YouTube video, audio link, etc. — e.g. https://youtube.com/watch?v=..."></div>
       <div class="field span2"><label for="notPdf">Notation PDF (optional)</label>
         <input id="notPdf" type="file" accept="application/pdf">
         <div class="tiny" id="notPdfCurrent" style="color:var(--muted);margin-top:4px"></div>
@@ -1377,6 +1382,8 @@
         <button class="btn" id="notMsgBtn">Message student</button>
         <button class="btn" id="notShareBtn">Share text</button>
         <button class="btn" id="notSharePdfBtn" style="display:none">Share PDF</button>
+        <button class="btn" id="notRecordBtn">Record student singing this</button>
+        <button class="btn" id="notAnnotateBtn" style="display:none">Annotate</button>
         <button class="btn" id="notVersionsBtn" style="display:none">Version history</button>
         <button class="btn gold" id="notPracticeSheetBtn">Print practice sheet</button>
         <button class="btn gold" id="notStyledSheetBtn" style="display:none">Download styled practice sheet</button>
@@ -1415,6 +1422,61 @@
     <div id="tpLoopsList" style="margin:12px 0;max-height:420px;overflow-y:auto"></div>
     <input type="file" id="tpLoopFileInput" accept="audio/*" style="display:none">
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-tanpura-loops">Close</button></div></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-recently-deleted">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recentlyDeletedTitle" style="max-width:640px">
+    <h3 id="recentlyDeletedTitle">Recently deleted</h3>
+    <div class="sub">Deleted recordings, compositions, and tala videos stay here for 30 days before being permanently removed — restore anything you didn't mean to delete.</div>
+    <div id="recentlyDeletedList" style="margin:12px 0;max-height:440px;overflow-y:auto"></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-recently-deleted">Close</button></div></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-debug-panel">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="debugPanelTitle" style="max-width:640px">
+    <h3 id="debugPanelTitle">Debug info</h3>
+    <div class="sub">Technical details — useful when reporting a problem. Nothing here is sent anywhere; it's just for viewing.</div>
+    <div id="debugPanelContent" style="margin:12px 0;max-height:440px;overflow-y:auto;font-family:monospace;font-size:.8rem;white-space:pre-wrap"></div>
+    <div class="modal-foot">
+      <button class="btn tiny" id="debugCopyBtn">Copy to clipboard</button>
+      <div class="right"><button class="btn" data-close="m-debug-panel">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-notation-annotate">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="notAnnotateTitle" style="max-width:820px">
+    <h3 id="notAnnotateTitle">Annotate notation</h3>
+    <div class="sub">Draw directly on the page — circle a tricky phrase, highlight a line, add an arrow. This is a separate markup layer; the original PDF stored for this notation is never changed.</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0">
+      <button class="btn tiny" id="annotPrevPage">&larr; Prev</button>
+      <span id="annotPageLabel" class="tiny">Page 1 of 1</span>
+      <button class="btn tiny" id="annotNextPage">Next &rarr;</button>
+      <span style="width:1px;height:20px;background:var(--line)"></span>
+      <button class="btn tiny gold" id="annotToolPen">Pen</button>
+      <button class="btn tiny" id="annotToolHighlight">Highlighter</button>
+      <span style="display:flex;gap:5px;align-items:center" id="annotColors">
+        <button class="annot-swatch" data-color="#e53935" style="background:#e53935"></button>
+        <button class="annot-swatch" data-color="#1e88e5" style="background:#1e88e5"></button>
+        <button class="annot-swatch" data-color="#43a047" style="background:#43a047"></button>
+        <button class="annot-swatch" data-color="#fdd835" style="background:#fdd835"></button>
+        <button class="annot-swatch" data-color="#212121" style="background:#212121"></button>
+      </span>
+      <span style="width:1px;height:20px;background:var(--line)"></span>
+      <button class="btn tiny" id="annotUndo">Undo</button>
+      <button class="btn tiny" id="annotClearPage" style="color:var(--red)">Clear page</button>
+    </div>
+    <div id="annotCanvasWrap" style="position:relative;overflow:auto;max-height:56vh;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none">
+      <canvas id="annotBaseCanvas" style="display:block"></canvas>
+      <canvas id="annotDrawCanvas" style="position:absolute;top:0;left:0"></canvas>
+    </div>
+    <div class="modal-foot">
+      <button class="btn gold" id="annotSavePage">Save this page</button>
+      <button class="btn" id="annotDownloadPdf">Download annotated PDF</button>
+      <div class="right"><button class="btn" data-close="m-notation-annotate">Close</button></div>
+    </div>
   </div>
 </div>
 
@@ -1763,6 +1825,9 @@
   <button class="btn tiny gold" id="dayRollRefresh">Refresh</button>
   <button class="btn tiny" id="dayRollDismiss">Later</button>
 </div>
+<div class="daybar" id="offlineBar" style="display:none;background:#f3e8e8;border-bottom-color:#e0b0b0;color:#8b3a3a" role="status">
+  <span>You're offline — recordings and PDFs from Drive won't load until you're back online.</span>
+</div>
 <div class="daybar" id="pwaUpdateBar" style="display:none" role="status">
   <span>A new version of RAGA is ready.</span>
   <button class="btn tiny gold" id="pwaUpdateBtn">Update now</button>
@@ -1774,6 +1839,16 @@
    RAGA Music Classes — single-file app with localStorage
    ===================================================== */
 const KEY = 'ragaMusicClasses.v1';
+// A small in-memory error log for the Debug panel — capped so it can never grow unbounded.
+// Hooked as early as possible so it catches errors from anywhere in the app, not just ones
+// inside try/catch blocks that were specifically written to log to it.
+const DEBUG_LOG = [];
+function debugLog(msg){
+  DEBUG_LOG.push({t:Date.now(), msg:String(msg)});
+  if(DEBUG_LOG.length>50) DEBUG_LOG.shift();
+}
+window.addEventListener('error', e=>{ debugLog('Error: '+(e.message||'')+(e.filename?(' @ '+e.filename+':'+e.lineno):'')); });
+window.addEventListener('unhandledrejection', e=>{ debugLog('Unhandled promise rejection: '+(e.reason && e.reason.message || e.reason || '')); });
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const RUPEE = new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0});
@@ -1917,6 +1992,101 @@ async function mediaExistsLocally(key){
 // ran out of memory, or the user navigated away at the wrong moment).
 // Runs automatically on every app startup — non-destructive by design: an entry with a valid
 // driveFileId is always kept (the data is recoverable from Drive even if not cached locally).
+// A minimal ZIP writer — "stored" method (no compression), which is all we need for a backup:
+// most of what's inside is already-compressed audio/video/PDF, so real compression would barely
+// help and isn't worth pulling in another library for. Produces a standard, valid ZIP file
+// that any unzip tool (Windows, macOS, Android, anywhere) can open normally.
+function crc32(buf){
+  if(!crc32.table){
+    const table = [];
+    for(let n=0;n<256;n++){
+      let c=n;
+      for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1);
+      table[n]=c>>>0;
+    }
+    crc32.table = table;
+  }
+  let crc = 0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) crc = (crc>>>8) ^ crc32.table[(crc^buf[i]) & 0xFF];
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function buildZipBlob(files){ // files: [{name, data: Uint8Array}]
+  const encoder = new TextEncoder();
+  const now = new Date();
+  const dosTime = ((now.getHours()&0x1F)<<11) | ((now.getMinutes()&0x3F)<<5) | ((now.getSeconds()>>1)&0x1F);
+  const dosDate = (((now.getFullYear()-1980)&0x7F)<<9) | (((now.getMonth()+1)&0xF)<<5) | (now.getDate()&0x1F);
+  const localParts = [], centralParts = [];
+  let offset = 0;
+  for(const f of files){
+    const nameBytes = encoder.encode(f.name);
+    const data = f.data;
+    const crc = crc32(data);
+    const lh = new Uint8Array(30); const lv = new DataView(lh.buffer);
+    lv.setUint32(0,0x04034b50,true); lv.setUint16(4,20,true); lv.setUint16(6,0,true); lv.setUint16(8,0,true);
+    lv.setUint16(10,dosTime,true); lv.setUint16(12,dosDate,true); lv.setUint32(14,crc,true);
+    lv.setUint32(18,data.length,true); lv.setUint32(22,data.length,true);
+    lv.setUint16(26,nameBytes.length,true); lv.setUint16(28,0,true);
+    localParts.push(lh, nameBytes, data);
+
+    const ch = new Uint8Array(46); const cv = new DataView(ch.buffer);
+    cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true); cv.setUint16(8,0,true); cv.setUint16(10,0,true);
+    cv.setUint16(12,dosTime,true); cv.setUint16(14,dosDate,true); cv.setUint32(16,crc,true);
+    cv.setUint32(20,data.length,true); cv.setUint32(24,data.length,true);
+    cv.setUint16(28,nameBytes.length,true); cv.setUint16(30,0,true); cv.setUint16(32,0,true);
+    cv.setUint16(34,0,true); cv.setUint16(36,0,true); cv.setUint32(38,0,true); cv.setUint32(42,offset,true);
+    centralParts.push(ch, nameBytes);
+
+    offset += lh.length + nameBytes.length + data.length;
+  }
+  const centralDirStart = offset;
+  const centralDirSize = centralParts.reduce((s,p)=>s+p.length, 0);
+  const eocd = new Uint8Array(22); const ev = new DataView(eocd.buffer);
+  ev.setUint32(0,0x06054b50,true); ev.setUint16(4,0,true); ev.setUint16(6,0,true);
+  ev.setUint16(8,files.length,true); ev.setUint16(10,files.length,true);
+  ev.setUint32(12,centralDirSize,true); ev.setUint32(16,centralDirStart,true); ev.setUint16(20,0,true);
+  return new Blob([...localParts, ...centralParts, eocd], {type:'application/zip'});
+}
+// Reads a ZIP blob back out — just enough to support restoring our own backups (central
+// directory walk; "stored" method only, since that's all buildZipBlob ever writes).
+async function readZipEntries(blob){
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+  let eocdOffset = -1;
+  for(let i=buf.length-22; i>=0; i--){
+    if(dv.getUint32(i,true)===0x06054b50){ eocdOffset = i; break; }
+  }
+  if(eocdOffset<0) throw new Error('Not a valid ZIP file');
+  const entryCount = dv.getUint16(eocdOffset+10,true);
+  let cdOffset = dv.getUint32(eocdOffset+16,true);
+  const entries = [];
+  const decoder = new TextDecoder();
+  for(let i=0;i<entryCount;i++){
+    if(dv.getUint32(cdOffset,true)!==0x02014b50) break;
+    const compSize = dv.getUint32(cdOffset+20,true);
+    const nameLen = dv.getUint16(cdOffset+28,true);
+    const extraLen = dv.getUint16(cdOffset+30,true);
+    const commentLen = dv.getUint16(cdOffset+32,true);
+    const localOffset = dv.getUint32(cdOffset+42,true);
+    const name = decoder.decode(buf.slice(cdOffset+46, cdOffset+46+nameLen));
+    const lNameLen = dv.getUint16(localOffset+26,true);
+    const lExtraLen = dv.getUint16(localOffset+28,true);
+    const dataStart = localOffset + 30 + lNameLen + lExtraLen;
+    entries.push({name, data: buf.slice(dataStart, dataStart+compSize)});
+    cdOffset += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+// cleanOrphanedEntries, purgeOldDeletedItems, and cleanDriveGhosts (below) all read-then-reassign
+// S.recordings / S.notations / S.talaExports. They can be triggered independently — one on every
+// startup, one whenever Drive connects (which can happen moments after startup) — so running them
+// truly concurrently risks one's reassignment silently clobbering the other's. This queue forces
+// them to always run one at a time, in the order they were scheduled, regardless of what
+// triggered each one or when.
+let _cleanupChain = Promise.resolve();
+function runCleanupSerially(fn, label){
+  _cleanupChain = _cleanupChain.then(()=>fn().catch(e=>console.warn(label+' skipped:', e)));
+  return _cleanupChain;
+}
 async function cleanOrphanedEntries(){
   let cleaned = 0;
   // Pass 1: remove entries with no driveFileId AND no local blob — definitely ghosts.
@@ -2262,6 +2432,14 @@ function openModal(id, fromPop){
 function closeModal(id, fromPop){
   const el = $('#'+id);
   if(!el.classList.contains('open')) return;
+  if(id==='m-recording-capture'){
+    // Covers every way this modal can close — the explicit Cancel button, tapping the backdrop,
+    // or the back button — not just one of them. Without this, a stale pendingRecordingTags from
+    // "Record student singing this" could silently attach itself to the next unrelated recording.
+    stopMicStream(); recStopTanpuraMix();
+    if(typeof recTimerHandle!=='undefined' && recTimerHandle){ clearInterval(recTimerHandle); recTimerHandle=null; }
+    pendingRecordingTags = null;
+  }
   el.querySelectorAll('audio, video').forEach(m => { try{ m.pause(); }catch(e){} });
   el.classList.remove('open');
   modalOpenCount = document.querySelectorAll('.modal-backdrop.open').length;
@@ -4425,6 +4603,259 @@ function doExport(){
 }
 $('#lnkExport').addEventListener('click',e=>{e.preventDefault();doExport();});
 $('#lnkImport').addEventListener('click',e=>{e.preventDefault();$('#importFile').click();});
+// Picks a sensible file extension for a media key based on what KIND of key it is, not just
+// the blob's MIME type — audioExtFromType only understands audio, so a notation PDF or an
+// annotation PNG would otherwise get mislabeled (e.g. a PDF ending up named ".webm").
+// This only affects the cosmetic filename inside the ZIP; the real fix for restore is the
+// media-meta.json sidecar below, which preserves the exact original MIME type regardless.
+function mediaKeyExt(key, mimeType){
+  if(key.startsWith('notation-pdf:')) return 'pdf';
+  if(key.startsWith('notation-annotation:')) return 'png';
+  if(key.startsWith('tala-video:')) return (mimeType||'').includes('mp4') ? 'mp4' : 'webm';
+  return audioExtFromType(mimeType); // recording-audio:*, tanpura-studio-loop:*
+}
+$('#lnkFullBackup').addEventListener('click', async e=>{
+  e.preventDefault();
+  const link = $('#lnkFullBackup');
+  const originalText = link.textContent;
+  link.textContent = 'Preparing…';
+  try{
+    const files = [{name:'data.json', data:new TextEncoder().encode(JSON.stringify(S))}];
+    const db = await openMediaDB();
+    const keys = await new Promise((res,rej)=>{
+      const tx = db.transaction(MEDIA_STORE,'readonly');
+      const req = tx.objectStore(MEDIA_STORE).getAllKeys();
+      req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error);
+    });
+    let done=0;
+    const mediaMeta = {}; // key -> {mimeType} — the real fix for restore losing MIME type
+    for(const key of keys){
+      link.textContent = 'Preparing… ('+(++done)+'/'+keys.length+')';
+      try{
+        const rec = await mediaGet(key);
+        if(rec && rec.blob){
+          const ext = mediaKeyExt(String(key), rec.blob.type) || 'bin';
+          const safeName = String(key).replace(/[^\w\-:.]+/g,'_');
+          files.push({name:'media/'+safeName+(safeName.includes('.')?'':'.'+ext), data:new Uint8Array(await rec.blob.arrayBuffer())});
+          mediaMeta[key] = {mimeType: rec.blob.type||''};
+        }
+      }catch(e){}
+    }
+    files.push({name:'media-meta.json', data:new TextEncoder().encode(JSON.stringify(mediaMeta))});
+    const zipBlob = buildZipBlob(files);
+    const url = URL.createObjectURL(zipBlob);
+    const a=document.createElement('a'); a.href=url; a.download='RAGA_backup_'+TODAY+'.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Full backup downloaded ('+files.length+' files)');
+  }catch(e){
+    toast('Backup failed: '+(e&&e.message||'unknown error'));
+  } finally { link.textContent = originalText; }
+});
+$('#lnkFullRestore').addEventListener('click', e=>{ e.preventDefault(); $('#fullRestoreFile').click(); });
+/* ---------- Recently deleted — soft-delete recovery for recordings, notations, tala videos ---------- */
+const RECENTLY_DELETED_DAYS = 30;
+function renderRecentlyDeletedList(){
+  const el = $('#recentlyDeletedList'); if(!el) return;
+  const items = [];
+  (S.recordings||[]).forEach(r=>{ if(r.deletedAt) items.push({kind:'recording', label:'Recording', obj:r}); });
+  (S.notations||[]).forEach(n=>{ if(n.deletedAt) items.push({kind:'notation', label:'Composition', obj:n}); });
+  (S.talaExports||[]).forEach(v=>{ if(v.deletedAt) items.push({kind:'talaVideo', label:'Tala video', obj:v}); });
+  items.sort((a,b)=>b.obj.deletedAt-a.obj.deletedAt);
+  if(!items.length){
+    el.innerHTML = '<div class="empty" style="padding:20px 0">Nothing in Recently Deleted right now.</div>';
+    return;
+  }
+  el.innerHTML = items.map(it=>{
+    const daysLeft = Math.max(0, RECENTLY_DELETED_DAYS - Math.floor((Date.now()-it.obj.deletedAt)/86400000));
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
+      + '<div><div>'+esc(it.obj.title||'(untitled)')+'</div>'
+      + '<div class="tiny" style="color:var(--muted)">'+it.label+' · deleted '+fmtRecDate(it.obj.deletedAt)+' · auto-removed in '+daysLeft+' day'+(daysLeft===1?'':'s')+'</div></div>'
+      + '<div style="display:flex;gap:6px;flex:0 0 auto">'
+      + '<button class="btn tiny gold" data-restore-kind="'+it.kind+'" data-restore-id="'+it.obj.id+'">Restore</button>'
+      + '<button class="btn tiny" style="color:var(--red)" data-purge-kind="'+it.kind+'" data-purge-id="'+it.obj.id+'">Delete permanently</button>'
+      + '</div></div>';
+  }).join('');
+  el.querySelectorAll('[data-restore-kind]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      restoreDeletedItem(b.dataset.restoreKind, b.dataset.restoreId);
+      renderRecentlyDeletedList();
+    });
+  });
+  el.querySelectorAll('[data-purge-kind]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      if(!confirm('Permanently delete this? It cannot be recovered after this.')) return;
+      await purgeDeletedItem(b.dataset.purgeKind, b.dataset.purgeId);
+      renderRecentlyDeletedList();
+    });
+  });
+}
+function restoreDeletedItem(kind, id){
+  if(kind==='recording'){
+    const r = S.recordings.find(x=>x.id===id); if(r){ delete r.deletedAt; persist(); renderRecordingsFilters(); renderRecordingsList(); toast('Restored'); }
+  } else if(kind==='notation'){
+    const n = S.notations.find(x=>x.id===id); if(n){ delete n.deletedAt; persist(); renderNotationFilters(); renderNotationList(); toast('Restored'); }
+  } else if(kind==='talaVideo'){
+    const v = S.talaExports.find(x=>x.id===id); if(v){ delete v.deletedAt; persist(); renderTalaVideoList(); toast('Restored'); }
+  }
+}
+async function purgeDeletedItem(kind, id){
+  if(kind==='recording'){
+    const r = S.recordings.find(x=>x.id===id); if(!r) return;
+    try{ await mediaDelete('recording-audio:'+id); }catch(e){}
+    if(r.driveFileId) driveDeleteFile(r.driveFileId);
+    S.recordings = S.recordings.filter(x=>x.id!==id);
+  } else if(kind==='notation'){
+    const n = S.notations.find(x=>x.id===id); if(!n) return;
+    if(n.hasPdf){ try{ await mediaDelete('notation-pdf:'+id); }catch(e){} }
+    if(n.driveFileId) driveDeleteFile(n.driveFileId);
+    S.notations = S.notations.filter(x=>x.id!==id);
+  } else if(kind==='talaVideo'){
+    const v = S.talaExports.find(x=>x.id===id); if(!v) return;
+    try{ await mediaDelete('tala-video:'+id); }catch(e){}
+    if(v.driveFileId) driveDeleteFile(v.driveFileId);
+    S.talaExports = S.talaExports.filter(x=>x.id!==id);
+  }
+  persist();
+}
+// Runs on every startup — permanently removes anything that's been in Recently Deleted for
+// more than 30 days. This is what actually reclaims the storage; soft-delete alone never frees
+// space on its own.
+async function purgeOldDeletedItems(){
+  const cutoff = Date.now() - RECENTLY_DELETED_DAYS*86400000;
+  const toPurge = [];
+  (S.recordings||[]).forEach(r=>{ if(r.deletedAt && r.deletedAt<cutoff) toPurge.push(['recording', r.id]); });
+  (S.notations||[]).forEach(n=>{ if(n.deletedAt && n.deletedAt<cutoff) toPurge.push(['notation', n.id]); });
+  (S.talaExports||[]).forEach(v=>{ if(v.deletedAt && v.deletedAt<cutoff) toPurge.push(['talaVideo', v.id]); });
+  for(const [kind,id] of toPurge){ await purgeDeletedItem(kind, id); }
+  if(toPurge.length){ renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); }
+}
+$('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
+
+/* ---------- Debug panel — long-press "Teacher Console" to open ---------- */
+async function computeStorageStats(){
+  const lines = [];
+  lines.push('=== RAGA Debug Info ===');
+  lines.push('Generated: '+new Date().toLocaleString());
+  lines.push('');
+  lines.push('--- localStorage ---');
+  try{
+    const json = JSON.stringify(S);
+    lines.push('Data size: '+(json.length/1024).toFixed(1)+' KB');
+    lines.push('Students: '+(S.students||[]).length+' · Classes: '+(S.classes||[]).length+' · Payments: '+(S.payments||[]).length);
+    lines.push('Recordings: '+(S.recordings||[]).length+' (deleted: '+(S.recordings||[]).filter(r=>r.deletedAt).length+')');
+    lines.push('Notations: '+(S.notations||[]).length+' (deleted: '+(S.notations||[]).filter(n=>n.deletedAt).length+')');
+    lines.push('Tala videos: '+(S.talaExports||[]).length+' (deleted: '+(S.talaExports||[]).filter(v=>v.deletedAt).length+')');
+    lines.push('Schema version: '+(S._schemaVersion||0));
+  }catch(e){ lines.push('Could not measure: '+e.message); }
+  lines.push('');
+  lines.push('--- IndexedDB (local media cache) ---');
+  try{
+    const db = await openMediaDB();
+    const keys = await new Promise((res,rej)=>{
+      const tx = db.transaction(MEDIA_STORE,'readonly');
+      const req = tx.objectStore(MEDIA_STORE).getAllKeys();
+      req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error);
+    });
+    let totalBytes = 0;
+    for(const k of keys){
+      try{ const rec = await mediaGet(k); if(rec && rec.blob) totalBytes += rec.blob.size; }catch(e){}
+    }
+    lines.push('Cached files: '+keys.length);
+    lines.push('Total size: '+(totalBytes/1024/1024).toFixed(2)+' MB');
+  }catch(e){ lines.push('Could not read IndexedDB: '+e.message); }
+  lines.push('');
+  lines.push('--- Storage quota (browser estimate) ---');
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const est = await navigator.storage.estimate();
+      lines.push('Used: '+((est.usage||0)/1024/1024).toFixed(1)+' MB of '+((est.quota||0)/1024/1024).toFixed(0)+' MB quota');
+    } else {
+      lines.push('Not available on this browser');
+    }
+  }catch(e){ lines.push('Could not estimate: '+e.message); }
+  lines.push('');
+  lines.push('--- Google Drive ---');
+  lines.push('Connected: '+(gToken ? 'Yes' : 'No'));
+  lines.push('Pending deletes queued: '+((S.meta && S.meta.pendingDriveDeletes || []).length));
+  lines.push('');
+  lines.push('--- Device ---');
+  lines.push('User agent: '+navigator.userAgent);
+  lines.push('Online: '+(navigator.onLine ? 'Yes' : 'No'));
+  lines.push('Screen: '+window.innerWidth+'x'+window.innerHeight);
+  lines.push('');
+  lines.push('--- Recent errors (last '+DEBUG_LOG.length+') ---');
+  if(!DEBUG_LOG.length) lines.push('(none logged this session)');
+  DEBUG_LOG.slice().reverse().forEach(e=>{ lines.push(new Date(e.t).toLocaleTimeString()+' — '+e.msg); });
+  return lines.join('\n');
+}
+async function openDebugPanel(){
+  $('#debugPanelContent').textContent = 'Gathering info…';
+  openModal('m-debug-panel');
+  const text = await computeStorageStats();
+  $('#debugPanelContent').textContent = text;
+}
+$('#debugCopyBtn').addEventListener('click', async ()=>{
+  try{ await navigator.clipboard.writeText($('#debugPanelContent').textContent); toast('Copied'); }
+  catch(e){ toast('Could not copy — select the text manually instead'); }
+});
+// Long-press (or long-click on desktop) the "Teacher Console" label to open the debug panel
+(function(){
+  const el = $('#teacherConsoleLabel'); if(!el) return;
+  let pressTimer = null;
+  const start = ()=>{ pressTimer = setTimeout(openDebugPanel, 900); };
+  const cancel = ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } };
+  el.addEventListener('touchstart', start, {passive:true});
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchmove', cancel);
+  el.addEventListener('mousedown', start);
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+})();
+$('#fullRestoreFile').addEventListener('change', async ()=>{
+  const file = $('#fullRestoreFile').files[0]; $('#fullRestoreFile').value = '';
+  if(!file) return;
+  if(!confirm('Restore from this ZIP? This will replace ALL current data and media on this device — recordings, notations, students, everything. This cannot be undone.')) return;
+  try{
+    toast('Reading backup…');
+    const entries = await readZipEntries(file);
+    const dataEntry = entries.find(en=>en.name==='data.json');
+    if(!dataEntry) throw new Error('This ZIP does not look like a RAGA backup (no data.json found)');
+    const newS = JSON.parse(new TextDecoder().decode(dataEntry.data));
+    const db = await openMediaDB();
+    // Clear existing media store before restoring
+    await new Promise((res,rej)=>{
+      const tx = db.transaction(MEDIA_STORE,'readwrite');
+      tx.objectStore(MEDIA_STORE).clear();
+      tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error);
+    });
+    let restored = 0;
+    let mediaMeta = {};
+    const metaEntry = entries.find(en=>en.name==='media-meta.json');
+    if(metaEntry){
+      try{ mediaMeta = JSON.parse(new TextDecoder().decode(metaEntry.data)); }catch(e){}
+    }
+    for(const en of entries){
+      if(!en.name.startsWith('media/')) continue;
+      const key = en.name.slice('media/'.length).replace(/\.[a-z0-9]+$/i,''); // strip the cosmetic extension added at export time to recover the original storage key
+      try{
+        // Restore the exact original MIME type from the sidecar if we have it — without this,
+        // every restored file would come back with an empty type, which breaks format detection
+        // (Fix playback, share, Drive re-upload all rely on blob.type being correct).
+        const mimeType = (mediaMeta[key] && mediaMeta[key].mimeType) || '';
+        const blob = mimeType ? new Blob([en.data], {type:mimeType}) : new Blob([en.data]);
+        await mediaPut(key, blob, {mimeType, size:blob.size});
+        restored++;
+      }catch(e){}
+    }
+    S = newS;
+    persist();
+    renderAll();
+    toast('Restored from backup — '+restored+' media files recovered locally (anything with a Drive link will re-sync automatically)');
+  }catch(e){
+    toast('Restore failed: '+(e&&e.message||'unknown error'));
+  }
+});
 
 let pendingImport=null;
 function normalizeData(d){
@@ -4522,6 +4953,17 @@ const DRIVE_FILE='raga-music-classes-data.json';
 // app is hosted at. An explicit override (saved via "change Client ID") always takes precedence.
 const RAGA_GOOGLE_CLIENT_ID='1070966217158-pia4db0kai1h3j0903ml27m25q1rctj8.apps.googleusercontent.com';
 let gToken=null, gTokenClient=null, syncTimer=null, lastPushedJSON=null, driveBusy=false, pendingRemote=null;
+let gTokenRefreshTimer = null;
+// Access tokens last about an hour. Refreshing 5 minutes before that (rather than waiting for a
+// request to fail with 401 and refresh reactively) means Varun never hits even the small extra
+// delay of a mid-action retry — by the time he taps Save, the token is already fresh.
+function scheduleProactiveTokenRefresh(expiresInSec){
+  if(gTokenRefreshTimer) clearTimeout(gTokenRefreshTimer);
+  const secUntilRefresh = Math.max(30, (expiresInSec||3600)-300);
+  gTokenRefreshTimer = setTimeout(()=>{
+    if(gToken) requestSilentTokenRefresh(); // only if still connected — no point after a manual sign-out
+  }, secUntilRefresh*1000);
+}
 let tokenWaiters=[], silentRefreshInFlight=false;
 function driveCfg(){ try{ return localStorage.getItem(KEY+'.gclient')||RAGA_GOOGLE_CLIENT_ID; }catch(e){ return RAGA_GOOGLE_CLIENT_ID; } }
 function hasCustomDriveCfg(){ try{ return !!localStorage.getItem(KEY+'.gclient'); }catch(e){ return false; } }
@@ -4551,7 +4993,8 @@ function initTokenClient(){
       silentRefreshInFlight=false;
       if(resp && resp.access_token){
         gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); driveEnsureFileStorageFolders(); flushPendingDriveDeletes();
-        cleanDriveGhosts().catch(e=>console.warn('Drive ghost cleanup skipped:', e));
+        runCleanupSerially(cleanDriveGhosts, 'Drive ghost cleanup');
+        scheduleProactiveTokenRefresh(resp.expires_in);
         tokenWaiters.forEach(w=>w.resolve(true)); tokenWaiters=[];
       } else {
         setDriveStatus('Sign-in failed — tap to retry', 'var(--red)');
@@ -5225,12 +5668,12 @@ setInterval(()=>{ if(gToken && navigator.onLine!==false) scheduleSync(); }, 4500
 let dayRollDismissed=false;
 function checkDayRollover(){
   if(dayRollDismissed) return;
-  if(dstr(new Date())!==TODAY) $('#dayRollBar').style.display='flex';
+  if(dstr(new Date())!==TODAY){ $('#dayRollBar').style.display='flex'; updateDaybarStacking(); }
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ checkDayRollover(); if(tpPlaying && tpCtx && tpCtx.state==='suspended') tpCtx.resume(); if(talaPlaying && talaCtx && talaCtx.state==='suspended') talaCtx.resume(); } });
 setInterval(checkDayRollover, 5*60*1000);
 $('#dayRollRefresh').addEventListener('click',()=>location.reload());
-$('#dayRollDismiss').addEventListener('click',()=>{ dayRollDismissed=true; $('#dayRollBar').style.display='none'; });
+$('#dayRollDismiss').addEventListener('click',()=>{ dayRollDismissed=true; $('#dayRollBar').style.display='none'; updateDaybarStacking(); });
 
 // nav bar position: plain CSS position:fixed;bottom:0 handles this — no JS needed.
 
@@ -6149,6 +6592,7 @@ function renderNotationFilters(){
   fill('notFilterRaga','raga','ragas'); fill('notFilterTala','tala','talas'); fill('notFilterComposer','composer','composers');
 }
 function matchesNotationFilters(n){
+  if(n.deletedAt) return false; // soft-deleted — lives in Recently Deleted instead
   if(notTypeFilter && n.type!==notTypeFilter) return false;
   if(notRagaFilter && n.raga!==notRagaFilter) return false;
   if(notTalaFilter && n.tala!==notTalaFilter) return false;
@@ -6199,6 +6643,7 @@ function openNotationModal(id){
   }
   $('#notLyrics').value = n ? (n.lyrics||'') : '';
   $('#notMeaning').value = n ? (n.meaning||'') : '';
+  $('#notRefLink').value = n ? (n.refLink||'') : '';
   $('#notPdf').value = '';
   $('#notPdfCurrent').textContent = n && n.hasPdf ? ('Current file: '+(n.pdfName||'notation.pdf')+' — choosing a new one replaces it') : '';
   refreshNotationDatalists();
@@ -6215,6 +6660,7 @@ $('#notSave').addEventListener('click', async ()=>{
     title, raga:$('#notRaga').value.trim(), tala:$('#notTala').value.trim(),
     composer:$('#notComposer').value.trim(), deity:$('#notDeity').value.trim(), type:typeVal,
     lyrics:$('#notLyrics').value.slice(0,10000), meaning:$('#notMeaning').value.slice(0,10000),
+    refLink:$('#notRefLink').value.trim().slice(0,500),
     updatedAt:Date.now()
   };
   let id = editingNotationId;
@@ -6290,17 +6736,20 @@ async function openNotationView(id){
   if(n.lyrics) body += '<div class="not-read-label">Lyrics</div><div class="not-read">'+esc(n.lyrics)+'</div>';
   if(n.meaning) body += '<div class="not-read-label">Meaning</div><div class="not-read">'+esc(n.meaning)+'</div>';
   if(!n.lyrics && !n.meaning) body = '<div class="empty" style="padding:16px 0">No lyrics or meaning added — just the tags above.</div>';
+  if(n.refLink) body += '<div style="margin-top:12px"><a href="'+esc(n.refLink)+'" target="_blank" rel="noopener" class="btn tiny gold" style="text-decoration:none;display:inline-block">&#9658; Listen to reference</a></div>';
   $('#notReadWrap').innerHTML = body;
   studentOptions($('#notMsgStudent'), false);
   $('#notMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
   $('#notMsgStudent').value = '';
   $('#notSharePdfBtn').style.display = n.hasPdf ? '' : 'none';
+  $('#notAnnotateBtn').style.display = n.hasPdf ? '' : 'none';
   $('#notStyledSheetBtn').style.display = n.hasPdf ? '' : 'none';
   $('#notVersionsBtn').style.display = n.driveFileId ? '' : 'none';
   $('#notPdfOpenBtn').style.display = 'none';
   $('#notPdfDownloadBtn').style.display = 'none';
   $('#notPdfOpenBtn').onclick = null;
   $('#notPdfDownloadBtn').onclick = null;
+  openModal('m-notation-view');
   if(n.hasPdf){
     $('#notPdfViewWrap').style.display = '';
     $('#notPdfViewStatus').style.display = '';
@@ -6327,8 +6776,13 @@ async function openNotationView(id){
   } else {
     $('#notPdfViewWrap').style.display = 'none';
   }
-  openModal('m-notation-view');
 }
+$('#notRecordBtn').addEventListener('click', ()=>{
+  const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
+  pendingRecordingTags = {raga:n.raga||'', tala:n.tala||'', composer:n.composer||'', type:n.type||'', title:n.title||''};
+  closeModal('m-notation-view');
+  openRecordingCapture();
+});
 $('#notMsgBtn').addEventListener('click', ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   const sid = $('#notMsgStudent').value;
@@ -6515,15 +6969,188 @@ $('#notEditBtn').addEventListener('click', ()=>{
   closeModal('m-notation-view');
   openNotationModal(id);
 });
+/* ---------- Notation PDF annotation — a separate markup layer, original PDF never touched ---------- */
+let annotNotationId = null, annotPdfDoc = null, annotCurrentPage = 1, annotTotalPages = 1;
+let annotTool = 'pen', annotColor = '#e53935', annotStrokes = [];
+let annotDrawing = false, annotCurrentStroke = null;
+const ANNOT_BASE_SCALE = 1.5;
+$('#notAnnotateBtn').addEventListener('click', async ()=>{
+  const n = S.notations.find(x=>x.id===viewingNotationId); if(!n || !n.hasPdf) return;
+  if(!window.pdfjsLib){ toast('Still loading the PDF engine — try again in a second'); return; }
+  annotNotationId = n.id;
+  closeModal('m-notation-view');
+  openModal('m-notation-annotate');
+  $('#annotPageLabel').textContent = 'Loading…';
+  try{
+    const rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId);
+    if(!rec) throw new Error('PDF not available on this device or in Drive');
+    const arrayBuf = await rec.blob.arrayBuffer();
+    if(!pdfjsWorkerConfigured){
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsWorkerConfigured = true;
+    }
+    annotPdfDoc = await pdfjsLib.getDocument({data: arrayBuf}).promise;
+    annotTotalPages = annotPdfDoc.numPages;
+    annotCurrentPage = 1;
+    await annotRenderCurrentPage();
+  }catch(e){
+    $('#annotPageLabel').textContent = 'Could not load PDF';
+    toast('Could not open PDF for annotation ('+(e.message||'')+')');
+  }
+});
+async function annotRenderCurrentPage(){
+  $('#annotPageLabel').textContent = 'Page '+annotCurrentPage+' of '+annotTotalPages;
+  const page = await annotPdfDoc.getPage(annotCurrentPage);
+  const viewport = page.getViewport({scale: ANNOT_BASE_SCALE});
+  const baseCanvas = $('#annotBaseCanvas');
+  baseCanvas.width = viewport.width; baseCanvas.height = viewport.height;
+  baseCanvas.style.width = viewport.width+'px';
+  await page.render({canvasContext: baseCanvas.getContext('2d'), viewport}).promise;
+  const drawCanvas = $('#annotDrawCanvas');
+  drawCanvas.width = viewport.width; drawCanvas.height = viewport.height;
+  drawCanvas.style.width = viewport.width+'px'; drawCanvas.style.height = viewport.height+'px';
+
+  annotStrokes = [];
+  try{
+    const existing = await mediaGet('notation-annotation:'+annotNotationId+':'+annotCurrentPage);
+    if(existing && existing.meta && existing.meta.strokes) annotStrokes = existing.meta.strokes;
+  }catch(e){}
+  annotRedrawOverlay();
+}
+function annotRedrawOverlay(){
+  const canvas = $('#annotDrawCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(const stroke of annotStrokes){
+    ctx.globalAlpha = stroke.alpha;
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    stroke.points.forEach((p,i)=>{ if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function annotPointerPos(e){
+  const canvas = $('#annotDrawCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return { x:(clientX-rect.left)*(canvas.width/rect.width), y:(clientY-rect.top)*(canvas.height/rect.height) };
+}
+function annotStartDraw(e){
+  e.preventDefault();
+  annotDrawing = true;
+  annotCurrentStroke = {
+    color: annotColor,
+    width: annotTool==='highlight' ? 18 : 3,
+    alpha: annotTool==='highlight' ? 0.35 : 1,
+    points: [annotPointerPos(e)]
+  };
+  annotStrokes.push(annotCurrentStroke);
+}
+function annotMoveDraw(e){
+  if(!annotDrawing) return;
+  e.preventDefault();
+  annotCurrentStroke.points.push(annotPointerPos(e));
+  annotRedrawOverlay();
+}
+function annotEndDraw(){ annotDrawing = false; annotCurrentStroke = null; }
+(function(){
+  const c = $('#annotDrawCanvas');
+  c.addEventListener('mousedown', annotStartDraw);
+  c.addEventListener('mousemove', annotMoveDraw);
+  window.addEventListener('mouseup', annotEndDraw);
+  c.addEventListener('touchstart', annotStartDraw, {passive:false});
+  c.addEventListener('touchmove', annotMoveDraw, {passive:false});
+  c.addEventListener('touchend', annotEndDraw);
+})();
+$('#annotToolPen').addEventListener('click', ()=>{ annotTool='pen'; $('#annotToolPen').classList.add('gold'); $('#annotToolHighlight').classList.remove('gold'); });
+$('#annotToolHighlight').addEventListener('click', ()=>{ annotTool='highlight'; $('#annotToolHighlight').classList.add('gold'); $('#annotToolPen').classList.remove('gold'); });
+$$('.annot-swatch').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    annotColor = sw.dataset.color;
+    $$('.annot-swatch').forEach(s=>s.classList.remove('active'));
+    sw.classList.add('active');
+  });
+});
+$('#annotUndo').addEventListener('click', ()=>{ annotStrokes.pop(); annotRedrawOverlay(); });
+$('#annotClearPage').addEventListener('click', async ()=>{
+  if(!confirm('Clear all markup on this page?')) return;
+  annotStrokes = [];
+  annotRedrawOverlay();
+  try{ await mediaDelete('notation-annotation:'+annotNotationId+':'+annotCurrentPage); }catch(e){}
+  toast('Cleared');
+});
+async function annotSaveCurrentPage(silent){
+  const canvas = $('#annotDrawCanvas');
+  if(!annotStrokes.length){
+    try{ await mediaDelete('notation-annotation:'+annotNotationId+':'+annotCurrentPage); }catch(e){}
+    return;
+  }
+  const blob = await new Promise(res=>canvas.toBlob(res,'image/png'));
+  await mediaPut('notation-annotation:'+annotNotationId+':'+annotCurrentPage, blob, {strokes: annotStrokes, page: annotCurrentPage});
+  if(!silent) toast('Saved');
+}
+$('#annotSavePage').addEventListener('click', ()=>annotSaveCurrentPage(false));
+$('#annotPrevPage').addEventListener('click', async ()=>{
+  if(annotCurrentPage<=1) return;
+  await annotSaveCurrentPage(true); // silently keep unsaved work before moving on
+  annotCurrentPage--; await annotRenderCurrentPage();
+});
+$('#annotNextPage').addEventListener('click', async ()=>{
+  if(annotCurrentPage>=annotTotalPages) return;
+  await annotSaveCurrentPage(true);
+  annotCurrentPage++; await annotRenderCurrentPage();
+});
+async function buildAnnotatedNotationPdfBytes(n){
+  const rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId);
+  if(!rec) throw new Error('PDF not available');
+  const { PDFDocument } = PDFLib;
+  const srcDoc = await PDFDocument.load(await rec.blob.arrayBuffer());
+  const outDoc = await PDFDocument.create();
+  const copiedPages = await outDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+  for(let i=0;i<copiedPages.length;i++){
+    const page = copiedPages[i];
+    outDoc.addPage(page);
+    const pageNum = i+1;
+    try{
+      const annRec = await mediaGet('notation-annotation:'+n.id+':'+pageNum);
+      if(annRec && annRec.blob){
+        const imgBytes = new Uint8Array(await annRec.blob.arrayBuffer());
+        const img = await outDoc.embedPng(imgBytes);
+        const {width, height} = page.getSize();
+        page.drawImage(img, {x:0, y:0, width, height});
+      }
+    }catch(e){}
+  }
+  return await outDoc.save();
+}
+$('#annotDownloadPdf').addEventListener('click', async ()=>{
+  const n = S.notations.find(x=>x.id===annotNotationId); if(!n) return;
+  await annotSaveCurrentPage(true);
+  const btn = $('#annotDownloadPdf');
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Building…';
+  try{
+    const bytes = await buildAnnotatedNotationPdfBytes(n);
+    const blob = new Blob([bytes], {type:'application/pdf'});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=(n.title||'notation').replace(/[^\w\-]+/g,'_')+'-annotated.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Annotated PDF downloaded');
+  }catch(e){
+    toast('Could not build annotated PDF ('+(e.message||'')+')');
+  } finally { btn.disabled=false; btn.textContent = original; }
+});
 $('#notDeleteBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
-  if(!confirm('Delete "'+n.title+'"? This cannot be undone.')) return;
-  S.notations = S.notations.filter(x=>x.id!==n.id);
+  if(!confirm('Delete "'+n.title+'"? It moves to Recently Deleted and is permanently removed after 30 days — restorable any time before that.')) return;
+  n.deletedAt = Date.now();
   persist();
   closeModal('m-notation-view');
-  toast('Composition deleted');
-  if(n.hasPdf){ try{ await mediaDelete('notation-pdf:'+n.id); }catch(e){} }
-  if(n.driveFileId){ driveDeleteFile(n.driveFileId); }
+  toast('Deleted — recoverable from Recently Deleted for 30 days');
   renderNotationFilters(); renderNotationList();
 });
 $('#notSearch').addEventListener('input', e=>{ notSearchQuery = e.target.value.trim(); renderNotationList(); });
@@ -6562,6 +7189,7 @@ function recordingTagsLine(r){
   return [r.type, r.raga, r.tala, r.composer].filter(Boolean).join(' · ');
 }
 function matchesRecordingFilter(r){
+  if(r.deletedAt) return false; // soft-deleted — lives in Recently Deleted instead
   if(recTypeFilter && r.type!==recTypeFilter) return false;
   if(recRagaFilter && r.raga!==recRagaFilter) return false;
   if(recTalaFilter && r.tala!==recTalaFilter) return false;
@@ -6668,7 +7296,12 @@ function renderRecordingsList(){
       recSharedAudio.currentTime = frac * recSharedAudio.duration;
     });
     listEl.appendChild(row);
-    if(isPlaying) drawRecordingWaveform(r.id, wfWrap.querySelector('canvas'));
+    const canvas = wfWrap.querySelector('canvas');
+    if(isPlaying){
+      drawRecordingWaveform(r.id, canvas); // the one exception — its audio is already being fetched/played anyway
+    } else {
+      drawRecordingWaveform(r.id, canvas, {localOnly:true}); // local cache only — never triggers a Drive download just for a thumbnail; stays blank until actually opened or played
+    }
   });
 }
 async function toggleRecordingPlayback(id){
@@ -6792,7 +7425,7 @@ async function convertBlobToMp3(blob, kbps){
   return pcmToMp3Blob(audioBuf, kbps);
 }
 const recWaveformCache = {}; // recording id -> already-computed peak array, so replaying doesn't re-decode
-async function drawRecordingWaveform(id, canvas){
+async function drawRecordingWaveform(id, canvas, opts){
   if(!canvas) return;
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(50, Math.round(canvas.parentElement.clientWidth || 300));
@@ -6805,8 +7438,19 @@ async function drawRecordingWaveform(id, canvas){
   let peaks = recWaveformCache[id];
   if(!peaks){
     try{
-      const rInfo = S.recordings.find(x=>x.id===id);
-      const rec = await mediaGetWithDriveFallback('recording-audio:'+id, rInfo && rInfo.driveFileId);
+      // List-preview thumbnails only ever read from the LOCAL cache — never trigger a Drive
+      // download just to draw a waveform. If it's not cached yet, the preview stays blank until
+      // the recording is actually opened or played, which caches it through the normal flow.
+      // The currently-PLAYING recording is the one exception: by definition its audio is already
+      // being fetched/played, so computing its waveform from that same data is free.
+      const localOnly = opts && opts.localOnly;
+      let rec;
+      if(localOnly){
+        rec = await mediaGet('recording-audio:'+id);
+      } else {
+        const rInfo = S.recordings.find(x=>x.id===id);
+        rec = await mediaGetWithDriveFallback('recording-audio:'+id, rInfo && rInfo.driveFileId);
+      }
       if(!rec) return;
       const arrayBuf = await rec.blob.arrayBuffer();
       if(!recWaveCtx) recWaveCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -6824,7 +7468,7 @@ async function drawRecordingWaveform(id, canvas){
       recWaveformCache[id] = peaks;
     }catch(e){ return; }
   }
-  if(recPlayingId !== id) return; // playback moved on while we were decoding — don't draw onto a stale row
+  if(!canvas.isConnected) return; // the row was removed from the list (re-render, scroll, filter change) while we were decoding
   ctx.clearRect(0,0,cssW,cssH);
   const barW = cssW/peaks.length;
   ctx.fillStyle = '#B9862E';
@@ -6841,6 +7485,7 @@ recSharedAudio.addEventListener('timeupdate', ()=>{
   const bar = wrap.querySelector('.rec-waveform-progress');
   if(bar) bar.style.width = (frac*100)+'%';
 });
+let pendingRecordingTags = null; // set by "Record student singing this" in a notation view — applied to the next saved recording
 function resetCaptureUI(){
   $('#recReadyBlock').style.display = '';
   $('#recActiveBlock').style.display = 'none';
@@ -6857,6 +7502,7 @@ function stopMicStream(){
 function openRecordingCapture(){
   resetCaptureUI();
   recSyncTanpuraControls();
+  if(pendingRecordingTags && pendingRecordingTags.title){ $('#recTitleInput').value = pendingRecordingTags.title; }
   openModal('m-recording-capture');
 }
 /* ---------- recording-time tanpura mix: helpers ---------- */
@@ -7081,6 +7727,11 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
   // is never silently lost track of — worst case, it's an entry with no local copy yet, not a
   // Drive file the app has completely forgotten exists.
   const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null};
+  if(pendingRecordingTags){
+    entry.raga = pendingRecordingTags.raga||''; entry.tala = pendingRecordingTags.tala||'';
+    entry.composer = pendingRecordingTags.composer||''; entry.type = pendingRecordingTags.type||'';
+    pendingRecordingTags = null;
+  }
   S.recordings.push(entry);
   persist();
   try{
@@ -7112,6 +7763,67 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
   renderRecordingsFilters(); renderRecordingsList(); scheduleSync();
 });
 $('#btnNewRecording').addEventListener('click', openRecordingCapture);
+// Show "Fix all playback" when there are unfixed recordings (not MP3/WAV)
+async function updateFixAllBtn(){
+  const btn=$('#btnFixAllRecordings'); if(!btn) return;
+  let unfixedCount = 0;
+  for(const r of S.recordings){
+    if(r.deletedAt) continue; // in Recently Deleted, heading for permanent removal — not worth fixing
+    try{
+      const rec = await mediaGet('recording-audio:'+r.id); // local cache first — free, no network
+      if(rec){
+        if(!['wav','mp3'].includes(audioExtFromType(rec.blob.type))) unfixedCount++;
+      } else if(gToken && r.driveFileId){
+        // Not cached locally — check Drive's filename extension instead of downloading the
+        // whole file just to find out its format (a metadata call is tiny; the audio isn't).
+        try{
+          const meta = await driveGetFileMetadata(r.driveFileId);
+          const ext = (meta.name && meta.name.includes('.')) ? meta.name.split('.').pop().toLowerCase() : '';
+          if(!['wav','mp3'].includes(ext)) unfixedCount++;
+        }catch(e){}
+      }
+    }catch(e){}
+    if(unfixedCount>0) break; // found at least one — that's enough to show the button
+  }
+  btn.style.display = unfixedCount>0 ? '' : 'none';
+}
+setTimeout(updateFixAllBtn, 3000); // check a few seconds after startup
+$('#btnFixAllRecordings').addEventListener('click', async ()=>{
+  const btn=$('#btnFixAllRecordings');
+  if(btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = 'Converting…';
+  let converted=0, failed=0;
+  for(const r of S.recordings){
+    if(r.deletedAt) continue; // in Recently Deleted — skip, no point fixing something about to be purged
+    let rec;
+    try{ rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); }catch(e){ continue; }
+    if(!rec) continue;
+    if(['wav','mp3'].includes(audioExtFromType(rec.blob.type))) continue; // already fixed
+    try{
+      const mp3Blob = await convertBlobToMp3(rec.blob, 128);
+      await mediaPut('recording-audio:'+r.id, mp3Blob, {mimeType:mp3Blob.type, size:mp3Blob.size});
+      if(gToken && r.driveFileId){
+        try{
+          const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.mp3';
+          await driveUploadResumable(mp3Blob, newName, 'audio/mpeg', 'Recordings', null, r.driveFileId);
+          driveKeepLatestRevisionForever(r.driveFileId);
+        }catch(e){}
+      }
+      converted++;
+      btn.textContent = 'Converting… ('+converted+' done)';
+    }catch(e){ failed++; }
+  }
+  btn.disabled = false;
+  if(converted>0){
+    toast(converted+' recording'+(converted>1?'s':'')+' converted to MP3'+(failed?' ('+failed+' failed)':''));
+    btn.style.display = 'none';
+    setTimeout(()=>refreshRecDriveStorageNote(true), 3000);
+  } else {
+    toast(failed ? 'Could not convert — try on the device they were recorded on' : 'All recordings already fixed');
+    btn.style.display = 'none';
+  }
+});
 $('#recSearch').addEventListener('input', e=>{ recSearchQuery = e.target.value.trim(); renderRecordingsList(); });
 $('#recFilterType').addEventListener('change', e=>{ recTypeFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterRaga').addEventListener('change', e=>{ recRagaFilter = e.target.value; renderRecordingsList(); });
@@ -7278,18 +7990,12 @@ $('#recFixFormatBtn').addEventListener('click', async ()=>{
 });
 $('#recDeleteBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
-  if(!confirm('Delete "'+r.title+'"? This cannot be undone.')) return;
-  // Remove metadata FIRST and persist IMMEDIATELY — this is the critical step that prevents
-  // ghost entries. Even if the app crashes right after this line, the entry is already gone
-  // from S. The binary cleanup (IndexedDB + Drive) is best-effort after that.
-  S.recordings = S.recordings.filter(x=>x.id!==r.id);
+  if(!confirm('Delete "'+r.title+'"? It moves to Recently Deleted and is permanently removed after 30 days — restorable any time before that.')) return;
+  r.deletedAt = Date.now();
   persist();
   closeModal('m-recording-view');
-  toast('Recording deleted');
-  try{ await mediaDelete('recording-audio:'+r.id); }catch(e){}
-  if(r.driveFileId){ driveDeleteFile(r.driveFileId); }
+  toast('Deleted — recoverable from Recently Deleted for 30 days');
   renderRecordingsFilters(); renderRecordingsList();
-  setTimeout(()=>refreshRecDriveStorageNote(true), 3000);
 });
 
 /* =====================================================
@@ -7887,7 +8593,7 @@ let talaVideoSearchQuery = '', viewingTalaVideoId = null;
 function renderTalaVideoList(){
   const listEl = $('#talaVideoList'); if(!listEl) return;
   const q = talaVideoSearchQuery.toLowerCase();
-  const list = (S.talaExports||[]).filter(v => !q || (v.title||'').toLowerCase().includes(q)).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const list = (S.talaExports||[]).filter(v => !v.deletedAt && (!q || (v.title||'').toLowerCase().includes(q))).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   listEl.innerHTML = '';
   const empty = $('#talaVideoEmpty');
   if(!list.length){
@@ -7960,13 +8666,11 @@ $('#talaVideoShareBtn').addEventListener('click', async ()=>{
 });
 $('#talaVideoDeleteBtn').addEventListener('click', async ()=>{
   const v = S.talaExports.find(x=>x.id===viewingTalaVideoId); if(!v) return;
-  if(!confirm('Delete "'+v.title+'"? This cannot be undone.')) return;
-  S.talaExports = S.talaExports.filter(x=>x.id!==v.id);
+  if(!confirm('Delete "'+v.title+'"? It moves to Recently Deleted and is permanently removed after 30 days — restorable any time before that.')) return;
+  v.deletedAt = Date.now();
   persist();
   closeModal('m-tala-video-view');
-  toast('Video deleted');
-  try{ await mediaDelete('tala-video:'+v.id); }catch(e){}
-  if(v.driveFileId){ driveDeleteFile(v.driveFileId); }
+  toast('Deleted — recoverable from Recently Deleted for 30 days');
   renderTalaVideoList();
 });
 
@@ -8300,7 +9004,25 @@ if(!storageOK) toast('Heads up: this browser is blocking storage, so data will n
 // Clean up any ghost entries left behind by interrupted delete operations — runs silently on
 // every startup, only removes entries whose binary data is truly gone from both local cache
 // and Drive. See the cleanOrphanedEntries function for the full logic.
-cleanOrphanedEntries().catch(e=>console.warn('Orphan cleanup skipped:', e));
+runCleanupSerially(cleanOrphanedEntries, 'Orphan cleanup');
+runCleanupSerially(purgeOldDeletedItems, 'Recently-deleted purge');
+// The three top notification bars (day-rollover, offline, PWA update) can all be visible at
+// once — without this, they'd sit at the exact same fixed position and silently hide each
+// other, since they share position:fixed;top:0. This stacks them in DOM order whenever any of
+// them shows or hides.
+function updateDaybarStacking(){
+  let offset = 0;
+  $$('.daybar').forEach(el=>{
+    if(getComputedStyle(el).display==='none') return;
+    el.style.top = offset+'px';
+    offset += el.offsetHeight;
+  });
+}
+// Offline indicator
+function updateOfflineBar(){ const b=$('#offlineBar'); if(b) b.style.display=navigator.onLine?'none':'flex'; updateDaybarStacking(); }
+window.addEventListener('online', updateOfflineBar);
+window.addEventListener('offline', updateOfflineBar);
+updateOfflineBar();
 </script>
 <script>
 /* PWA: register the service worker, and PROMPT (never silently force) when a new version is ready */
@@ -8311,9 +9033,11 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
         const bar = document.getElementById('pwaUpdateBar');
         if(!bar || !worker) return;
         bar.style.display = 'flex';
+        updateDaybarStacking();
         document.getElementById('pwaUpdateBtn').onclick = () => {
           worker.postMessage({type:'SKIP_WAITING'});
           bar.style.display = 'none';
+          updateDaybarStacking();
         };
       }
       // A version may already be sitting there waiting from an earlier visit
@@ -8336,6 +9060,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
         const bar = document.getElementById('pwaUpdateBar');
         if(!bar) return;
         bar.style.display = 'flex';
+        updateDaybarStacking();
         document.getElementById('pwaUpdateBtn').onclick = () => {
           bar.style.display = 'none';
           window.location.reload(); // the new content is already cached — a plain reload picks it up
