@@ -502,6 +502,8 @@
     #billingTable{min-width:680px}
   }
   .foot-link{color:var(--gold-ink);text-decoration:none;font-weight:700}
+  .data-backup-row{padding:9px 0;border-bottom:1px solid var(--line)}
+  .data-backup-row a{display:inline-block;margin-bottom:2px}
   .foot-link:hover{text-decoration:underline}
   .report-row{display:flex;gap:14px;align-items:center;padding:15px 20px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
   .report-row:last-child{border-bottom:0}
@@ -656,7 +658,7 @@
       <button class="btn small gold" id="btnDrive">Connect Google Drive</button>
       <div class="tiny" id="driveStatus">Drive: not connected</div>
       <div class="tiny" id="driveAccountRow" style="display:none"><a href="#" class="foot-link" id="lnkDriveSwitch">switch account</a> · <a href="#" class="foot-link" id="lnkDriveSignOut">sign out</a> · <a href="#" class="foot-link" id="lnkDriveMigrate">upload existing files</a></div>
-      <div class="tiny"><a href="#" class="foot-link" id="lnkExport">backup file</a> · <a href="#" class="foot-link" id="lnkImport">restore file</a> · <a href="#" class="foot-link" id="lnkFullBackup">download everything (ZIP)</a> · <a href="#" class="foot-link" id="lnkFullRestore">restore from ZIP</a> · <a href="#" class="foot-link" id="lnkRecentlyDeleted">recently deleted</a> · <a href="#" class="foot-link" id="lnkSnapshots">snapshots</a> · <a href="#" class="foot-link" id="lnkChangeClientId">change Client ID</a></div>
+      <div class="tiny"><a href="#" class="foot-link" id="lnkDataBackup">Data &amp; Backup</a></div>
       <input type="file" id="importFile" accept="application/json" style="display:none">
       <input type="file" id="fullRestoreFile" accept=".zip,application/zip" style="display:none">
       <div class="tiny" id="backupStatus">Data is stored in this browser.</div>
@@ -1422,6 +1424,28 @@
     <div id="tpLoopsList" style="margin:12px 0;max-height:420px;overflow-y:auto"></div>
     <input type="file" id="tpLoopFileInput" accept="audio/*" style="display:none">
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-tanpura-loops">Close</button></div></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-data-backup">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dataBackupTitle" style="max-width:540px">
+    <h3 id="dataBackupTitle">Data &amp; Backup</h3>
+    <div class="sub">Everything related to backing up, restoring, and recovering your data.</div>
+
+    <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">BACKUP &amp; RESTORE</div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkExport">Backup file</a><div class="tiny" style="color:var(--muted)">Saves your student, class, and earnings data as one small file.</div></div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkImport">Restore file</a><div class="tiny" style="color:var(--muted)">Loads data back in from a previously saved backup file.</div></div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkFullBackup">Download everything (ZIP)</a><div class="tiny" style="color:var(--muted)">A complete backup — data plus every recording, notation PDF, and tala video, in one file.</div></div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkFullRestore">Restore from ZIP</a><div class="tiny" style="color:var(--muted)">Restores everything from a ZIP made with the option above. Replaces all current data on this device.</div></div>
+
+    <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">RECOVERY</div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkRecentlyDeleted">Recently deleted</a><div class="tiny" style="color:var(--muted)">Restore a recording, composition, or tala video deleted in the last 30 days.</div></div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkSnapshots">Snapshots</a><div class="tiny" style="color:var(--muted)">Automatic daily save points in Google Drive — roll back to an earlier day if needed.</div></div>
+
+    <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">ADVANCED</div>
+    <div class="data-backup-row" style="border-bottom:none"><a href="#" class="foot-link" id="lnkChangeClientId">Change Client ID</a><div class="tiny" style="color:var(--muted)">Only needed if you're running your own copy of this app with your own Google Cloud project.</div></div>
+
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-data-backup">Close</button></div></div>
   </div>
 </div>
 
@@ -4653,6 +4677,7 @@ $('#lnkFullBackup').addEventListener('click', async e=>{
   } finally { link.textContent = originalText; }
 });
 $('#lnkFullRestore').addEventListener('click', e=>{ e.preventDefault(); $('#fullRestoreFile').click(); });
+$('#lnkDataBackup').addEventListener('click', e=>{ e.preventDefault(); openModal('m-data-backup'); });
 /* ---------- Recently deleted — soft-delete recovery for recordings, notations, tala videos ---------- */
 const RECENTLY_DELETED_DAYS = 30;
 function renderRecentlyDeletedList(){
@@ -4730,7 +4755,7 @@ async function purgeOldDeletedItems(){
   for(const [kind,id] of toPurge){ await purgeDeletedItem(kind, id); }
   if(toPurge.length){ renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); }
 }
-$('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
+$('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); closeModal('m-data-backup'); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
 
 /* ---------- Debug panel — long-press "Teacher Console" to open ---------- */
 async function computeStorageStats(){
@@ -4752,16 +4777,18 @@ async function computeStorageStats(){
   lines.push('--- IndexedDB (local media cache) ---');
   try{
     const db = await openMediaDB();
-    const keys = await new Promise((res,rej)=>{
+    // One transaction, one request for everything — this used to open a brand new transaction
+    // per file and await each one sequentially, which could take a long time on a large library.
+    // getAll() reads every record (and each Blob's .size, which is just metadata, not its bytes)
+    // in a single round trip instead.
+    const allRecords = await new Promise((res,rej)=>{
       const tx = db.transaction(MEDIA_STORE,'readonly');
-      const req = tx.objectStore(MEDIA_STORE).getAllKeys();
+      const req = tx.objectStore(MEDIA_STORE).getAll();
       req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error);
     });
     let totalBytes = 0;
-    for(const k of keys){
-      try{ const rec = await mediaGet(k); if(rec && rec.blob) totalBytes += rec.blob.size; }catch(e){}
-    }
-    lines.push('Cached files: '+keys.length);
+    for(const rec of allRecords){ if(rec && rec.blob) totalBytes += rec.blob.size; }
+    lines.push('Cached files: '+allRecords.length);
     lines.push('Total size: '+(totalBytes/1024/1024).toFixed(2)+' MB');
   }catch(e){ lines.push('Could not read IndexedDB: '+e.message); }
   lines.push('');
@@ -5520,6 +5547,7 @@ async function pruneSnapshots(){
 }
 async function openSnapshots(){
   if(!gToken){ toast('Connect Google Drive first'); return; }
+  closeModal('m-data-backup');
   openModal('m-snapshots');
   const el=$('#snapList'); el.innerHTML='<div class="tiny">Loading…</div>';
   try{
@@ -5558,6 +5586,7 @@ $('#btnDrive').addEventListener('click',()=>{
 });
 $('#lnkChangeClientId').addEventListener('click', e=>{
   e.preventDefault();
+  closeModal('m-data-backup');
   const saved = driveCfg();
   $('#gClientId').value = saved; // always visible and editable — never a silent hidden retry
   $('#driveModalSub').textContent = hasCustomDriveCfg()
