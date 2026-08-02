@@ -7715,12 +7715,13 @@ async function onRecordingStopped(){
   $('#recReviewBlock').style.display = '';
   $('#recCapSub').textContent = 'Processing…';
   // Convert on this same device — the one that just recorded, so it can always decode its own
-  // output — into a universal WAV file. This is what makes the recording actually play and
+  // output — into a universal MP3 file. This is what makes the recording actually play and
   // share correctly on every device later, iPad included, instead of only the device that made
-  // it. If conversion fails for any reason, we fall back to the raw recording rather than block
+  // it — same reasoning as WAV used to give us, but at a fraction of the storage cost. If
+  // conversion fails for any reason, we fall back to the raw recording rather than block
   // saving altogether — imperfect cross-device playback beats losing the recording entirely.
   try{
-    recBlob = await convertBlobToWav(rawBlob);
+    recBlob = await convertBlobToMp3(rawBlob, 128);
   }catch(e){
     recBlob = rawBlob;
     toast('Could not convert this recording for universal playback — saved in its original format');
@@ -7808,14 +7809,14 @@ async function updateFixAllBtn(){
     try{
       const rec = await mediaGet('recording-audio:'+r.id); // local cache first — free, no network
       if(rec){
-        if(!['wav','mp3'].includes(audioExtFromType(rec.blob.type))) unfixedCount++;
+        if(audioExtFromType(rec.blob.type) !== 'mp3') unfixedCount++;
       } else if(gToken && r.driveFileId){
         // Not cached locally — check Drive's filename extension instead of downloading the
         // whole file just to find out its format (a metadata call is tiny; the audio isn't).
         try{
           const meta = await driveGetFileMetadata(r.driveFileId);
           const ext = (meta.name && meta.name.includes('.')) ? meta.name.split('.').pop().toLowerCase() : '';
-          if(!['wav','mp3'].includes(ext)) unfixedCount++;
+          if(ext !== 'mp3') unfixedCount++;
         }catch(e){}
       }
     }catch(e){}
@@ -7835,7 +7836,7 @@ $('#btnFixAllRecordings').addEventListener('click', async ()=>{
     let rec;
     try{ rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); }catch(e){ continue; }
     if(!rec) continue;
-    if(['wav','mp3'].includes(audioExtFromType(rec.blob.type))) continue; // already fixed
+    if(audioExtFromType(rec.blob.type)==='mp3') continue; // already fixed
     try{
       const mp3Blob = await convertBlobToMp3(rec.blob, 128);
       await mediaPut('recording-audio:'+r.id, mp3Blob, {mimeType:mp3Blob.type, size:mp3Blob.size});
