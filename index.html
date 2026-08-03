@@ -1092,6 +1092,8 @@
           <div class="not-toolbar">
             <input id="recSearch" class="search-input" placeholder="Search title, raga, tala, composer…" style="flex:1 1 220px;min-width:0">
             <button class="btn gold" id="btnNewRecording">&#127908; New recording</button>
+            <button class="btn" id="btnUploadRecording">&#128228; Upload recording</button>
+            <input id="recUploadFile" type="file" accept="audio/*" multiple style="display:none">
             <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
@@ -5760,8 +5762,10 @@ const TP_PITCH_SEMITONE = {'A#':1,'B':2,'C':3,'C#':4,'D':5,'D#':6,'E':7,'F':8,'F
    S.meta.tanpuraStudioLoops. Scales/tunings with nothing added always fall back to the
    synthesized engine above — no faking coverage. */
 let tpStudioSrcNode = null, tpStudioGainNode = null; // Web Audio path (recording-mix only now)
-let tpBgAudio = null; // <audio> element for background-persistent studio playback on the live Tanpura tab
-let tpBgAudioUrl = null; // blob URL currently assigned to tpBgAudio, so we can revoke it on stop
+let tpBgAudioA = null, tpBgAudioB = null; // two <audio> elements, alternated for gapless looping (see tpStartStudioLoop)
+let tpBgActiveIsA = true; // which one is currently the audible one
+let tpBgSwapTimer = null; // watches the active element and starts the standby one just before it ends
+let tpBgAudioUrl = null; // blob URL shared by both elements (same clip), so we can revoke it on stop
 // Converts a seamless-looped AudioBuffer into a WAV blob that an <audio> element can play.
 // This is the bridge between the in-memory crossfade (which needs Web Audio's decodeAudioData)
 // and the <audio> element (which needs a real file URL) — the crossfade is baked in, so the
@@ -5772,30 +5776,13 @@ async function tpGetStudioBlob(scale, tuning){
   if(tpStudioBlobCache[key]) return tpStudioBlobCache[key];
   const buf = tpStudioBufferFor(scale, tuning);
   if(!buf) return null;
-  // The <audio> element's native loop has a brief gap on many browsers (especially Android
-  // Chrome) where it stops, seeks back to 0, and restarts — unlike BufferSource.loop which is
-  // truly gapless. To hide this: we bake TWO copies of the seamless-looped buffer into the WAV
-  // blob, back to back. The crossfade was already applied by makeSeamlessLoopBuffer at decode
-  // time (head/tail are blended), so the seam between copy 1 and copy 2 is inaudible. The
-  // native loop gap now falls at the blob boundary (end of copy 2 → start of copy 1), which is
-  // the exact same seamless crossfade point — so even if there's a tiny pause, it falls where
-  // the audio was designed to repeat anyway, and the doubled length means the gap happens half
-  // as often. Net result: no audible loop hiccup.
-  const doubled = doubleAudioBuffer(buf);
-  const blob = pcmToWavBlob(doubled);
+  // Gapless looping is handled by alternating two <audio> elements (see tpStartStudioLoop) —
+  // one is always started just before the other ends, so there's never a stop/seek/restart
+  // moment for the browser to glitch on. That means the blob only needs the single seamless
+  // (crossfaded head/tail) buffer, not a doubled copy — simpler, and half the size.
+  const blob = pcmToWavBlob(buf);
   tpStudioBlobCache[key] = blob;
   return blob;
-}
-function doubleAudioBuffer(buf){
-  if(!tpCtx) tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
-  const doubled = tpCtx.createBuffer(buf.numberOfChannels, buf.length*2, buf.sampleRate);
-  for(let ch=0; ch<buf.numberOfChannels; ch++){
-    const src = buf.getChannelData(ch);
-    const dst = doubled.getChannelData(ch);
-    dst.set(src, 0);
-    dst.set(src, buf.length);
-  }
-  return doubled;
 }
 function tpBaseSaFreq(pitchOverride){
   const pitch = pitchOverride || ($('#tpPitch') ? $('#tpPitch').value : 'C');
@@ -6040,27 +6027,44 @@ async function tpStartStudioLoop(){
     tpSchedTimer = setInterval(tpScheduler, TP_SCHED_INTERVAL);
     return;
   }
-  // Use a real <audio> element instead of Web Audio's BufferSource — this is the key to
-  // background playback on Android/iOS. The browser treats an active <audio> as a media session
-  // and keeps audio alive even when the tab is in the background.
+  if(tpBgSwapTimer){ clearInterval(tpBgSwapTimer); tpBgSwapTimer=null; }
   const newUrl = URL.createObjectURL(blob);
-  if(tpBgAudio){
-    // Reuse the existing <audio> element when switching scales mid-playback — creating a brand
-    // new Audio() would break the user-gesture chain on iOS, causing it to refuse to play.
-    tpBgAudio.pause();
-    if(tpBgAudioUrl) URL.revokeObjectURL(tpBgAudioUrl);
-    tpBgAudioUrl = newUrl;
-    tpBgAudio.src = tpBgAudioUrl;
-    tpBgAudio.volume = (+$('#tpVol').value)/100 * 0.88;
-    tpBgAudio.play().catch(()=>{});
+  if(tpBgAudioUrl) URL.revokeObjectURL(tpBgAudioUrl);
+  tpBgAudioUrl = newUrl;
+  const vol = (+$('#tpVol').value)/100 * 0.88;
+  if(!tpBgAudioA){
+    // Created once, on this first user-gesture-triggered play, and reused for every scale/tuning
+    // switch afterward — creating a brand new Audio() later would break the gesture chain on
+    // iOS, causing it to silently refuse to play.
+    tpBgAudioA = new Audio();
+    tpBgAudioB = new Audio();
   } else {
-    if(tpBgAudioUrl) URL.revokeObjectURL(tpBgAudioUrl);
-    tpBgAudioUrl = newUrl;
-    tpBgAudio = new Audio(tpBgAudioUrl);
-    tpBgAudio.loop = true;
-    tpBgAudio.volume = (+$('#tpVol').value)/100 * 0.88;
-    tpBgAudio.play().catch(()=>{});
+    tpBgAudioA.pause();
+    tpBgAudioB.pause();
   }
+  tpBgAudioA.src = tpBgAudioUrl; tpBgAudioB.src = tpBgAudioUrl;
+  tpBgAudioA.volume = vol; tpBgAudioB.volume = vol;
+  tpBgAudioA.currentTime = 0;
+  tpBgActiveIsA = true;
+  tpBgAudioA.play().catch(()=>{});
+
+  // Gapless looping: the <audio loop> attribute stops, seeks to 0, and restarts on many
+  // browsers (especially Android Chrome) — an audible click/gap on every single repeat, which
+  // is exactly what was being heard. Instead of relying on that, we alternate between two
+  // <audio> elements playing the same seamless (crossfaded) clip: shortly before the currently
+  // audible one ends, the other one is already started from the top — so there's always sound
+  // playing, and no stop/seek/restart moment for the browser to glitch on.
+  const SWAP_LEAD = 0.12; // seconds before the active clip ends, start the standby one
+  tpBgSwapTimer = setInterval(()=>{
+    const active = tpBgActiveIsA ? tpBgAudioA : tpBgAudioB;
+    const standby = tpBgActiveIsA ? tpBgAudioB : tpBgAudioA;
+    if(!active || !standby || !active.duration || isNaN(active.duration)) return;
+    if(active.currentTime >= active.duration - SWAP_LEAD){
+      standby.currentTime = 0;
+      standby.play().catch(()=>{});
+      tpBgActiveIsA = !tpBgActiveIsA;
+    }
+  }, 30);
 
   // Media Session: shows "Tanpura — RAGA Music Classes" in the notification shade
   if('mediaSession' in navigator){
@@ -6072,7 +6076,7 @@ async function tpStartStudioLoop(){
       });
       navigator.mediaSession.setActionHandler('pause', tpStop);
       navigator.mediaSession.setActionHandler('stop', tpStop);
-      navigator.mediaSession.setActionHandler('play', ()=>{ if(tpBgAudio) tpBgAudio.play().catch(()=>{}); });
+      navigator.mediaSession.setActionHandler('play', ()=>{ const a = tpBgActiveIsA?tpBgAudioA:tpBgAudioB; if(a) a.play().catch(()=>{}); });
     }catch(e){}
   }
 }
@@ -6211,8 +6215,11 @@ function tpStart(){
   updateTpFloatBar();
 }
 function tpStopBgAudio(){
-  if(tpBgAudio){ tpBgAudio.pause(); tpBgAudio.src=''; tpBgAudio=null; }
+  if(tpBgSwapTimer){ clearInterval(tpBgSwapTimer); tpBgSwapTimer=null; }
+  if(tpBgAudioA){ tpBgAudioA.pause(); tpBgAudioA.src=''; tpBgAudioA=null; }
+  if(tpBgAudioB){ tpBgAudioB.pause(); tpBgAudioB.src=''; tpBgAudioB=null; }
   if(tpBgAudioUrl){ URL.revokeObjectURL(tpBgAudioUrl); tpBgAudioUrl=null; }
+  tpBgActiveIsA = true;
   if('mediaSession' in navigator){ try{ navigator.mediaSession.metadata=null; }catch(e){} }
 }
 function tpStop(){
@@ -6240,7 +6247,8 @@ if($('#tpPitch')){
   if($('#tpSource')) $('#tpSource').addEventListener('change', tpRefreshEngine);
   $('#tpVol').addEventListener('input', ()=>{
     const vol = (+$('#tpVol').value)/100;
-    if(tpBgAudio) tpBgAudio.volume = vol * 0.88;
+    if(tpBgAudioA) tpBgAudioA.volume = vol * 0.88;
+    if(tpBgAudioB) tpBgAudioB.volume = vol * 0.88;
     if(tpMasterGain) tpMasterGain.gain.value = vol;
   });
 }
@@ -7860,6 +7868,96 @@ $('#btnFixAllRecordings').addEventListener('click', async ()=>{
     toast(failed ? 'Could not convert — try on the device they were recorded on' : 'All recordings already fixed');
     btn.style.display = 'none';
   }
+});
+/* ---------- Upload external recording ----------
+   Lets a recording made outside the app (phone voice memo, old WAV file, etc.) be brought in.
+   Every uploaded file is converted to MP3 on import — same as new in-app recordings — so this
+   also doubles as a way to shrink old WAV files down before they ever touch storage or Drive.
+------------------------------------------------- */
+function filenameToTitle(name){
+  const base = (name||'').replace(/\.[^.]+$/, ''); // strip extension
+  const spaced = base.replace(/[_\-]+/g, ' ').trim();
+  return spaced || 'Untitled recording';
+}
+// Fallback duration probe for the rare case decodeAudioData can't handle a file (so MP3
+// conversion also fails) — uses a plain <audio> element instead, which tolerates a wider
+// range of container formats than Web Audio decoding does. Resolves 0 if even that fails,
+// rather than blocking the upload over a missing duration number.
+function probeAudioDuration(blob){
+  return new Promise(resolve=>{
+    let done = false;
+    const el = new Audio();
+    const finish = (sec)=>{ if(done) return; done = true; URL.revokeObjectURL(el.src); resolve(sec); };
+    el.addEventListener('loadedmetadata', ()=> finish(Math.round(el.duration)||0));
+    el.addEventListener('error', ()=> finish(0));
+    setTimeout(()=> finish(0), 8000);
+    el.src = URL.createObjectURL(blob);
+  });
+}
+async function importOneRecording(file){
+  let mp3Blob, durationSec, converted = true;
+  try{
+    if(!recWaveCtx) recWaveCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const arrayBuf = await file.arrayBuffer();
+    const audioBuf = await recWaveCtx.decodeAudioData(arrayBuf);
+    durationSec = Math.round(audioBuf.duration);
+    mp3Blob = pcmToMp3Blob(audioBuf, 128);
+  }catch(e){
+    converted = false;
+    mp3Blob = file; // keep the original file rather than lose the upload
+    durationSec = await probeAudioDuration(file);
+  }
+  const title = filenameToTitle(file.name);
+  const id = 'REC'+pad(S.seq.rec).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.rec++;
+  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null};
+  S.recordings.push(entry);
+  persist();
+  if(gToken){
+    try{
+      const ext = audioExtFromType(mp3Blob.type);
+      const driveFile = await driveUploadResumable(mp3Blob, title.replace(/[^\w\-]+/g,'_')+'.'+ext, mp3Blob.type||'audio/mpeg', 'Recordings');
+      entry.driveFileId = driveFile.id;
+      persist();
+    }catch(e){
+      toast('"'+title+'" could not upload to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
+    }
+  }
+  try{
+    await mediaPut('recording-audio:'+id, mp3Blob, {mimeType:mp3Blob.type, size:mp3Blob.size});
+  }catch(e){
+    toast('Could not save "'+title+'" on this device'+(entry.driveFileId ? ' — it is safe in Drive though' : ''));
+  }
+  return {entry, converted};
+}
+$('#btnUploadRecording').addEventListener('click', ()=> $('#recUploadFile').click());
+$('#recUploadFile').addEventListener('change', async (e)=>{
+  const files = Array.from(e.target.files||[]);
+  e.target.value = ''; // allow picking the same file again later
+  if(!files.length) return;
+  const btn = $('#btnUploadRecording');
+  btn.disabled = true;
+  let ok = 0, unconvertedCount = 0, lastEntry = null;
+  for(const file of files){
+    btn.textContent = files.length>1 ? '\u{1F4E4} Uploading… ('+(ok+1)+'/'+files.length+')' : '\u{1F4E4} Uploading…';
+    try{
+      const {entry, converted} = await importOneRecording(file);
+      ok++; lastEntry = entry;
+      if(!converted) unconvertedCount++;
+    }catch(e){
+      toast('Could not import "'+file.name+'"');
+    }
+  }
+  btn.disabled = false;
+  btn.innerHTML = '&#128228; Upload recording';
+  renderRecordingsFilters(); renderRecordingsList(); scheduleSync();
+  if(ok>0){
+    toast(ok+' recording'+(ok>1?'s':'')+' uploaded'+(unconvertedCount?' ('+unconvertedCount+' kept in original format — could not convert)':''));
+    setTimeout(()=>refreshRecDriveStorageNote(true), 3000);
+  }
+  // For a single upload, jump straight into tagging (raga/tala/composer) since there's
+  // exactly one clear thing to tag. For a batch, leave that to the person, one at a time,
+  // from the Recordings list — opening several edit modals back-to-back would be intrusive.
+  if(ok===1 && lastEntry) openRecordingView(lastEntry.id);
 });
 $('#recSearch').addEventListener('input', e=>{ recSearchQuery = e.target.value.trim(); renderRecordingsList(); });
 $('#recFilterType').addEventListener('change', e=>{ recTypeFilter = e.target.value; renderRecordingsList(); });
