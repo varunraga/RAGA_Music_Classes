@@ -5763,9 +5763,11 @@ const TP_PITCH_SEMITONE = {'A#':1,'B':2,'C':3,'C#':4,'D':5,'D#':6,'E':7,'F':8,'F
    synthesized engine above — no faking coverage. */
 let tpStudioSrcNode = null, tpStudioGainNode = null; // Web Audio path (recording-mix only now)
 let tpBgAudioA = null, tpBgAudioB = null; // two <audio> elements, alternated for gapless looping (see tpStartStudioLoop)
-let tpBgActiveIsA = true; // which one is currently the audible one
-let tpBgSwapTimer = null; // watches the active element and starts the standby one just before it ends
+let tpBgActiveIsA = true; // which one is currently the primary (fully faded-in) one
+let tpBgSwapTimer = null; // watches the active element and crossfades to the standby one just before it ends
 let tpBgAudioUrl = null; // blob URL shared by both elements (same clip), so we can revoke it on stop
+let tpBgTargetVol = 1; // current target volume (0..1, already includes headroom) — kept in sync by the volume slider
+let tpBgSwapping = false; // true only during the brief crossfade window between two loop iterations
 // Converts a seamless-looped AudioBuffer into a WAV blob that an <audio> element can play.
 // This is the bridge between the in-memory crossfade (which needs Web Audio's decodeAudioData)
 // and the <audio> element (which needs a real file URL) — the crossfade is baked in, so the
@@ -6031,7 +6033,7 @@ async function tpStartStudioLoop(){
   const newUrl = URL.createObjectURL(blob);
   if(tpBgAudioUrl) URL.revokeObjectURL(tpBgAudioUrl);
   tpBgAudioUrl = newUrl;
-  const vol = (+$('#tpVol').value)/100 * 0.88;
+  tpBgTargetVol = (+$('#tpVol').value)/100 * 0.88;
   if(!tpBgAudioA){
     // Created once, on this first user-gesture-triggered play, and reused for every scale/tuning
     // switch afterward — creating a brand new Audio() later would break the gesture chain on
@@ -6043,26 +6045,44 @@ async function tpStartStudioLoop(){
     tpBgAudioB.pause();
   }
   tpBgAudioA.src = tpBgAudioUrl; tpBgAudioB.src = tpBgAudioUrl;
-  tpBgAudioA.volume = vol; tpBgAudioB.volume = vol;
   tpBgAudioA.currentTime = 0;
+  tpBgAudioA.volume = tpBgTargetVol;
+  tpBgAudioB.volume = 0;
   tpBgActiveIsA = true;
+  tpBgSwapping = false;
   tpBgAudioA.play().catch(()=>{});
 
   // Gapless looping: the <audio loop> attribute stops, seeks to 0, and restarts on many
-  // browsers (especially Android Chrome) — an audible click/gap on every single repeat, which
-  // is exactly what was being heard. Instead of relying on that, we alternate between two
-  // <audio> elements playing the same seamless (crossfaded) clip: shortly before the currently
-  // audible one ends, the other one is already started from the top — so there's always sound
-  // playing, and no stop/seek/restart moment for the browser to glitch on.
-  const SWAP_LEAD = 0.12; // seconds before the active clip ends, start the standby one
+  // browsers (especially Android Chrome) — an audible click on every repeat. The fix is to
+  // alternate between two <audio> elements playing the same seamless clip — but simply starting
+  // the second one early, at full volume, trades that click for a different artifact: a brief
+  // moment where both copies play together at full volume, which sounds like a jump/jerk in a
+  // continuous drone. So the standby starts silent and is faded in — equal-power, matching the
+  // curve already used for the recording's own head/tail blend — while the outgoing one fades
+  // out over the same window. That overlap-with-fade is what actually makes it disappear.
+  const SWAP_LEAD = 0.3; // seconds before the active clip ends, begin crossfading to the standby one
   tpBgSwapTimer = setInterval(()=>{
     const active = tpBgActiveIsA ? tpBgAudioA : tpBgAudioB;
     const standby = tpBgActiveIsA ? tpBgAudioB : tpBgAudioA;
     if(!active || !standby || !active.duration || isNaN(active.duration)) return;
-    if(active.currentTime >= active.duration - SWAP_LEAD){
+    const timeLeft = active.duration - active.currentTime;
+    if(!tpBgSwapping && timeLeft <= SWAP_LEAD){
+      tpBgSwapping = true;
       standby.currentTime = 0;
+      standby.volume = 0;
       standby.play().catch(()=>{});
-      tpBgActiveIsA = !tpBgActiveIsA;
+    }
+    if(tpBgSwapping){
+      const progress = Math.min(1, Math.max(0, 1 - (timeLeft/SWAP_LEAD)));
+      standby.volume = tpBgTargetVol * Math.sin(progress*Math.PI/2);
+      active.volume = tpBgTargetVol * Math.cos(progress*Math.PI/2);
+      if(progress >= 1 || timeLeft <= 0){
+        active.pause();
+        active.volume = tpBgTargetVol; // restored so it's ready, at correct volume, for its next turn
+        standby.volume = tpBgTargetVol;
+        tpBgActiveIsA = !tpBgActiveIsA;
+        tpBgSwapping = false;
+      }
     }
   }, 30);
 
@@ -6247,8 +6267,11 @@ if($('#tpPitch')){
   if($('#tpSource')) $('#tpSource').addEventListener('change', tpRefreshEngine);
   $('#tpVol').addEventListener('input', ()=>{
     const vol = (+$('#tpVol').value)/100;
-    if(tpBgAudioA) tpBgAudioA.volume = vol * 0.88;
-    if(tpBgAudioB) tpBgAudioB.volume = vol * 0.88;
+    tpBgTargetVol = vol * 0.88;
+    if(!tpBgSwapping){
+      if(tpBgAudioA) tpBgAudioA.volume = tpBgTargetVol;
+      if(tpBgAudioB) tpBgAudioB.volume = tpBgTargetVol;
+    }
     if(tpMasterGain) tpMasterGain.gain.value = vol;
   });
 }
