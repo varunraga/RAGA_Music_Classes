@@ -40,6 +40,9 @@
     --purple:#7C3AED; --purple-bg:#E6D9FF; --purple-ink:#4C1D95;
     --red:#FF3B30; --red-bg:#FFD6D2; --red-ink:#B0180F;
     --grey:#4A5A72; --grey-bg:#DCE6F0; --grey-ink:#233145;
+    --blue:#2D6CFF; --blue-bg:#DCE7FF; --blue-ink:#1339A6;
+    --teal:#00B8C4; --teal-bg:#C8F5F8; --teal-ink:#00707A;
+    --rose:#E5477A; --rose-bg:#FFD9E6; --rose-ink:#9C1D48;
     --shadow:0 1px 2px rgba(14,20,32,.06),0 4px 16px rgba(14,20,32,.08);
   }
   [data-theme="dark"]{
@@ -50,6 +53,9 @@
     --purple:#B98CFF; --purple-bg:#3A2170; --purple-ink:#E2CFFF;
     --red:#FF5C50; --red-bg:#4A1512; --red-ink:#FFB1AA;
     --grey:#8FB4E0; --grey-bg:#1E2E42; --grey-ink:#CFE0F5;
+    --blue:#6FA8FF; --blue-bg:#1B2E5C; --blue-ink:#AEC8FF;
+    --teal:#4DE8F0; --teal-bg:#0A3D40; --teal-ink:#9DF3F8;
+    --rose:#FF7FAE; --rose-bg:#4A1830; --rose-ink:#FFB8D2;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -116,6 +122,13 @@
   .nav-btn svg{width:17px;height:17px;flex:none}
   .nav-btn:hover{background:var(--line-soft);color:var(--ink)}
   .nav-btn.active{background:var(--gold-bg);color:var(--gold-ink)}
+  .nav-btn[data-view="dashboard"].active{background:var(--blue-bg);color:var(--blue-ink)}
+  .nav-btn[data-view="students"].active{background:var(--green-bg);color:var(--green-ink)}
+  .nav-btn[data-view="calendar"].active{background:var(--purple-bg);color:var(--purple-ink)}
+  .nav-btn[data-view="earnings"].active{background:var(--gold-bg);color:var(--gold-ink)}
+  .nav-btn[data-view="reports"].active{background:var(--grey-bg);color:var(--grey-ink)}
+  .nav-btn[data-view="insights"].active{background:var(--teal-bg);color:var(--teal-ink)}
+  .nav-btn[data-view="studio"].active{background:var(--rose-bg);color:var(--rose-ink)}
   .nav-badge{margin-left:auto;background:var(--gold);color:#fff;border-radius:99px;font-size:.66rem;padding:2px 7px;font-weight:700}
   [data-theme="dark"] .nav-badge{color:#14181B}
   .side-foot{margin-top:auto;padding:12px 6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
@@ -205,7 +218,9 @@
   .quick svg{width:16px;height:16px;color:var(--gold-ink);flex:none}
 
   /* ---------- calendar ---------- */
-  .cal-grid{display:grid;grid-template-columns:58px repeat(7,1fr);border-top:1px solid var(--line-soft)}
+  .cal-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .cal-swipe-hint{display:none;font-size:.72rem;color:var(--muted);text-align:center;padding:4px 0 8px}
+  .cal-grid{display:grid;grid-template-columns:58px repeat(7,1fr);border-top:1px solid var(--line-soft);min-width:828px}
   .cal-grid .head{padding:10px 6px;text-align:center;font-size:.78rem;font-weight:700;border-bottom:1px solid var(--line);border-left:1px solid var(--line-soft)}
   .cal-grid .head small{display:block;color:var(--muted);font-weight:500;font-size:.72rem;margin-top:2px}
   .cal-grid .head.today{color:var(--gold-ink)}
@@ -279,7 +294,7 @@
   .gsearch .res:last-child{border-bottom:0}
   .gsearch .res:hover{background:var(--line-soft)}
   .gsearch .res .sub{color:var(--muted);font-size:.74rem}
-  .mcal{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--line-soft)}
+  .mcal{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--line-soft);min-width:770px}
   .mcal .mhead{padding:9px 6px;text-align:center;font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--line);border-left:1px solid var(--line-soft)}
   .mcal .mcell{min-height:96px;border-left:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);padding:6px;font-size:.72rem}
   .mcal .mcell .d{font-weight:700;color:var(--muted);margin-bottom:4px}
@@ -557,7 +572,14 @@
   .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 18px rgba(0,0,0,.10);padding:5px 2px calc(5px + env(safe-area-inset-bottom));justify-content:space-around}
   .bnav{flex:1;max-width:70px;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:var(--muted);font:inherit;font-size:.56rem;letter-spacing:.02em;padding:5px 1px;border-radius:9px;cursor:pointer}
   .bnav svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2}
-  .bnav.active{color:var(--gold-ink);background:var(--paper)}
+  .bnav.active{color:var(--gold-ink);background:var(--gold-bg)}
+  .bnav[data-view="dashboard"].active{color:var(--blue-ink);background:var(--blue-bg)}
+  .bnav[data-view="students"].active{color:var(--green-ink);background:var(--green-bg)}
+  .bnav[data-view="calendar"].active{color:var(--purple-ink);background:var(--purple-bg)}
+  .bnav[data-view="earnings"].active{color:var(--gold-ink);background:var(--gold-bg)}
+  .bnav[data-view="reports"].active{color:var(--grey-ink);background:var(--grey-bg)}
+  .bnav[data-view="insights"].active{color:var(--teal-ink);background:var(--teal-bg)}
+  .bnav[data-view="studio"].active{color:var(--rose-ink);background:var(--rose-bg)}
   @media (max-width:760px){
     #personalCards,#ragaCards,#insCards,.stat-row{grid-template-columns:1fr!important}
     #personalCards .stat,#ragaCards .stat,#insCards .stat,.stat-row .stat{min-width:0;padding:13px 14px}
@@ -592,6 +614,7 @@
   }
   @keyframes sheet{from{opacity:.6;transform:translateY(40px)}to{opacity:1;transform:none}}
   @media (max-width:980px){
+    .cal-swipe-hint{display:block}
     .shell{grid-template-columns:1fr}
     .shell > *{min-width:0}
     .sidebar{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:14px;min-width:0}
@@ -820,8 +843,11 @@
           <div class="panel-head"><h3>This week\'s scheduling</h3><span class="hint" id="weekCheckHint"></span></div>
           <div class="wchk-body" id="weekCheckList"></div>
         </div>
-        <div class="cal-grid" id="calGrid"></div>
-        <div class="mcal" id="mcalGrid" style="display:none"></div>
+        <div class="cal-swipe-hint">&harr; Swipe sideways to see more days</div>
+        <div class="cal-scroll">
+          <div class="cal-grid" id="calGrid"></div>
+          <div class="mcal" id="mcalGrid" style="display:none"></div>
+        </div>
         <div class="empty" id="calEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="12" cy="15.5" r="1.7" fill="currentColor" stroke="none"/></svg>Nothing on the calendar yet — click "Schedule class" to book the first one.</div>
         <div class="note">Click any class to edit it, change attendance, or cancel. Batch classes show both students in one block.</div>
       </div>
