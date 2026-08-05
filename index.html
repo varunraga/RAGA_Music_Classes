@@ -118,17 +118,32 @@
   @keyframes sruti{0%,100%{transform:scale(1)}50%{transform:scale(1.45);opacity:1}}
   @media (prefers-reduced-motion:reduce){.brand .sruti i{animation:none}}
   .brand small{display:block;margin-top:8px;color:var(--muted);font-size:.74rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase}
-  .nav-btn{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 12px;border:0;background:transparent;color:var(--muted);font:inherit;font-weight:600;font-size:.92rem;border-radius:9px;cursor:pointer;transition:background .15s,color .15s}
+  .nav-btn{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 12px;border:0;background:transparent;color:var(--ink);font:inherit;font-weight:600;font-size:.92rem;border-radius:9px;cursor:pointer;transition:background .15s,color .15s}
+  .nav-btn svg{color:var(--muted)}
+  .nav-btn[data-view="dashboard"] svg{color:var(--blue)}
+  .nav-btn[data-view="students"] svg{color:var(--green)}
+  .nav-btn[data-view="calendar"] svg{color:var(--purple)}
+  .nav-btn[data-view="earnings"] svg{color:var(--gold)}
+  .nav-btn[data-view="reports"] svg{color:var(--grey)}
+  .nav-btn[data-view="insights"] svg{color:var(--teal)}
+  .nav-btn[data-view="studio"] svg{color:var(--rose)}
   .nav-btn svg{width:17px;height:17px;flex:none}
   .nav-btn:hover{background:var(--line-soft);color:var(--ink)}
   .nav-btn.active{background:var(--gold-bg);color:var(--gold-ink)}
-  .nav-btn[data-view="dashboard"].active{background:var(--blue-bg);color:var(--blue-ink)}
-  .nav-btn[data-view="students"].active{background:var(--green-bg);color:var(--green-ink)}
-  .nav-btn[data-view="calendar"].active{background:var(--purple-bg);color:var(--purple-ink)}
-  .nav-btn[data-view="earnings"].active{background:var(--gold-bg);color:var(--gold-ink)}
-  .nav-btn[data-view="reports"].active{background:var(--grey-bg);color:var(--grey-ink)}
-  .nav-btn[data-view="insights"].active{background:var(--teal-bg);color:var(--teal-ink)}
-  .nav-btn[data-view="studio"].active{background:var(--rose-bg);color:var(--rose-ink)}
+  .nav-btn[data-view="dashboard"].active{background:var(--blue-bg)}
+  .nav-btn[data-view="dashboard"].active svg{color:var(--blue-ink)}
+  .nav-btn[data-view="students"].active{background:var(--green-bg)}
+  .nav-btn[data-view="students"].active svg{color:var(--green-ink)}
+  .nav-btn[data-view="calendar"].active{background:var(--purple-bg)}
+  .nav-btn[data-view="calendar"].active svg{color:var(--purple-ink)}
+  .nav-btn[data-view="earnings"].active{background:var(--gold-bg)}
+  .nav-btn[data-view="earnings"].active svg{color:var(--gold-ink)}
+  .nav-btn[data-view="reports"].active{background:var(--grey-bg)}
+  .nav-btn[data-view="reports"].active svg{color:var(--grey-ink)}
+  .nav-btn[data-view="insights"].active{background:var(--teal-bg)}
+  .nav-btn[data-view="insights"].active svg{color:var(--teal-ink)}
+  .nav-btn[data-view="studio"].active{background:var(--rose-bg)}
+  .nav-btn[data-view="studio"].active svg{color:var(--rose-ink)}
   .nav-badge{margin-left:auto;background:var(--gold);color:#fff;border-radius:99px;font-size:.66rem;padding:2px 7px;font-weight:700}
   [data-theme="dark"] .nav-badge{color:#14181B}
   .side-foot{margin-top:auto;padding:12px 6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
@@ -164,7 +179,7 @@
   .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
   .panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line-soft);gap:12px;flex-wrap:wrap}
   .panel-head h3{font-size:1.06rem;position:relative;padding-bottom:7px}
-  .panel-head h3::after{content:"";position:absolute;left:0;bottom:0;width:26px;height:2px;border-radius:2px;background:var(--gold)}
+  .panel-head h3::after{content:"";position:absolute;left:0;bottom:0;width:26px;height:2px;border-radius:2px;background:var(--ink)}
   .panel-head .hint{color:var(--muted);font-size:.8rem}
   .tz-line{background:var(--gold-bg);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:.82rem;color:var(--gold-ink);margin-bottom:6px}
   .tz-line:last-child{margin-bottom:0}
@@ -570,16 +585,31 @@
   @media (max-width:360px){ .tp-float-label{font-size:.72rem} #tpFloatBar,#talaFloatBar{gap:8px;padding:7px 8px 7px 14px} }
 
   .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 18px rgba(0,0,0,.10);padding:5px 2px calc(5px + env(safe-area-inset-bottom));justify-content:space-around}
-  .bnav{flex:1;max-width:70px;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:var(--muted);font:inherit;font-size:.56rem;letter-spacing:.02em;padding:5px 1px;border-radius:9px;cursor:pointer}
+  .bnav{flex:1;max-width:70px;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:var(--ink);font:inherit;font-size:.56rem;letter-spacing:.02em;padding:5px 1px;border-radius:9px;cursor:pointer}
+  .bnav svg{color:var(--muted)}
+  .bnav[data-view="dashboard"] svg{color:var(--blue)}
+  .bnav[data-view="students"] svg{color:var(--green)}
+  .bnav[data-view="calendar"] svg{color:var(--purple)}
+  .bnav[data-view="earnings"] svg{color:var(--gold)}
+  .bnav[data-view="reports"] svg{color:var(--grey)}
+  .bnav[data-view="insights"] svg{color:var(--teal)}
+  .bnav[data-view="studio"] svg{color:var(--rose)}
   .bnav svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2}
   .bnav.active{color:var(--gold-ink);background:var(--gold-bg)}
-  .bnav[data-view="dashboard"].active{color:var(--blue-ink);background:var(--blue-bg)}
-  .bnav[data-view="students"].active{color:var(--green-ink);background:var(--green-bg)}
-  .bnav[data-view="calendar"].active{color:var(--purple-ink);background:var(--purple-bg)}
-  .bnav[data-view="earnings"].active{color:var(--gold-ink);background:var(--gold-bg)}
-  .bnav[data-view="reports"].active{color:var(--grey-ink);background:var(--grey-bg)}
-  .bnav[data-view="insights"].active{color:var(--teal-ink);background:var(--teal-bg)}
-  .bnav[data-view="studio"].active{color:var(--rose-ink);background:var(--rose-bg)}
+  .bnav[data-view="dashboard"].active{background:var(--blue-bg)}
+  .bnav[data-view="dashboard"].active svg{color:var(--blue-ink)}
+  .bnav[data-view="students"].active{background:var(--green-bg)}
+  .bnav[data-view="students"].active svg{color:var(--green-ink)}
+  .bnav[data-view="calendar"].active{background:var(--purple-bg)}
+  .bnav[data-view="calendar"].active svg{color:var(--purple-ink)}
+  .bnav[data-view="earnings"].active{background:var(--gold-bg)}
+  .bnav[data-view="earnings"].active svg{color:var(--gold-ink)}
+  .bnav[data-view="reports"].active{background:var(--grey-bg)}
+  .bnav[data-view="reports"].active svg{color:var(--grey-ink)}
+  .bnav[data-view="insights"].active{background:var(--teal-bg)}
+  .bnav[data-view="insights"].active svg{color:var(--teal-ink)}
+  .bnav[data-view="studio"].active{background:var(--rose-bg)}
+  .bnav[data-view="studio"].active svg{color:var(--rose-ink)}
   @media (max-width:760px){
     #personalCards,#ragaCards,#insCards,.stat-row{grid-template-columns:1fr!important}
     #personalCards .stat,#ragaCards .stat,#insCards .stat,.stat-row .stat{min-width:0;padding:13px 14px}
@@ -5832,7 +5862,11 @@ function ensureTpNoiseBuffer(){
 let tpSchedTimer = null;
 let tpNextStringIdx = 0;
 let tpNextTime = 0;
-const TP_LOOKAHEAD = 0.15;   // seconds — how far ahead we schedule audio
+const TP_LOOKAHEAD = 3;      // seconds — how far ahead we schedule audio. Deliberately generous:
+// once a note is scheduled via ctx.currentTime-relative timing, the audio hardware plays it
+// exactly on time regardless of what the JS timer is doing — so a larger buffer here is pure
+// resilience against the JS timer being delayed or throttled (e.g. when a phone's screen locks),
+// with no effect on the music itself. Costs nothing extra to hear; only helps.
 const TP_SCHED_INTERVAL = 40; // ms — how often the scheduler checks in
 
 function tpTuningFreqs(tuning, pitchOverride){
@@ -6071,6 +6105,13 @@ async function tpStartStudioLoop(){
     tpBgAudioB.pause();
   }
   tpBgAudioA.src = tpBgAudioUrl; tpBgAudioB.src = tpBgAudioUrl;
+  // Safety net: our own crossfade-swap logic below handles the normal case, but if the phone
+  // throttles or delays the JS timer driving it (the single biggest real-world cause of
+  // background audio "just stopping" after a while), this native loop means the browser itself
+  // restarts the same clip the instant it reaches the end — worst case bringing back the old
+  // small click in that rare scenario, but guaranteeing it never goes silent and stays stuck.
+  tpBgAudioA.loop = true;
+  tpBgAudioB.loop = true;
   tpBgAudioA.currentTime = 0;
   tpBgAudioA.volume = tpBgTargetVol;
   tpBgAudioB.volume = 0;
@@ -6211,8 +6252,37 @@ $('#tpLoopFileInput').addEventListener('change', async ()=>{
     toast('Could not upload ('+driveErrorDetail(e)+')');
   }
 });
+/* ---------- Screen wake lock (keeps long-running playback from being throttled/suspended) ----
+   The most common real-world reason background audio "just stops" after a few minutes on a
+   phone is the screen locking — once that happens, the browser can throttle or fully suspend
+   the JS timers driving playback, with nothing left to resume them. Requesting a wake lock while
+   Tanpura or Tala is playing keeps the screen (and this page) awake for as long as either is
+   running. Reference-counted so Tanpura and Tala don't release each other's lock if one stops
+   while the other is still going. Falls back silently on browsers without the API — the
+   loop-safety-net and longer lookahead window below still help in that case.
+------------------------------------------------------------------------------------------- */
+let appWakeLock = null, appWakeLockCount = 0;
+async function acquireWakeLock(){
+  appWakeLockCount++;
+  if(appWakeLock || !('wakeLock' in navigator)) return;
+  try{
+    appWakeLock = await navigator.wakeLock.request('screen');
+    appWakeLock.addEventListener('release', ()=>{ appWakeLock = null; });
+  }catch(e){ /* denied, or not allowed in this context (e.g. backgrounded tab) — nothing else to do */ }
+}
+function releaseWakeLock(){
+  appWakeLockCount = Math.max(0, appWakeLockCount-1);
+  if(appWakeLockCount===0 && appWakeLock){ appWakeLock.release().catch(()=>{}); appWakeLock=null; }
+}
+document.addEventListener('visibilitychange', ()=>{
+  // The browser auto-releases wake locks when the tab is hidden, and they must be re-requested
+  // once visible again — this doesn't help while the screen is actually off, but recovers
+  // cleanly the moment the person checks their phone again mid-session.
+  if(!document.hidden && appWakeLockCount>0 && !appWakeLock) acquireWakeLock();
+});
 function tpStart(){
   if(tpPlaying) return;
+  acquireWakeLock();
   if(!tpCtx){
     // latencyHint 'playback' (instead of the default 'interactive') asks the browser for a larger
     // internal audio buffer. Tanpura is a continuous drone, not something needing instant response
@@ -6248,6 +6318,10 @@ function tpStart(){
     tpMasterGain.connect(tpLimiter); tpLimiter.connect(tpSafety); tpSafety.connect(tpCtx.destination);
   }
   if(tpCtx.state==='suspended') tpCtx.resume();
+  if(tpMasterGain && tpCtx){
+    tpMasterGain.gain.cancelScheduledValues(tpCtx.currentTime);
+    tpMasterGain.gain.setValueAtTime((+$('#tpVol').value)/100, tpCtx.currentTime);
+  }
   tpPlaying = true;
   if(tpShouldUseStudio()){
     tpStartStudioLoop();
@@ -6269,8 +6343,20 @@ function tpStopBgAudio(){
   if('mediaSession' in navigator){ try{ navigator.mediaSession.metadata=null; }catch(e){} }
 }
 function tpStop(){
+  const wasPlaying = tpPlaying;
   tpPlaying = false;
+  if(wasPlaying) releaseWakeLock();
   if(tpSchedTimer){ clearInterval(tpSchedTimer); tpSchedTimer=null; }
+  if(tpMasterGain && tpCtx){
+    // The larger lookahead above means notes can already be scheduled several seconds into the
+    // future at the moment Stop is pressed — clearing the scheduler timer alone wouldn't silence
+    // those. Ramping the shared gain node down (quickly, not instantly, to avoid a click) mutes
+    // everything already queued regardless of when each note was scheduled to play.
+    const now = tpCtx.currentTime;
+    tpMasterGain.gain.cancelScheduledValues(now);
+    tpMasterGain.gain.setValueAtTime(tpMasterGain.gain.value, now);
+    tpMasterGain.gain.linearRampToValueAtTime(0.0001, now+0.05);
+  }
   tpStopBgAudio();
   // tpStudioSrcNode is only used by the recording-mix path now, but clean it up just in case
   if(tpStudioSrcNode){ try{ tpStudioSrcNode.stop(); }catch(e){} tpStudioSrcNode=null; tpStudioGainNode=null; }
@@ -8684,6 +8770,7 @@ function talaStopKeepalive(){
 function talaStart(){
   if(talaPlaying) return;
   if(talaType==='suladi' && !talaAngas.length){ toast('Add at least one Laghu, Dhruta, or Anudhruta first'); return; }
+  acquireWakeLock();
   if(!talaCtx) talaCtx = new (window.AudioContext||window.webkitAudioContext)();
   if(talaCtx.state==='suspended') talaCtx.resume();
   talaPlaying = true;
@@ -8697,7 +8784,9 @@ function talaStart(){
   updateTalaFloatBar();
 }
 function talaStop(){
+  const wasPlaying = talaPlaying;
   talaPlaying = false;
+  if(wasPlaying) releaseWakeLock();
   if(talaSchedTimer){ clearInterval(talaSchedTimer); talaSchedTimer=null; }
   talaStopKeepalive();
   if($('#talaPlay')) $('#talaPlay').innerHTML = '&#9658; Play';
