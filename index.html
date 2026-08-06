@@ -213,6 +213,13 @@
   tr:last-child td{border-bottom:0}
   td.r,th.r{text-align:right}
   .badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:.7rem;font-weight:700;letter-spacing:.03em;white-space:nowrap}
+  .receipt-chip{display:flex;align-items:center;gap:8px;margin-top:8px;padding:7px 10px;background:var(--line-soft);border-radius:9px;font-size:.82rem}
+  .receipt-chip .rc-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .receipt-chip button{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit;font-weight:700;padding:2px 4px}
+  .receipt-chip button:hover{color:var(--red-ink)}
+  .receipt-icon-btn{background:none;border:0;cursor:pointer;padding:2px;color:var(--muted);vertical-align:middle;margin-left:4px}
+  .receipt-icon-btn:hover{color:var(--gold-ink)}
+  .receipt-icon-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:middle}
   .badge.personal{background:var(--green-bg);color:var(--green-ink)}
   .badge.raga{background:var(--purple-bg);color:var(--purple-ink)}
   .badge.completed{background:var(--grey-bg);color:var(--grey-ink)}
@@ -920,6 +927,11 @@
             <div class="field"><label for="payAmount">Amount (₹)</label><input id="payAmount" type="number" min="1" placeholder="e.g. 3200"></div>
             <div class="field"><label for="payMode">Mode</label><select id="payMode"><option>UPI</option><option>Cash</option><option>Bank Transfer</option><option>Cheque</option></select></div>
             <div class="field"><label for="payRef">Reference no. (optional)</label><input id="payRef" placeholder="UPI / cheque ref"></div>
+            <div class="field span2">
+              <label for="payReceiptFile">Receipt / payment proof (optional)</label>
+              <input id="payReceiptFile" type="file" accept="image/*,application/pdf">
+              <div id="payReceiptChip" class="receipt-chip" style="display:none"></div>
+            </div>
           </div>
           <div style="display:flex;gap:10px;margin-top:16px">
             <button class="btn gold" id="payAdd">Save payment</button>
@@ -949,6 +961,11 @@
             <div class="field"><label for="wdMode">Mode</label><select id="wdMode"><option>Bank Transfer</option><option>UPI</option><option>Cash</option><option>Cheque</option></select></div>
             <div class="field"><label for="wdRef">Reference no. (optional)</label><input id="wdRef" placeholder="UTR / txn ref"></div>
             <div class="field span2"><label for="wdRemarks">Remarks (optional)</label><input id="wdRemarks" placeholder="e.g. June payout"></div>
+            <div class="field span2">
+              <label for="wdReceiptFile">Receipt / payout proof (optional)</label>
+              <input id="wdReceiptFile" type="file" accept="image/*,application/pdf">
+              <div id="wdReceiptChip" class="receipt-chip" style="display:none"></div>
+            </div>
           </div>
           <div style="display:flex;gap:10px;margin-top:16px">
             <button class="btn gold" id="wdAdd">Save withdrawal</button>
@@ -3737,7 +3754,60 @@ function renderPersonalCards(){
     '<div class="stat money"><div class="label">Collected this month</div><div class="value num">'+RUPEE.format(collM)+'</div><div class="sub">payments dated '+monthLabel(CURM)+'</div></div>'+
     '<div class="stat"><div class="label">Total collected</div><div class="value num">'+RUPEE.format(collAll)+'</div><div class="sub"><b>'+S.payments.length+'</b> payment'+(S.payments.length===1?'':'s')+' all time</div></div>';
 }
+/* ---------- Payment / withdrawal receipt attachments ----------
+   Shared by both the Personal payment form and the RAGA withdrawal form. A receipt is uploaded
+   to Drive (folder "Payment Receipts") and cached locally the same way recordings/notations are,
+   and the record it belongs to just stores a reference (driveFileId + a display name) — so it's
+   never duplicated data, and it survives a device switch as long as Drive sync is set up.
+------------------------------------------------------------------------------------------- */
+function renderReceiptChip(chipEl, name, onRemove, onView){
+  chipEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex:none"><path d="M21.4 11.5l-8.5 8.5a4.95 4.95 0 01-7-7l8.5-8.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3l7.8-7.8"/></svg>'+
+    '<span class="rc-name">'+esc(name)+'</span>'+
+    (onView ? '<button type="button" data-act="view">View</button>' : '')+
+    '<button type="button" data-act="remove" title="Remove">&times;</button>';
+  chipEl.style.display='flex';
+  if(onView) chipEl.querySelector('[data-act="view"]').addEventListener('click', onView);
+  chipEl.querySelector('[data-act="remove"]').addEventListener('click', onRemove);
+}
+async function uploadReceiptFile(file, filenameBase){
+  // Returns {driveFileId, ext, mime, name}. driveFileId can end up null (not signed in, or the
+  // upload failed) — the caller still caches the file locally either way, so nothing is lost;
+  // it just stays device-only until the next successful sync.
+  const ext = (file.name.includes('.') ? file.name.split('.').pop() : (file.type==='application/pdf' ? 'pdf' : 'dat')).toLowerCase();
+  const mime = file.type || (ext==='pdf' ? 'application/pdf' : 'application/octet-stream');
+  let driveFileId = null;
+  if(gToken){
+    try{
+      const safeName = filenameBase.replace(/[^\w\-]+/g,'_')+'.'+ext;
+      const uploaded = await driveUploadResumable(file, safeName, mime, 'Payment Receipts');
+      driveFileId = uploaded.id;
+    }catch(e){
+      toast('Receipt could not upload to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
+    }
+  }
+  return { driveFileId, ext, mime, name: file.name };
+}
+async function viewReceipt(key, driveFileId, mime, displayName){
+  try{
+    const media = await mediaGetWithDriveFallback(key, driveFileId);
+    if(!media){ toast('Receipt not available on this device — sign in to Drive to fetch it'); return; }
+    const url = URL.createObjectURL(media.blob);
+    window.open(url, '_blank'); // browsers render both images and PDFs natively in a new tab
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(e){
+    toast('Could not open "'+displayName+'" ('+driveErrorDetail(e)+')');
+  }
+}
 let editingPaymentId=null;
+let pendingPayReceiptFile = null, payReceiptRemoved = false;
+$('#payReceiptFile').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  pendingPayReceiptFile = f; payReceiptRemoved = false;
+  renderReceiptChip($('#payReceiptChip'), f.name, ()=>{
+    pendingPayReceiptFile = null; payReceiptRemoved = true;
+    $('#payReceiptFile').value=''; $('#payReceiptChip').style.display='none';
+  });
+});
 function refreshPayStudents(){
   const sel=$('#payStudent'); const cur=sel.value;
   sel.innerHTML='';
@@ -3746,22 +3816,38 @@ function refreshPayStudents(){
   opts.forEach(s=>sel.insertAdjacentHTML('beforeend','<option value="'+s.id+'">'+esc(s.name)+'</option>'));
   if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
 }
-$('#payAdd').addEventListener('click',()=>{
+$('#payAdd').addEventListener('click', async ()=>{
   const sid=$('#payStudent').value;
   if(!sid){ toast('Add a Personal student first — RAGA students are not billed here'); return; }
   const amt=parseInt($('#payAmount').value,10);
   if(isNaN(amt)||amt<=0){ toast('Enter an amount greater than zero'); $('#payAmount').focus(); return; }
   const date=$('#payDate').value||TODAY;
+  const btn = $('#payAdd');
   const rec={studentId:sid, month:$('#payMonth').value, date, amount:amt, mode:$('#payMode').value, ref:$('#payRef').value.trim(), updatedAt:Date.now()};
+  const pid = editingPaymentId || ('P'+pad(S.seq.pay).padStart(4,'0'));
+  if(pendingPayReceiptFile){
+    btn.disabled=true; btn.textContent='Uploading receipt…';
+    const st = sById(sid);
+    const filenameBase = 'Payment_'+(st?st.name:'student')+'_'+date+'_INR'+amt;
+    const {driveFileId, ext, mime, name} = await uploadReceiptFile(pendingPayReceiptFile, filenameBase);
+    try{ await mediaPut('payment-receipt:'+pid, pendingPayReceiptFile, {mimeType:mime, size:pendingPayReceiptFile.size}); }catch(e){}
+    rec.receiptFileId = driveFileId; rec.receiptExt = ext; rec.receiptMime = mime; rec.receiptName = name;
+    btn.disabled=false;
+  } else if(payReceiptRemoved){
+    rec.receiptFileId = null; rec.receiptExt = null; rec.receiptMime = null; rec.receiptName = null;
+  }
   if(editingPaymentId){
     Object.assign(S.payments.find(p=>p.pid===editingPaymentId), rec);
     toast('Payment updated — '+RUPEE.format(amt));
     cancelPayEdit();
   }else{
-    S.payments.unshift({pid:'P'+pad(S.seq.pay).padStart(4,'0'), ...rec});
+    S.payments.unshift({pid, ...rec});
     S.seq.pay++;
     toast('Payment saved — '+RUPEE.format(amt)+' from '+firstName(sid));
+    btn.textContent = 'Save payment';
   }
+  pendingPayReceiptFile = null; payReceiptRemoved = false;
+  $('#payReceiptFile').value=''; $('#payReceiptChip').style.display='none';
   $('#payAmount').value=''; $('#payRef').value='';
   renderAll();
 });
@@ -3773,6 +3859,15 @@ function startPayEdit(pid){
   $('#payStudent').value=p.studentId; $('#payMonth').value=p.month;
   $('#payDate').value=p.date; $('#payAmount').value=p.amount;
   $('#payMode').value=p.mode; $('#payRef').value=p.ref||'';
+  pendingPayReceiptFile = null; payReceiptRemoved = false;
+  $('#payReceiptFile').value='';
+  if(p.receiptName){
+    renderReceiptChip($('#payReceiptChip'), p.receiptName,
+      ()=>{ payReceiptRemoved = true; $('#payReceiptChip').style.display='none'; },
+      ()=>viewReceipt('payment-receipt:'+p.pid, p.receiptFileId, p.receiptMime, p.receiptName));
+  }else{
+    $('#payReceiptChip').style.display='none';
+  }
   $('#payFormTitle').textContent='Edit payment';
   $('#payAdd').textContent='Update payment';
   $('#payCancelEdit').style.display='';
@@ -3780,6 +3875,8 @@ function startPayEdit(pid){
 }
 function cancelPayEdit(){
   editingPaymentId=null;
+  pendingPayReceiptFile = null; payReceiptRemoved = false;
+  $('#payReceiptFile').value=''; $('#payReceiptChip').style.display='none';
   $('#payFormTitle').textContent='Record a payment';
   $('#payAdd').textContent='Save payment';
   $('#payCancelEdit').style.display='none';
@@ -3819,20 +3916,34 @@ function renderPayments(){
     tb.insertAdjacentHTML('beforeend','<tr><td class="muted">'+fmtD(p.date)+'</td>'+
       '<td>'+esc(st?st.name:'?')+(st&&st.archived?' <span class="badge archived">Archived</span>':'')+'</td>'+
       '<td class="muted">'+monthLabel(p.month)+'</td><td>'+p.mode+(p.ref?' <span class="muted">· '+esc(p.ref)+'</span>':'')+'</td>'+
-      '<td class="r num amount-ok">'+RUPEE.format(p.amount)+'</td>'+
+      '<td class="r num amount-ok">'+RUPEE.format(p.amount)+(p.receiptName ? '<button class="receipt-icon-btn" data-preceipt="'+p.pid+'" title="View receipt: '+esc(p.receiptName)+'"><svg viewBox="0 0 24 24"><path d="M21.4 11.5l-8.5 8.5a4.95 4.95 0 01-7-7l8.5-8.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3l7.8-7.8"/></svg></button>' : '')+'</td>'+
       '<td><div class="row-actions"><button class="btn tiny" data-pedit="'+p.pid+'">Edit</button>'+
       '<button class="btn tiny danger" data-pdel="'+p.pid+'">Delete</button></div></td></tr>');
   });
   $('#payTotalHint').textContent=(fm ? 'Total for '+monthLabel(fm)+': ' : 'Total received: ')+RUPEE.format(list.reduce((t,p)=>t+p.amount,0));
   tb.querySelectorAll('[data-pedit]').forEach(b=>b.addEventListener('click',()=>startPayEdit(b.dataset.pedit)));
   tb.querySelectorAll('[data-pdel]').forEach(b=>b.addEventListener('click',()=>deletePayment(b.dataset.pdel)));
+  tb.querySelectorAll('[data-preceipt]').forEach(b=>b.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const p=S.payments.find(x=>x.pid===b.dataset.preceipt); if(!p) return;
+    viewReceipt('payment-receipt:'+p.pid, p.receiptFileId, p.receiptMime, p.receiptName);
+  }));
 }
 
 /* =====================================================
    RAGA EARNINGS — withdrawals + monthly earnings
    ===================================================== */
 let editingWithdrawalId=null;
-$('#wdAdd').addEventListener('click',()=>{
+let pendingWdReceiptFile = null, wdReceiptRemoved = false;
+$('#wdReceiptFile').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  pendingWdReceiptFile = f; wdReceiptRemoved = false;
+  renderReceiptChip($('#wdReceiptChip'), f.name, ()=>{
+    pendingWdReceiptFile = null; wdReceiptRemoved = true;
+    $('#wdReceiptFile').value=''; $('#wdReceiptChip').style.display='none';
+  });
+});
+$('#wdAdd').addEventListener('click', async ()=>{
   const amt=parseInt($('#wdAmount').value,10);
   if(isNaN(amt)||amt<=0){ toast('Enter an amount greater than zero'); $('#wdAmount').focus(); return; }
   const date=$('#wdDate').value||TODAY;
@@ -3843,16 +3954,31 @@ $('#wdAdd').addEventListener('click',()=>{
     const nd=nextWithdrawDate();
     if(nd && date<nd && !confirm('The rolling 30-day window opens on '+fmtDFull(nd)+' ('+daysUntil(nd)+' days from today).\n\nRecord this withdrawal anyway?')) return;
   }
+  const btn = $('#wdAdd');
   const rec={date, amount:amt, mode:$('#wdMode').value, ref:$('#wdRef').value.trim(), remarks:$('#wdRemarks').value.trim(), updatedAt:Date.now()};
+  const wid = editingWithdrawalId || ('W'+pad(S.seq.wd).padStart(4,'0'));
+  if(pendingWdReceiptFile){
+    btn.disabled=true; btn.textContent='Uploading receipt…';
+    const filenameBase = 'Withdrawal_'+date+'_INR'+amt;
+    const {driveFileId, ext, mime, name} = await uploadReceiptFile(pendingWdReceiptFile, filenameBase);
+    try{ await mediaPut('withdrawal-receipt:'+wid, pendingWdReceiptFile, {mimeType:mime, size:pendingWdReceiptFile.size}); }catch(e){}
+    rec.receiptFileId = driveFileId; rec.receiptExt = ext; rec.receiptMime = mime; rec.receiptName = name;
+    btn.disabled=false;
+  } else if(wdReceiptRemoved){
+    rec.receiptFileId = null; rec.receiptExt = null; rec.receiptMime = null; rec.receiptName = null;
+  }
   if(editingWithdrawalId){
     Object.assign(S.withdrawals.find(w=>w.wid===editingWithdrawalId), rec);
     toast('Withdrawal updated — '+RUPEE.format(amt));
     cancelWdEdit();
   }else{
-    S.withdrawals.unshift({wid:'W'+pad(S.seq.wd).padStart(4,'0'), ...rec});
+    S.withdrawals.unshift({wid, ...rec});
     S.seq.wd++;
     toast('Withdrawal recorded — '+RUPEE.format(amt)+'. Next window: '+fmtD(addDaysS(date,30)));
+    btn.textContent = 'Save withdrawal';
   }
+  pendingWdReceiptFile = null; wdReceiptRemoved = false;
+  $('#wdReceiptFile').value=''; $('#wdReceiptChip').style.display='none';
   $('#wdAmount').value=''; $('#wdRef').value=''; $('#wdRemarks').value='';
   renderAll();
 });
@@ -3861,6 +3987,15 @@ function startWdEdit(wid){
   editingWithdrawalId=wid;
   $('#wdDate').value=w.date; $('#wdAmount').value=w.amount;
   $('#wdMode').value=w.mode; $('#wdRef').value=w.ref||''; $('#wdRemarks').value=w.remarks||'';
+  pendingWdReceiptFile = null; wdReceiptRemoved = false;
+  $('#wdReceiptFile').value='';
+  if(w.receiptName){
+    renderReceiptChip($('#wdReceiptChip'), w.receiptName,
+      ()=>{ wdReceiptRemoved = true; $('#wdReceiptChip').style.display='none'; },
+      ()=>viewReceipt('withdrawal-receipt:'+w.wid, w.receiptFileId, w.receiptMime, w.receiptName));
+  }else{
+    $('#wdReceiptChip').style.display='none';
+  }
   $('#wdFormTitle').textContent='Edit withdrawal';
   $('#wdAdd').textContent='Update withdrawal';
   $('#wdCancelEdit').style.display='';
@@ -3868,6 +4003,8 @@ function startWdEdit(wid){
 }
 function cancelWdEdit(){
   editingWithdrawalId=null;
+  pendingWdReceiptFile = null; wdReceiptRemoved = false;
+  $('#wdReceiptFile').value=''; $('#wdReceiptChip').style.display='none';
   $('#wdFormTitle').textContent='Record a withdrawal';
   $('#wdAdd').textContent='Save withdrawal';
   $('#wdCancelEdit').style.display='none';
@@ -3901,13 +4038,18 @@ function renderRaga(){
     tb.insertAdjacentHTML('beforeend','<tr><td class="muted">'+fmtD(w.date)+'</td>'+
       '<td>'+w.mode+(w.ref?' <span class="muted">· '+esc(w.ref)+'</span>':'')+'</td>'+
       '<td class="muted">'+esc(w.remarks||'—')+'</td>'+
-      '<td class="r num amount-ok">'+RUPEE.format(w.amount)+'</td>'+
+      '<td class="r num amount-ok">'+RUPEE.format(w.amount)+(w.receiptName ? '<button class="receipt-icon-btn" data-wreceipt="'+w.wid+'" title="View receipt: '+esc(w.receiptName)+'"><svg viewBox="0 0 24 24"><path d="M21.4 11.5l-8.5 8.5a4.95 4.95 0 01-7-7l8.5-8.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3l7.8-7.8"/></svg></button>' : '')+'</td>'+
       '<td><div class="row-actions"><button class="btn tiny" data-wedit="'+w.wid+'">Edit</button>'+
       '<button class="btn tiny danger" data-wdel="'+w.wid+'">Delete</button></div></td></tr>');
   });
   $('#wdTotalHint').textContent='Total withdrawn: '+RUPEE.format(wdn);
   tb.querySelectorAll('[data-wedit]').forEach(b=>b.addEventListener('click',()=>startWdEdit(b.dataset.wedit)));
   tb.querySelectorAll('[data-wdel]').forEach(b=>b.addEventListener('click',()=>deleteWithdrawal(b.dataset.wdel)));
+  tb.querySelectorAll('[data-wreceipt]').forEach(b=>b.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const w=S.withdrawals.find(x=>x.wid===b.dataset.wreceipt); if(!w) return;
+    viewReceipt('withdrawal-receipt:'+w.wid, w.receiptFileId, w.receiptMime, w.receiptName);
+  }));
   refreshMonthSelect($('#ragaMonth'), true);
   const m=$('#ragaMonth').value;
   const rAll = m==='all';
@@ -5446,6 +5588,8 @@ function driveFilesNeedingMigration(){
   const tasks = [];
   S.notations.forEach(n=>{ if(n.hasPdf && !n.driveFileId) tasks.push({type:'notation', rec:n, key:'notation-pdf:'+n.id, folder:'Notations'}); });
   S.recordings.forEach(r=>{ if(!r.driveFileId) tasks.push({type:'recording', rec:r, key:'recording-audio:'+r.id, folder:'Recordings'}); });
+  S.payments.forEach(p=>{ if(p.receiptName && !p.receiptFileId) tasks.push({type:'payment-receipt', rec:p, key:'payment-receipt:'+p.pid, folder:'Payment Receipts'}); });
+  S.withdrawals.forEach(w=>{ if(w.receiptName && !w.receiptFileId) tasks.push({type:'withdrawal-receipt', rec:w, key:'withdrawal-receipt:'+w.wid, folder:'Payment Receipts'}); });
   return tasks;
 }
 async function driveMigrateExistingFiles(onProgress, isCancelled){
@@ -5454,16 +5598,18 @@ async function driveMigrateExistingFiles(onProgress, isCancelled){
   for(let i=0;i<tasks.length;i++){
     if(isCancelled && isCancelled()){ result.cancelled = true; break; }
     const t = tasks[i];
-    if(onProgress) onProgress({index:i, total:tasks.length, label: t.rec.title || t.rec.pdfName || t.key});
+    if(onProgress) onProgress({index:i, total:tasks.length, label: t.rec.title || t.rec.pdfName || t.rec.receiptName || t.key});
     let media = null;
     try{ media = await mediaGet(t.key); }catch(e){ media = null; }
     if(!media){ result.skippedNoLocalCopy++; continue; } // nothing local to migrate — genuinely nothing to do here
     const isNotation = t.type==='notation';
-    const ext = isNotation ? 'pdf' : ((media.blob.type||'').includes('mp4') ? 'm4a' : 'webm');
+    const isReceipt = t.type==='payment-receipt' || t.type==='withdrawal-receipt';
+    const ext = isNotation ? 'pdf' : isReceipt ? (t.rec.receiptExt || 'dat') : ((media.blob.type||'').includes('mp4') ? 'm4a' : 'webm');
     const filename = isNotation
       ? (t.rec.pdfName || (t.rec.title||'notation')+'.pdf')
+      : isReceipt ? (t.rec.receiptName || ('receipt.'+ext))
       : (t.rec.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext;
-    const mimeType = media.blob.type || (isNotation ? 'application/pdf' : 'audio/webm');
+    const mimeType = media.blob.type || (isNotation ? 'application/pdf' : isReceipt ? (t.rec.receiptMime||'application/octet-stream') : 'audio/webm');
     try{
       const driveFile = await driveUploadResumable(media.blob, filename, mimeType, t.folder);
       t.rec.driveFileId = driveFile.id;
