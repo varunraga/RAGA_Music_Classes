@@ -67,7 +67,7 @@
 
   /* ---------- shell ---------- */
   .shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
-  .sidebar{border-right:1px solid var(--line);padding:28px 18px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+  .sidebar{border-right:1px solid var(--line);padding:28px 18px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow-y:auto}
   .brand{padding:2px 8px 16px;border-bottom:1px solid var(--line);margin-bottom:14px;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
   .brand::before{content:'';position:absolute;top:-16px;left:50%;transform:translateX(-50%);width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 50% 42%,rgba(184,137,46,.06),transparent 62%);pointer-events:none}
   .brand::after{content:'';position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:132px;height:132px;border-radius:50%;border:1px solid rgba(184,137,46,.05);pointer-events:none}
@@ -146,7 +146,7 @@
   .nav-btn[data-view="studio"].active svg{color:var(--rose-ink)}
   .nav-badge{margin-left:auto;background:var(--gold);color:#fff;border-radius:99px;font-size:.66rem;padding:2px 7px;font-weight:700}
   [data-theme="dark"] .nav-badge{color:#14181B}
-  .side-foot{margin-top:auto;padding:12px 6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
+  .side-foot{margin-top:auto;padding:12px 6px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
   .side-foot .tiny{color:var(--muted);font-size:.72rem;line-height:1.5;padding:0 4px 4px}
 
   .main{padding:30px 38px 60px;max-width:1160px;width:100%}
@@ -648,6 +648,8 @@
     .panel-head #modeFilter,.panel-head #categoryFilter,.panel-head #levelFilter{flex:1 1 auto;min-width:0}
     .panel-head .check{flex:1 1 auto}
     .panel-head #btnAddStudent{flex:1 1 100%}
+    .panel-head .hint{flex:1 1 100%;white-space:normal;overflow-wrap:break-word;min-width:0}
+    .panel-head > div{min-width:0}
   }
   @keyframes sheet{from{opacity:.6;transform:translateY(40px)}to{opacity:1;transform:none}}
   @media (max-width:980px){
