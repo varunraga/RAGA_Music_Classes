@@ -5218,12 +5218,12 @@ function gisReady(cb, tries){
 }
 function initTokenClient(){
   const idInUse = driveCfg();
-  toast('Signing in with: '+(idInUse ? idInUse.slice(0,20)+'…'+idInUse.slice(-24) : '(empty — nothing saved!)'));
   gTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: idInUse,
     scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file',
     callback: resp=>{
       silentRefreshInFlight=false;
+      interactiveConnectInFlight=false;
       if(resp && resp.access_token){
         gToken=resp.access_token; setDriveStatus('Connected'); initialSync(); driveEnsureFileStorageFolders(); flushPendingDriveDeletes();
         runCleanupSerially(cleanDriveGhosts, 'Drive ghost cleanup');
@@ -5236,6 +5236,7 @@ function initTokenClient(){
     },
     error_callback: ()=>{
       silentRefreshInFlight=false;
+      interactiveConnectInFlight=false;
       setDriveStatus('Tap Reconnect to sign in');
       tokenWaiters.forEach(w=>w.resolve(false)); tokenWaiters=[];
     }
@@ -5254,7 +5255,10 @@ function requestSilentTokenRefresh(){
     gTokenClient.requestAccessToken({prompt:''});
   });
 }
+let interactiveConnectInFlight = false;
 function connectDrive(interactive){
+  if(interactive && interactiveConnectInFlight) return; // already mid sign-in — a second tap
+  // while Google's popup is still loading shouldn't fire a second, competing one.
   if(!driveCfg()){ $('#gClientId').value=''; openModal('m-drive'); return; }
   const libReady = !!(window.google && google.accounts && google.accounts.oauth2);
   if(interactive && !libReady){
@@ -5266,6 +5270,15 @@ function connectDrive(interactive){
     return;
   }
   setDriveStatus('Connecting…');
+  if(interactive){
+    interactiveConnectInFlight = true;
+    // Safety net: gisReady() can exhaust its own retries (~7.5s) without ever calling back if the
+    // Google library fails to load entirely (e.g. genuinely offline) — that path doesn't reach the
+    // token client at all, so nothing else would clear this flag. Without this, one failed attempt
+    // under those conditions would silently block every future tap of the Connect button until the
+    // page is reloaded.
+    setTimeout(()=>{ interactiveConnectInFlight = false; }, 10000);
+  }
   gisReady(()=>{
     if(!gTokenClient) initTokenClient();
     // No forced {prompt:'consent'} here — that would re-show the full permissions screen on every
@@ -5312,7 +5325,7 @@ function driveErrorDetail(e){
 // Distinct from driveFind()/pushToDrive() below, which manage the small JSON data
 // blob in the hidden appdata space — this section manages real, visible folders
 // and files for notation PDFs, recording audio, and (later) Tala video exports.
-const RAGA_DRIVE_SUBFOLDERS = ['Notations', 'Recordings', 'Tala Videos', 'Tanpura Studio Loops'];
+const RAGA_DRIVE_SUBFOLDERS = ['Notations', 'Recordings', 'Tala Videos', 'Tanpura Studio Loops', 'Payment Receipts'];
 async function driveFindOrCreateFolder(name, parentId){
   const safeName = name.replace(/'/g, "\\'");
   const parentClause = parentId ? `'${parentId}' in parents` : `'root' in parents`;
@@ -9418,7 +9431,13 @@ if(!navigator.share){
   if($('#talaVideoShareBtn')) $('#talaVideoShareBtn').textContent = 'Download video';
 }
 maybeShowReminder();
-if(driveCfg()){ connectDrive(false); } else { setDriveStatus('Not connected'); }
+// Only attempt the automatic reconnect if this device has genuinely completed a successful
+// Drive connection before (S.meta.driveModified only ever gets set after a real sync) — not
+// merely because a client ID is configured. A silent request that's never actually going to
+// succeed is still a request Google's own sign-in library might visibly surface on some mobile
+// browsers, so skipping it entirely for anyone who's never actually connected avoids an
+// unexpected prompt on a fresh install, rather than relying only on it failing quietly.
+if(driveCfg() && S.meta && S.meta.driveModified){ connectDrive(false); } else { setDriveStatus('Not connected'); }
 if(!storageOK) toast('Heads up: this browser is blocking storage, so data will not persist. Use Export to save your work.');
 // Clean up any ghost entries left behind by interrupted delete operations — runs silently on
 // every startup, only removes entries whose binary data is truly gone from both local cache
