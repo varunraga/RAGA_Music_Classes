@@ -717,6 +717,7 @@
     <div class="side-foot">
       <button class="btn small gold" id="btnDrive">Connect Google Drive</button>
       <div class="tiny" id="driveStatus">Drive: not connected</div>
+      <div class="tiny" id="pendingSyncBadge" style="display:none;color:var(--gold-ink);font-weight:600"></div>
       <div class="tiny"><a href="#" class="foot-link" id="lnkDataBackup">Data &amp; Backup</a></div>
       <input type="file" id="importFile" accept="application/json" style="display:none">
       <input type="file" id="fullRestoreFile" accept=".zip,application/zip" style="display:none">
@@ -1452,6 +1453,10 @@
       <button class="btn" id="notPdfOpenBtn" style="display:none">Open PDF</button>
       <button class="btn" id="notPdfDownloadBtn" style="display:none">Download PDF</button>
     </div>
+    <div id="notLinkedRecWrap" style="display:none;margin-top:14px">
+      <div class="not-read-label">Linked recordings</div>
+      <div id="notLinkedRecList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+    </div>
     <div class="modal-foot" style="flex-wrap:wrap;gap:10px">
       <div class="not-share-row">
         <select id="notMsgStudent"><option value="">— pick a student —</option></select>
@@ -1664,6 +1669,18 @@
         <input id="recEditTypeOther" placeholder="Type it in" style="display:none;margin-top:6px">
       </div>
       <div class="field span2"><label for="recEditNotes">Notes (optional)</label><textarea id="recEditNotes" placeholder="e.g. which students this suits" style="min-height:64px"></textarea></div>
+      <div class="field span2">
+        <label>Notation</label>
+        <div id="recNotationLinkedRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn tiny" id="recOpenNotationBtn" type="button"></button>
+          <button class="btn tiny" id="recUnlinkNotationBtn" type="button" style="color:var(--red)">Unlink</button>
+        </div>
+        <div id="recNotationUnlinkedRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn tiny" id="recCreateNotationBtn" type="button">Create notation from this</button>
+          <select id="recLinkNotationSelect" style="max-width:220px"><option value="">— link existing notation —</option></select>
+          <button class="btn tiny" id="recLinkNotationBtn" type="button">Link</button>
+        </div>
+      </div>
     </div>
     <div class="modal-foot" style="flex-wrap:wrap;gap:10px">
       <div class="not-share-row">
@@ -5186,6 +5203,10 @@ const DRIVE_FILE='raga-music-classes-data.json';
 // app is hosted at. An explicit override (saved via "change Client ID") always takes precedence.
 const RAGA_GOOGLE_CLIENT_ID='1070966217158-pia4db0kai1h3j0903ml27m25q1rctj8.apps.googleusercontent.com';
 let gToken=null, gTokenClient=null, syncTimer=null, lastPushedJSON=null, driveBusy=false, pendingRemote=null;
+// Tracks how many distinct local changes have happened since the last confirmed sync to Drive,
+// purely for the "N changes waiting to sync" badge — not used for the sync logic itself, which
+// still relies on comparing JSON.stringify(S) against lastPushedJSON as before.
+let pendingSyncChangeCount=0, lastScheduleSyncJSON=null;
 let gTokenRefreshTimer = null;
 // Access tokens last about an hour. Refreshing 5 minutes before that (rather than waiting for a
 // request to fail with 401 and refresh reactively) means Varun never hits even the small extra
@@ -5209,6 +5230,17 @@ function setDriveStatus(t, color){
   const el=$('#driveStatus'); if(el){ el.textContent='Drive: '+t; el.style.color=color||''; }
   updateDriveBtn();
   renderBackupStatus();
+  renderPendingSyncBadge();
+}
+function markSyncClean(){ pendingSyncChangeCount=0; lastScheduleSyncJSON=null; renderPendingSyncBadge(); }
+function renderPendingSyncBadge(){
+  const el=$('#pendingSyncBadge'); if(!el) return;
+  if(gToken && pendingSyncChangeCount>0){
+    el.style.display='';
+    el.textContent = pendingSyncChangeCount+' change'+(pendingSyncChangeCount===1?'':'s')+' waiting to sync to Drive';
+  } else {
+    el.style.display='none';
+  }
 }
 function gisReady(cb, tries){
   tries = tries===undefined ? 15 : tries;
@@ -5676,6 +5708,7 @@ async function pushToDrive(){
     S.meta.driveModified=res.modifiedTime;
     persist();
     lastPushedJSON=JSON.stringify(S);
+    markSyncClean();
     setDriveStatus('Synced just now');
     if(S.meta.pendingDriveDeletes && S.meta.pendingDriveDeletes.length) flushPendingDriveDeletes();
     if(S.meta.lastSnapshotDate!==TODAY){
@@ -5684,6 +5717,7 @@ async function pushToDrive(){
         S.meta.lastSnapshotDate=TODAY;
         persist();
         lastPushedJSON=JSON.stringify(S);
+        markSyncClean();
         pruneSnapshots();
       }catch(e){}
     }
@@ -5698,11 +5732,12 @@ async function initialSync(){
     const f=await driveFind();
     if(!f){
       if(hasAnyData()) await pushToDrive();
-      else { lastPushedJSON=JSON.stringify(S); setDriveStatus('Connected'); }
+      else { lastPushedJSON=JSON.stringify(S); markSyncClean(); setDriveStatus('Connected'); }
       return;
     }
     if(S.meta.driveModified===f.modifiedTime){
       lastPushedJSON=JSON.stringify(S);
+      markSyncClean();
       setDriveStatus('Synced');
       scheduleSync();
       return;
@@ -5713,6 +5748,7 @@ async function initialSync(){
       S.meta.driveModified=f.modifiedTime;
       renderAll();
       lastPushedJSON=JSON.stringify(S);
+      markSyncClean();
       setDriveStatus('Synced — loaded from Drive');
       toast('Your data was loaded from Google Drive');
       return;
@@ -5752,6 +5788,7 @@ $('#conflictUseRemote').addEventListener('click',()=>{
   closeModal('m-conflict');
   renderAll();
   lastPushedJSON=JSON.stringify(S);
+  markSyncClean();
   setDriveStatus('Synced — using Drive copy');
 });
 async function listSnapshots(){
@@ -5798,7 +5835,12 @@ $('#lnkSnapshots').addEventListener('click',e=>{ e.preventDefault(); openSnapsho
 function scheduleSync(){
   if(!gToken) return;
   const cur=JSON.stringify(S);
-  if(cur===lastPushedJSON) return;
+  if(cur===lastPushedJSON){ if(pendingSyncChangeCount) markSyncClean(); return; }
+  if(cur!==lastScheduleSyncJSON){
+    pendingSyncChangeCount++;
+    lastScheduleSyncJSON=cur;
+    renderPendingSyncBadge();
+  }
   setDriveStatus('Syncing…');
   clearTimeout(syncTimer);
   syncTimer=setTimeout(pushToDrive, 4000);
@@ -7059,7 +7101,15 @@ $('#notSave').addEventListener('click', async ()=>{
   const wasEditing = !!editingNotationId;
   editingNotationId = null;
   closeModal('m-notation');
-  toast(wasEditing ? 'Composition updated' : 'Composition added — '+title);
+  // If this composition was opened via "Create notation from this" on a recording, link that
+  // recording back to it now so the two show up connected in both views.
+  let linkedBackMsg = '';
+  if(notationLinkTargetRecordingId){
+    const targetRec = S.recordings.find(x=>x.id===notationLinkTargetRecordingId);
+    if(targetRec){ targetRec.linkedNotationId = id; targetRec.updatedAt = Date.now(); linkedBackMsg = ' — linked to "'+targetRec.title+'"'; }
+    notationLinkTargetRecordingId = null;
+  }
+  toast((wasEditing ? 'Composition updated' : 'Composition added — '+title) + linkedBackMsg);
   renderAll();
 });
 function notationTagsLine(n){
@@ -7076,6 +7126,16 @@ async function openNotationView(id){
   if(!n.lyrics && !n.meaning) body = '<div class="empty" style="padding:16px 0">No lyrics or meaning added — just the tags above.</div>';
   if(n.refLink) body += '<div style="margin-top:12px"><a href="'+esc(n.refLink)+'" target="_blank" rel="noopener" class="btn tiny gold" style="text-decoration:none;display:inline-block">&#9658; Listen to reference</a></div>';
   $('#notReadWrap').innerHTML = body;
+  const linkedRecs = (S.recordings||[]).filter(x=>x.linkedNotationId===id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(linkedRecs.length){
+    $('#notLinkedRecWrap').style.display = '';
+    $('#notLinkedRecList').innerHTML = linkedRecs.map(rec=>
+      '<button class="btn tiny" data-open-linked-rec="'+rec.id+'" style="justify-content:flex-start;text-align:left">&#127925; '+esc(rec.title||'(untitled)')+' · '+fmtDuration(rec.durationSec)+'</button>'
+    ).join('');
+  } else {
+    $('#notLinkedRecWrap').style.display = 'none';
+    $('#notLinkedRecList').innerHTML = '';
+  }
   studentOptions($('#notMsgStudent'), false);
   $('#notMsgStudent').insertAdjacentHTML('afterbegin', '<option value="">— pick a student —</option>');
   $('#notMsgStudent').value = '';
@@ -7117,9 +7177,15 @@ async function openNotationView(id){
 }
 $('#notRecordBtn').addEventListener('click', ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
-  pendingRecordingTags = {raga:n.raga||'', tala:n.tala||'', composer:n.composer||'', type:n.type||'', title:n.title||''};
+  pendingRecordingTags = {raga:n.raga||'', tala:n.tala||'', composer:n.composer||'', type:n.type||'', title:n.title||'', notationId:n.id};
   closeModal('m-notation-view');
   openRecordingCapture();
+});
+$('#notLinkedRecList').addEventListener('click', (e)=>{
+  const btn = e.target.closest('[data-open-linked-rec]'); if(!btn) return;
+  const rid = btn.getAttribute('data-open-linked-rec');
+  closeModal('m-notation-view');
+  openRecordingView(rid);
 });
 $('#notMsgBtn').addEventListener('click', ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
@@ -7824,6 +7890,7 @@ recSharedAudio.addEventListener('timeupdate', ()=>{
   if(bar) bar.style.width = (frac*100)+'%';
 });
 let pendingRecordingTags = null; // set by "Record student singing this" in a notation view — applied to the next saved recording
+let notationLinkTargetRecordingId = null; // set by "Create notation from this" in a recording view — the new/edited notation gets linked back to this recording on save
 function resetCaptureUI(){
   $('#recReadyBlock').style.display = '';
   $('#recActiveBlock').style.display = 'none';
@@ -8065,10 +8132,11 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
   // local cache write further down has a hiccup (device storage pressure, etc.), the recording
   // is never silently lost track of — worst case, it's an entry with no local copy yet, not a
   // Drive file the app has completely forgotten exists.
-  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null};
+  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null, linkedNotationId:null};
   if(pendingRecordingTags){
     entry.raga = pendingRecordingTags.raga||''; entry.tala = pendingRecordingTags.tala||'';
     entry.composer = pendingRecordingTags.composer||''; entry.type = pendingRecordingTags.type||'';
+    entry.linkedNotationId = pendingRecordingTags.notationId || null;
     pendingRecordingTags = null;
   }
   S.recordings.push(entry);
@@ -8203,7 +8271,7 @@ async function importOneRecording(file){
   }
   const title = filenameToTitle(file.name);
   const id = 'REC'+pad(S.seq.rec).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.rec++;
-  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null};
+  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null, linkedNotationId:null};
   S.recordings.push(entry);
   persist();
   if(gToken){
@@ -8277,6 +8345,7 @@ async function openRecordingView(id){
   }
   $('#recEditNotes').value = r.notes || '';
   refreshNotationDatalists();
+  refreshRecNotationLinkUI(r);
   viewingRecordingBlob = null;
   $('#recViewAudio').src = '';
   viewingRecordingBlob = null;
@@ -8309,6 +8378,62 @@ async function openRecordingView(id){
   $('#recViewAudio').style.opacity = '1';
   $('#recViewAudio').style.pointerEvents = '';
 }
+function refreshRecNotationLinkUI(r){
+  let linked = r.linkedNotationId ? S.notations.find(x=>x.id===r.linkedNotationId) : null;
+  if(r.linkedNotationId && !linked) r.linkedNotationId = null; // self-heal a dangling link (e.g. the notation was deleted elsewhere)
+  $('#recNotationLinkedRow').style.display = linked ? 'flex' : 'none';
+  $('#recNotationUnlinkedRow').style.display = linked ? 'none' : 'flex';
+  if(linked){
+    $('#recOpenNotationBtn').textContent = 'Open notation: '+(linked.title||'(untitled)');
+  } else {
+    const opts = (S.notations||[]).slice().sort((a,b)=>(a.title||'').localeCompare(b.title||''))
+      .map(n=>{
+        const sub = [n.raga,n.tala,n.composer].filter(Boolean).join(' · ');
+        return '<option value="'+n.id+'">'+esc(n.title||'(untitled)')+(sub?' — '+esc(sub):'')+'</option>';
+      }).join('');
+    $('#recLinkNotationSelect').innerHTML = '<option value="">— link existing notation —</option>'+opts;
+  }
+}
+$('#recCreateNotationBtn').addEventListener('click', ()=>{
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
+  notationLinkTargetRecordingId = r.id;
+  closeModal('m-recording-view');
+  openNotationModal();
+  // Pre-fill from the recording's already-tagged details, same fields "Record student singing
+  // this" carries the other direction — so this doesn't turn into re-typing what's already known.
+  $('#notTitle').value = r.title || '';
+  $('#notRaga').value = r.raga || '';
+  $('#notTala').value = r.tala || '';
+  $('#notComposer').value = r.composer || '';
+  if(r.type && !NOTATION_TYPES.includes(r.type)){
+    $('#notType').value = '__other'; $('#notTypeOther').style.display=''; $('#notTypeOther').value = r.type;
+  } else {
+    $('#notType').value = r.type || ''; $('#notTypeOther').style.display='none'; $('#notTypeOther').value = '';
+  }
+});
+$('#recLinkNotationBtn').addEventListener('click', ()=>{
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
+  const nid = $('#recLinkNotationSelect').value;
+  if(!nid){ toast('Pick a notation first'); return; }
+  r.linkedNotationId = nid; r.updatedAt = Date.now();
+  toast('Linked to notation');
+  renderAll();
+  openRecordingView(r.id);
+});
+$('#recUnlinkNotationBtn').addEventListener('click', ()=>{
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
+  if(!confirm('Unlink this recording from its notation? The notation itself is not affected.')) return;
+  r.linkedNotationId = null; r.updatedAt = Date.now();
+  toast('Unlinked');
+  renderAll();
+  openRecordingView(r.id);
+});
+$('#recOpenNotationBtn').addEventListener('click', ()=>{
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r || !r.linkedNotationId) return;
+  const nid = r.linkedNotationId;
+  closeModal('m-recording-view');
+  openNotationView(nid);
+});
 $('#recSaveBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   const title = $('#recEditTitle').value.trim();
