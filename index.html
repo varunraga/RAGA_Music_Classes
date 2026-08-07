@@ -5141,8 +5141,41 @@ function mergeData(inc){
   mergeArr(S.talaPatterns, inc.talaPatterns, 'id');
   mergeArr(S.talaExports, inc.talaExports, 'id');
   ['stu','cls','pay','wd','not','rec','tala','talaExport'].forEach(k=>{ S.seq[k]=Math.max(S.seq[k]||1,(inc.seq&&inc.seq[k])||1); });
+  // The record-array merge above never touched S.meta, so anything living only in meta — the
+  // "This week's scheduling" skip list chief among them — was silently dropped whenever a sync
+  // conflict was resolved with "Merge": this device's meta stayed exactly as it was, and whatever
+  // the other device had skipped never came across. Union-merge those meta dictionaries instead of
+  // ignoring them, so a skip made on either device survives a merge on the other.
+  S.meta ||= {};
+  const incMeta = inc.meta || {};
+  S.meta.weekSkip = mergeIdSetDict(S.meta.weekSkip, incMeta.weekSkip);
+  S.meta.tanpuraStudioLoops = mergeTimestampedDict(S.meta.tanpuraStudioLoops, incMeta.tanpuraStudioLoops, 'addedAt');
   resyncPartners();
   return stats;
+}
+// Union-merges two "key -> array of ids" dictionaries (used for S.meta.weekSkip: week key ->
+// list of skipped student ids). Neither side has per-entry timestamps, so the only conflict-safe
+// merge is a union — a skip recorded on either device stays a skip. Worst case a very recent
+// "undo skip" on one device doesn't survive a single merge; the next normal (non-conflict) sync
+// clears that up, and no skip action is ever silently lost.
+function mergeIdSetDict(local, incoming){
+  local ||= {}; incoming ||= {};
+  const out = {};
+  new Set([...Object.keys(local), ...Object.keys(incoming)]).forEach(k=>{
+    out[k] = Array.from(new Set([...(local[k]||[]), ...(incoming[k]||[])]));
+  });
+  return out;
+}
+// Union-merges two "key -> {..., [tsField]: number}" dictionaries, keeping whichever side's entry
+// is newer per key when both sides have it (used for S.meta.tanpuraStudioLoops).
+function mergeTimestampedDict(local, incoming, tsField){
+  local ||= {}; incoming ||= {};
+  const out = {...local};
+  Object.keys(incoming).forEach(k=>{
+    const cur = out[k];
+    if(!cur || (incoming[k][tsField]||0) > (cur[tsField]||0)) out[k] = incoming[k];
+  });
+  return out;
 }
 function resyncPartners(){
   // the partner link is the app's one two-way relationship; a merge can leave it one-sided.
