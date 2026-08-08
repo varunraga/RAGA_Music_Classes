@@ -1115,14 +1115,14 @@
                 <option value="mellow">Mellow</option>
               </select>
             </div>
-            <div class="field"><label for="tpPause">Pause placement</label>
+            <div class="field" id="tpPauseField"><label for="tpPause">Pause placement</label>
               <select id="tpPause">
                 <option value="last">After last string</option>
                 <option value="first">After first string</option>
                 <option value="both">After first and last</option>
               </select>
             </div>
-            <div class="field"><label for="tpTempo">Tempo</label>
+            <div class="field" id="tpTempoField"><label for="tpTempo">Tempo</label>
               <input type="range" id="tpTempo" min="1" max="10" value="5" step="1">
             </div>
             <div class="field"><label for="tpVol">Volume</label>
@@ -6154,6 +6154,7 @@ const TP_PITCH_SEMITONE = {'A#':1,'B':2,'C':3,'C#':4,'D':5,'D#':6,'E':7,'F':8,'F
    synthesized engine above — no faking coverage. */
 let tpStudioSrcNode = null, tpStudioGainNode = null; // Web Audio path (recording-mix only now)
 let tpBgAudioA = null, tpBgAudioB = null; // two <audio> elements, alternated for gapless looping (see tpStartStudioLoop)
+let tpBgGainA = null, tpBgGainB = null; // paired GainNodes — see tpBgSetVol() for why volume goes through these, not .volume
 let tpBgActiveIsA = true; // which one is currently the primary (fully faded-in) one
 let tpBgSwapTimer = null; // watches the active element and crossfades to the standby one just before it ends
 let tpBgAudioUrl = null; // blob URL shared by both elements (same clip), so we can revoke it on stop
@@ -6434,6 +6435,13 @@ function updateTpSourceVisibility(){
   const show = tpStudioAvailableFor(pitch, tuning);
   field.style.display = show ? '' : 'none';
   if(!show && $('#tpSource')) $('#tpSource').value = 'synth'; // reset silently so a stale "studio" pick doesn't stick once hidden
+  // Pause placement and Tempo only ever affect how the synthesized engine schedules individual
+  // plucked notes — a studio recording is just one continuous audio file on loop, so neither
+  // control does anything once Studio is the active source. Hiding them avoids two controls that
+  // look live but quietly do nothing.
+  const usingStudio = tpShouldUseStudio();
+  if($('#tpPauseField')) $('#tpPauseField').style.display = usingStudio ? 'none' : '';
+  if($('#tpTempoField')) $('#tpTempoField').style.display = usingStudio ? 'none' : '';
 }
 async function tpStartStudioLoop(){
   const pitch = $('#tpPitch').value;
@@ -6464,11 +6472,22 @@ async function tpStartStudioLoop(){
     // side by side is what caused the audible "wavy" drift when the studio loop and tala (or the
     // synthesized tanpura) played together. createMediaElementSource can only be called once per
     // element, which is exactly why this only happens inside the "created once" branch.
+    //
+    // A GainNode per element, not the element's own .volume, is what the volume slider and the
+    // crossfade below actually control (see tpBgSetVol()) — iOS Safari silently ignores
+    // HTMLMediaElement.volume entirely (a long-standing platform restriction; hardware volume
+    // buttons are the only thing that normally works there), which is exactly why the on-screen
+    // slider looked like it moved but changed nothing. A Web Audio GainNode isn't subject to that
+    // restriction on any platform, so routing volume through it fixes this everywhere at once.
     const ctx = getSharedAudioCtx();
     try{
-      ctx.createMediaElementSource(tpBgAudioA).connect(ctx.destination);
-      ctx.createMediaElementSource(tpBgAudioB).connect(ctx.destination);
-    }catch(e){ debugLog('Could not route studio tanpura through shared audio graph: '+(e&&e.message||e)); }
+      tpBgGainA = ctx.createGain(); tpBgGainB = ctx.createGain();
+      ctx.createMediaElementSource(tpBgAudioA).connect(tpBgGainA).connect(ctx.destination);
+      ctx.createMediaElementSource(tpBgAudioB).connect(tpBgGainB).connect(ctx.destination);
+    }catch(e){
+      tpBgGainA = null; tpBgGainB = null; // tpBgSetVol() falls back to .volume if these are null
+      debugLog('Could not route studio tanpura through shared audio graph: '+(e&&e.message||e));
+    }
   } else {
     tpBgAudioA.pause();
     tpBgAudioB.pause();
@@ -6482,8 +6501,8 @@ async function tpStartStudioLoop(){
   tpBgAudioA.loop = true;
   tpBgAudioB.loop = true;
   tpBgAudioA.currentTime = 0;
-  tpBgAudioA.volume = tpBgTargetVol;
-  tpBgAudioB.volume = 0;
+  tpBgSetVol(tpBgAudioA, tpBgGainA, tpBgTargetVol);
+  tpBgSetVol(tpBgAudioB, tpBgGainB, 0);
   tpBgActiveIsA = true;
   tpBgSwapping = false;
   tpBgAudioA.play().catch(()=>{});
@@ -6500,22 +6519,24 @@ async function tpStartStudioLoop(){
   tpBgSwapTimer = setInterval(()=>{
     const active = tpBgActiveIsA ? tpBgAudioA : tpBgAudioB;
     const standby = tpBgActiveIsA ? tpBgAudioB : tpBgAudioA;
+    const activeGain = tpBgActiveIsA ? tpBgGainA : tpBgGainB;
+    const standbyGain = tpBgActiveIsA ? tpBgGainB : tpBgGainA;
     if(!active || !standby || !active.duration || isNaN(active.duration)) return;
     const timeLeft = active.duration - active.currentTime;
     if(!tpBgSwapping && timeLeft <= SWAP_LEAD){
       tpBgSwapping = true;
       standby.currentTime = 0;
-      standby.volume = 0;
+      tpBgSetVol(standby, standbyGain, 0);
       standby.play().catch(()=>{});
     }
     if(tpBgSwapping){
       const progress = Math.min(1, Math.max(0, 1 - (timeLeft/SWAP_LEAD)));
-      standby.volume = tpBgTargetVol * Math.sin(progress*Math.PI/2);
-      active.volume = tpBgTargetVol * Math.cos(progress*Math.PI/2);
+      tpBgSetVol(standby, standbyGain, tpBgTargetVol * Math.sin(progress*Math.PI/2));
+      tpBgSetVol(active, activeGain, tpBgTargetVol * Math.cos(progress*Math.PI/2));
       if(progress >= 1 || timeLeft <= 0){
         active.pause();
-        active.volume = tpBgTargetVol; // restored so it's ready, at correct volume, for its next turn
-        standby.volume = tpBgTargetVol;
+        tpBgSetVol(active, activeGain, tpBgTargetVol); // restored so it's ready, at correct volume, for its next turn
+        tpBgSetVol(standby, standbyGain, tpBgTargetVol);
         tpBgActiveIsA = !tpBgActiveIsA;
         tpBgSwapping = false;
       }
@@ -6703,10 +6724,19 @@ function tpStart(){
   $('#tpPlay').innerHTML = '&#9632; Stop';
   updateTpFloatBar();
 }
+// Sets a studio-tanpura element's volume through its paired GainNode when one exists (the normal
+// case) rather than the element's own .volume — see the "created once" branch in
+// tpStartStudioLoop for why: iOS Safari ignores HTMLMediaElement.volume outright, silently, with
+// no error, which is exactly what made the on-screen slider look connected but do nothing there.
+function tpBgSetVol(el, gainNode, val){
+  if(gainNode) gainNode.gain.value = val;
+  else if(el) el.volume = val; // only reached if the Web Audio routing above failed to set up
+}
 function tpStopBgAudio(){
   if(tpBgSwapTimer){ clearInterval(tpBgSwapTimer); tpBgSwapTimer=null; }
   if(tpBgAudioA){ tpBgAudioA.pause(); tpBgAudioA.src=''; tpBgAudioA=null; }
   if(tpBgAudioB){ tpBgAudioB.pause(); tpBgAudioB.src=''; tpBgAudioB=null; }
+  tpBgGainA = null; tpBgGainB = null; // recreated fresh alongside new <audio> elements next Play
   if(tpBgAudioUrl){ URL.revokeObjectURL(tpBgAudioUrl); tpBgAudioUrl=null; }
   tpBgActiveIsA = true;
   if('mediaSession' in navigator){ try{ navigator.mediaSession.metadata=null; }catch(e){} }
@@ -6745,13 +6775,13 @@ if($('#tpPitch')){
   updateTpSourceVisibility();
   $('#tpPitch').addEventListener('change', ()=>{ updateTpSourceVisibility(); tpRefreshEngine(); });
   $('#tpTuning').addEventListener('change', ()=>{ updateTpSourceVisibility(); tpRefreshEngine(); });
-  if($('#tpSource')) $('#tpSource').addEventListener('change', tpRefreshEngine);
+  if($('#tpSource')) $('#tpSource').addEventListener('change', ()=>{ updateTpSourceVisibility(); tpRefreshEngine(); });
   $('#tpVol').addEventListener('input', ()=>{
     const vol = (+$('#tpVol').value)/100;
     tpBgTargetVol = vol * 0.88;
     if(!tpBgSwapping){
-      if(tpBgAudioA) tpBgAudioA.volume = tpBgTargetVol;
-      if(tpBgAudioB) tpBgAudioB.volume = tpBgTargetVol;
+      if(tpBgAudioA) tpBgSetVol(tpBgAudioA, tpBgGainA, tpBgTargetVol);
+      if(tpBgAudioB) tpBgSetVol(tpBgAudioB, tpBgGainB, tpBgTargetVol);
     }
     if(tpMasterGain) tpMasterGain.gain.value = vol;
   });
@@ -8565,18 +8595,25 @@ function refreshRecNotationLinkUI(r){
 $('#recCreateNotationBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   notationLinkTargetRecordingId = r.id;
+  // Pre-fill from whatever's currently in the edit fields — not the stale saved record — so
+  // details just typed but not yet saved via "Save changes" aren't silently dropped here either.
+  const liveTitle = $('#recEditTitle').value.trim() || r.title || '';
+  const liveRaga = $('#recEditRaga').value.trim() || r.raga || '';
+  const liveTala = $('#recEditTala').value.trim() || r.tala || '';
+  const liveComposer = $('#recEditComposer').value.trim() || r.composer || '';
+  const liveType = ($('#recEditType').value==='__other' ? $('#recEditTypeOther').value.trim() : $('#recEditType').value) || r.type || '';
   closeModal('m-recording-view');
   openNotationModal();
   // Pre-fill from the recording's already-tagged details, same fields "Record student singing
   // this" carries the other direction — so this doesn't turn into re-typing what's already known.
-  $('#notTitle').value = r.title || '';
-  $('#notRaga').value = r.raga || '';
-  $('#notTala').value = r.tala || '';
-  $('#notComposer').value = r.composer || '';
-  if(r.type && !NOTATION_TYPES.includes(r.type)){
-    $('#notType').value = '__other'; $('#notTypeOther').style.display=''; $('#notTypeOther').value = r.type;
+  $('#notTitle').value = liveTitle;
+  $('#notRaga').value = liveRaga;
+  $('#notTala').value = liveTala;
+  $('#notComposer').value = liveComposer;
+  if(liveType && !NOTATION_TYPES.includes(liveType)){
+    $('#notType').value = '__other'; $('#notTypeOther').style.display=''; $('#notTypeOther').value = liveType;
   } else {
-    $('#notType').value = r.type || ''; $('#notTypeOther').style.display='none'; $('#notTypeOther').value = '';
+    $('#notType').value = liveType; $('#notTypeOther').style.display='none'; $('#notTypeOther').value = '';
   }
 });
 $('#recLinkNotationBtn').addEventListener('click', ()=>{
@@ -8586,7 +8623,11 @@ $('#recLinkNotationBtn').addEventListener('click', ()=>{
   r.linkedNotationId = nid; r.updatedAt = Date.now();
   toast('Linked to notation');
   renderAll();
-  openRecordingView(r.id);
+  // Only refresh the notation section, not the whole view — openRecordingView() used to be called
+  // here, but it re-fills every field (title/type/raga/tala/composer/notes) straight from the
+  // stored record, silently wiping out anything typed into those fields but not yet saved via
+  // "Save changes". That was the actual cause of "linking works but my other edits don't stick".
+  refreshRecNotationLinkUI(r);
 });
 $('#recUnlinkNotationBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
@@ -8594,7 +8635,7 @@ $('#recUnlinkNotationBtn').addEventListener('click', ()=>{
   r.linkedNotationId = null; r.updatedAt = Date.now();
   toast('Unlinked');
   renderAll();
-  openRecordingView(r.id);
+  refreshRecNotationLinkUI(r); // see note above — deliberately not a full openRecordingView() reset
 });
 $('#recOpenNotationBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r || !r.linkedNotationId) return;
