@@ -1489,6 +1489,20 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="m-file-viewer">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fileViewerTitle" style="max-width:820px">
+    <h3 id="fileViewerTitle" style="margin-bottom:0"></h3>
+    <div id="fileViewerBody" style="height:70vh;max-height:70vh;background:#2b2b2b;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;margin-top:10px">
+      <iframe id="fileViewerFrame" style="width:100%;height:100%;border:0;display:none" title="Document preview"></iframe>
+      <img id="fileViewerImg" style="max-width:100%;max-height:100%;object-fit:contain;display:none" alt="">
+    </div>
+    <div class="modal-foot">
+      <div class="sub">Viewing here doesn't download or save a copy — use Download for that.</div>
+      <div class="right"><button class="btn" id="fileViewerDownloadBtn">Download</button><button class="btn" data-close="m-file-viewer">Close</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="m-recording-versions">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recVersionsTitle">
     <h3 id="recVersionsTitle">Version history</h3>
@@ -2591,6 +2605,34 @@ window.addEventListener('popstate', e=>{
   }
 });
 try{ history.replaceState({t:'view', view:'dashboard'}, ''); }catch(e){}
+
+// A shared in-app viewer for PDFs and images (receipts, notation PDFs) — renders the file inline
+// via an <iframe>/<img> pointed at a blob: URL instead of handing it to window.open(), which on
+// several mobile/PWA browsers silently downloads the file to disk before "opening" it. Nothing
+// here ever touches device storage; the explicit Download button is the only way to actually save
+// a copy, same as before.
+function openFileViewer(opts){
+  const {title, url, mime, filename} = opts;
+  $('#fileViewerTitle').textContent = title || filename || 'Preview';
+  const frame = $('#fileViewerFrame'), img = $('#fileViewerImg');
+  const isImage = (mime||'').startsWith('image/');
+  frame.style.display = isImage ? 'none' : '';
+  img.style.display = isImage ? '' : 'none';
+  if(isImage){ img.src = url; frame.src = 'about:blank'; }
+  else { frame.src = url; img.src = ''; }
+  $('#fileViewerDownloadBtn').onclick = ()=>{
+    const a=document.createElement('a'); a.href=url; a.download=filename||'file';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  openModal('m-file-viewer');
+}
+$('#m-file-viewer').addEventListener('mousedown', (e)=>{
+  // Base modal-backdrop click-to-close (wired below) already covers the backdrop; this just
+  // resets the frame/img src on any close path so the loaded blob isn't held onto in the background.
+  if(e.target.closest('[data-close="m-file-viewer"]') || e.target.id==='m-file-viewer'){
+    setTimeout(()=>{ $('#fileViewerFrame').src='about:blank'; $('#fileViewerImg').src=''; }, 0);
+  }
+});
 
 $$('.modal-backdrop').forEach(bd=>{
   bd.addEventListener('mousedown',e=>{ if(e.target===bd && bd.id!=='m-reminder') closeModal(bd.id); });
@@ -3811,7 +3853,9 @@ async function viewReceipt(key, driveFileId, mime, displayName){
     const media = await mediaGetWithDriveFallback(key, driveFileId);
     if(!media){ toast('Receipt not available on this device — sign in to Drive to fetch it'); return; }
     const url = URL.createObjectURL(media.blob);
-    window.open(url, '_blank'); // browsers render both images and PDFs natively in a new tab
+    // Opens inline via the shared viewer instead of window.open() — on several mobile/PWA browsers
+    // window.open() on a blob: PDF silently downloads it first, which is exactly what this avoids.
+    openFileViewer({title:displayName||'Receipt', url, mime: mime || media.blob.type, filename:displayName||'receipt'});
     setTimeout(()=>URL.revokeObjectURL(url), 60000);
   }catch(e){
     toast('Could not open "'+displayName+'" ('+driveErrorDetail(e)+')');
@@ -6083,6 +6127,29 @@ function tpBaseSaFreq(pitchOverride){
   const semi = TP_PITCH_SEMITONE[pitch] ?? 3;
   return 220 * Math.pow(2, semi/12); // 220Hz (A) anchor, equal temperament
 }
+// Tanpura (synth + studio loop) and Tala used to each open their own separate AudioContext.
+// Two independently-clocked audio contexts running at the same time is exactly what produces the
+// "wavy"/beating disturbance reported when both play together, and — since mobile browsers can
+// suspend one context under audio-focus pressure without touching the other — is also why the
+// tanpura could go silent (still marked "playing" internally) while the tala kept going. Routing
+// everything through one shared context fixes both: a single clock means nothing can drift against
+// anything else, and there's only ever one context's suspended/running state to watch and recover.
+let sharedAudioCtx = null;
+function getSharedAudioCtx(){
+  if(!sharedAudioCtx){
+    sharedAudioCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
+  }
+  return sharedAudioCtx;
+}
+// Watchdog: if either engine believes it's playing but the shared context has been suspended
+// (an audio-focus interruption, a background tab, etc. — not always caught by the visibilitychange
+// handler alone), silently resume it. This is what turns "close both and restart" into "it just
+// keeps playing" — the fix happens within a couple of seconds, with no user action needed.
+setInterval(()=>{
+  if((tpPlaying || talaPlaying) && sharedAudioCtx && sharedAudioCtx.state==='suspended'){
+    sharedAudioCtx.resume().catch(()=>{});
+  }
+}, 2000);
 let tpCtx = null;         // AudioContext, created lazily on first Play (browser rule)
 let tpMasterGain = null;
 let tpPlaying = false;
@@ -6279,7 +6346,7 @@ function tpStudioAvailableFor(scale, tuning){
 let tpStudioBufCache = {}; // decoded, seamless-looped AudioBuffers, keyed by "Scale_tuning"
 let tpStudioLoadingKeys = new Set();
 async function tpEnsureStudioLoaded(scale, tuning){
-  if(!tpCtx) tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
+  if(!tpCtx) tpCtx = getSharedAudioCtx();
   // Fetched from Drive (cached locally after the first time), with the same seamless-loop
   // treatment applied on decode for every scale, so they all behave identically.
   const key = tpStudioLoopKey(scale, tuning);
@@ -6336,6 +6403,17 @@ async function tpStartStudioLoop(){
     // iOS, causing it to silently refuse to play.
     tpBgAudioA = new Audio();
     tpBgAudioB = new Audio();
+    // Route both through the same shared AudioContext used by the synth tanpura and the tala,
+    // instead of letting them play straight out to the OS as an independent audio stream. A plain
+    // <audio> element and a Web Audio context are two separately-clocked outputs; running them
+    // side by side is what caused the audible "wavy" drift when the studio loop and tala (or the
+    // synthesized tanpura) played together. createMediaElementSource can only be called once per
+    // element, which is exactly why this only happens inside the "created once" branch.
+    const ctx = getSharedAudioCtx();
+    try{
+      ctx.createMediaElementSource(tpBgAudioA).connect(ctx.destination);
+      ctx.createMediaElementSource(tpBgAudioB).connect(ctx.destination);
+    }catch(e){ debugLog('Could not route studio tanpura through shared audio graph: '+(e&&e.message||e)); }
   } else {
     tpBgAudioA.pause();
     tpBgAudioB.pause();
@@ -6527,7 +6605,7 @@ function tpStart(){
     // certainly causing the "grrr" on phones: mobile CPUs have far less spare headroom than a
     // laptop, and Bluetooth's own buffering/jitter exposes any missed deadline as an audible glitch
     // far more readily than a wired connection or the phone's built-in speaker does.
-    tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
+    tpCtx = getSharedAudioCtx();
     tpMasterGain = tpCtx.createGain();
     // Two-stage safety net. The limiter previously engaged early and firmly, which stopped
     // clipping but caused audible pumping of its own (especially noticeable over Bluetooth,
@@ -7197,7 +7275,7 @@ async function openNotationView(id){
       $('#notPdfOpenBtn').style.display = '';
       $('#notPdfDownloadBtn').style.display = '';
       $('#notPdfViewStatus').style.display = 'none';
-      $('#notPdfOpenBtn').onclick = ()=> window.open(url, '_blank');
+      $('#notPdfOpenBtn').onclick = ()=> openFileViewer({title:n.title||'Notation PDF', url, mime:'application/pdf', filename:fname});
       $('#notPdfDownloadBtn').onclick = ()=>{
         const a=document.createElement('a'); a.href=url; a.download=fname;
         document.body.appendChild(a); a.click(); a.remove();
@@ -7968,7 +8046,7 @@ function recSyncTanpuraControls(){
 async function recStartTanpuraMix(){
   if(!tpCtx){
     // same mobile/Bluetooth-friendly settings as the live Tanpura tab — see tpStart for the full reasoning
-    tpCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'});
+    tpCtx = getSharedAudioCtx();
     tpMasterGain = tpCtx.createGain();
     const tpLimiter = tpCtx.createDynamicsCompressor();
     tpLimiter.threshold.value=-3; tpLimiter.knee.value=6; tpLimiter.ratio.value=4;
@@ -8934,7 +9012,7 @@ async function talaEnsureManjiraLoaded(){
   if(talaManjiraLoading) return;
   talaManjiraLoading = true;
   toast('Loading Manjira sounds…');
-  if(!talaCtx) talaCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!talaCtx) talaCtx = getSharedAudioCtx();
   try{
     const a1 = talaDataURItoArrayBuffer(TALA_MANJIRA_BACKHAND);
     const a2 = talaDataURItoArrayBuffer(TALA_MANJIRA_OTHER);
@@ -8949,7 +9027,7 @@ async function talaEnsureManjiraLoaded(){
 function talaClickSound(gesture){
   const vol = (+$('#talaVol').value)/100;
   if(vol<=0) return;
-  if(!talaCtx) talaCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!talaCtx) talaCtx = getSharedAudioCtx();
   if(talaCtx.state==='suspended') talaCtx.resume();
   const now = talaCtx.currentTime;
   if(talaTickSound==='manjira' && talaManjiraBackhandBuf && talaManjiraOtherBuf){
@@ -9090,7 +9168,7 @@ function talaStart(){
   if(talaPlaying) return;
   if(talaType==='suladi' && !talaAngas.length){ toast('Add at least one Laghu, Dhruta, or Anudhruta first'); return; }
   acquireWakeLock();
-  if(!talaCtx) talaCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!talaCtx) talaCtx = getSharedAudioCtx();
   if(talaCtx.state==='suspended') talaCtx.resume();
   talaPlaying = true;
   talaBeatIdx = 0;
@@ -9408,7 +9486,7 @@ async function talaExportVideo(){
   canvas.width = quality.width; canvas.height = quality.height; // scales cleanly — every draw call in talaRenderExportFrame is proportional to width/height, not fixed pixels
   const ctx = canvas.getContext('2d');
 
-  if(!talaCtx) talaCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!talaCtx) talaCtx = getSharedAudioCtx();
   if(talaCtx.state==='suspended') await talaCtx.resume();
   const audioDest = talaCtx.createMediaStreamDestination();
   talaExportDest = audioDest;
