@@ -1146,6 +1146,15 @@
             <button class="btn gold" id="btnAddNotation">+ Add composition</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
+            <select id="notSortBy" title="Sort by">
+              <option value="title">Sort: Alphabetical (A–Z)</option>
+              <option value="type">Sort: Type</option>
+              <option value="raga">Sort: Raga</option>
+              <option value="tala">Sort: Tala</option>
+              <option value="composer">Sort: Composer</option>
+              <option value="createdAt">Sort: Date added (newest first)</option>
+              <option value="createdAtAsc">Sort: Date added (oldest first)</option>
+            </select>
             <select id="notFilterType"><option value="">All types</option></select>
             <select id="notFilterRaga"><option value="">All ragas</option></select>
             <select id="notFilterTala"><option value="">All talas</option></select>
@@ -1173,6 +1182,15 @@
             <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
+            <select id="recSortBy" title="Sort by">
+              <option value="title">Sort: Alphabetical (A–Z)</option>
+              <option value="type">Sort: Type</option>
+              <option value="raga">Sort: Raga</option>
+              <option value="tala">Sort: Tala</option>
+              <option value="composer">Sort: Composer</option>
+              <option value="createdAt">Sort: Date added (newest first)</option>
+              <option value="createdAtAsc">Sort: Date added (oldest first)</option>
+            </select>
             <select id="recFilterType"><option value="">All types</option></select>
             <select id="recFilterRaga"><option value="">All ragas</option></select>
             <select id="recFilterTala"><option value="">All talas</option></select>
@@ -1385,12 +1403,13 @@
       </div>
       <div class="field"><label for="fDur">Duration (min)</label><select id="fDur"><option>30</option><option>45</option><option selected>60</option><option>90</option></select></div>
       <div class="field"><label for="fCurrency">Fee currency</label><select id="fCurrency"><option value="INR">₹ INR</option><option value="USD">$ USD</option></select></div>
-      <div class="field" id="feeField"><label for="fFee">Fee per class (₹) *</label><input id="fFee" type="number" min="0" placeholder="e.g. 800"></div>
+      <div class="field" id="feeField"><label for="fFee">Offline fee per class (₹) *</label><input id="fFee" type="number" min="0" placeholder="e.g. 800"></div>
+      <div class="field" id="feeOnlineField"><label for="fFeeOnline">Online fee per class (₹)</label><input id="fFeeOnline" type="number" min="0" placeholder="same as offline if left blank"></div>
       <div class="field span2" id="feeRagaField" style="display:none"><label for="fFeeRaga">Fee per class (reference only — RAGA students are not billed through this app)</label><input id="fFeeRaga" type="number" min="0" placeholder="e.g. 500"></div>
       <div class="field span2" id="partnerField" style="display:none"><label for="fPartner">Batch partner (usual class-mate)</label><select id="fPartner"></select>
         <div class="tiny" style="color:var(--muted);margin-top:4px">When scheduling either of them, the other is added automatically — swap to solo any time in the class form.</div>
       </div>
-      <div class="tiny" style="grid-column:1/-1;color:var(--muted)">Fee changes apply to future classes only — completed classes keep the rate at which they were taught.</div>
+      <div class="tiny" style="grid-column:1/-1;color:var(--muted)">Fee changes — including the online rate — apply to future classes only, based on each class's own mode; completed classes keep the rate at which they were taught.</div>
       <div class="field span2"><label for="fNotes">Notes / remarks</label><textarea id="fNotes" placeholder="e.g. prefers evening slots, exam in Dec, parent: 98xxx xxxxx"></textarea></div>
     </div>
     <div class="modal-foot">
@@ -2433,10 +2452,14 @@ const paidAllTime = st => S.payments.filter(p=>p.studentId===st.id).reduce((t,p)
 const outstandingFor = st => dueAllTime(st)-paidAllTime(st);
 /* ---------- currency (USD students: INR typed per completed class) ---------- */
 const isUSD = st => !!st && st.currency==='USD';
-const unitFee = st => st.cat==='RAGA' ? (st.feeRaga||0) : st.fee;
+const unitFee = (st, mode) => {
+  if(st.cat==='RAGA') return st.feeRaga||0;
+  if(mode==='Online' && typeof st.feeOnline==='number') return st.feeOnline;
+  return st.fee;
+};
 const fmtFee = (st,amt) => isUSD(st) ? '$'+amt : RUPEE.format(amt);
 const classINR = (c,sid) => (c.inr && typeof c.inr[sid]==='number') ? c.inr[sid] : null;
-const classAmount = (st,c) => { const v=classINR(c,st.id); return v!=null ? v : (isUSD(st) ? 0 : unitFee(st)); };
+const classAmount = (st,c) => { const v=classINR(c,st.id); return v!=null ? v : (isUSD(st) ? 0 : unitFee(st,c.mode)); };
 function stampFees(d){
   (d.classes||[]).forEach(cl=>{
     Object.keys(cl.att||{}).forEach(sid=>{
@@ -2444,7 +2467,7 @@ function stampFees(d){
       const st=(d.students||[]).find(s=>s.id===sid);
       if(!st || st.currency==='USD') return;
       cl.inr ||= {};
-      if(cl.inr[sid]==null) cl.inr[sid] = st.cat==='RAGA' ? (st.feeRaga||0) : st.fee;
+      if(cl.inr[sid]==null) cl.inr[sid] = unitFee(st, cl.mode);
     });
   });
 }
@@ -2759,6 +2782,7 @@ function openStudentModal(id){
   $('#fTime').value = st && !flexible ? st.time : '17:00';
   $('#fDur').value = st ? String(st.dur) : '60';
   $('#fFee').value = st && st.cat==='Personal' ? st.fee : '';
+  $('#fFeeOnline').value = st && st.cat==='Personal' && typeof st.feeOnline==='number' ? st.feeOnline : '';
   $('#fFeeRaga').value = st && st.cat==='RAGA' && st.feeRaga ? st.feeRaga : '';
   $('#fNotes').value = st ? (st.notes||'') : '';
   $('#fCurrency').value = st ? (st.currency||'INR') : 'INR';
@@ -2772,6 +2796,7 @@ function openStudentModal(id){
 function toggleFeeFields(){
   const isPersonal = $('#fCat').value==='Personal';
   $('#feeField').style.display = isPersonal ? '' : 'none';
+  $('#feeOnlineField').style.display = isPersonal ? '' : 'none';
   $('#feeRagaField').style.display = isPersonal ? 'none' : '';
   $('#partnerField').style.display = isPersonal ? 'none' : '';
   if(!isPersonal) populatePartnerOptions();
@@ -2790,7 +2815,8 @@ function toggleTimeMode(){
 }
 function updateFeeLabels(){
   const usd = $('#fCurrency').value==='USD';
-  $('#feeField label').textContent = 'Fee per class ('+(usd?'$':'₹')+') *';
+  $('#feeField label').textContent = 'Offline fee per class ('+(usd?'$':'₹')+') *';
+  $('#feeOnlineField label').textContent = 'Online fee per class ('+(usd?'$':'₹')+')';
   $('#feeRagaField label').textContent = usd
     ? 'Fee per class ($) — RAGA credits the INR equivalent after each class'
     : 'Fee per class (reference only — RAGA students are not billed through this app)';
@@ -2802,10 +2828,16 @@ $('#stuSave').addEventListener('click',()=>{
   const name = $('#fName').value.trim();
   if(!name){ toast('Name is required'); $('#fName').focus(); return; }
   const cat = $('#fCat').value;
-  let fee = 0, feeRaga = 0;
+  let fee = 0, feeOnline = null, feeRaga = 0;
   if(cat==='Personal'){
     fee = parseInt($('#fFee').value,10);
     if(isNaN(fee) || fee<=0){ toast('Enter a fee per class greater than zero'); $('#fFee').focus(); return; }
+    const feeOnlineRaw = $('#fFeeOnline').value.trim();
+    if(feeOnlineRaw!==''){
+      const fo = parseInt(feeOnlineRaw,10);
+      if(isNaN(fo) || fo<0){ toast('Online fee looks invalid'); $('#fFeeOnline').focus(); return; }
+      feeOnline = fo;
+    }
   }else{
     const fr = parseInt($('#fFeeRaga').value,10);
     feeRaga = isNaN(fr) ? 0 : fr;
@@ -2818,7 +2850,7 @@ $('#stuSave').addEventListener('click',()=>{
     name, mobile, cat, mode:$('#fMode').value, level:$('#fLevel').value,
     country: $('#fCountry').value.trim(), timezone: $('#fTimezone').value,
     day: dayVal==='any' ? 'any' : parseInt(dayVal,10), time:timeVal,
-    dur:parseInt($('#fDur').value,10), fee, feeRaga, currency:$('#fCurrency').value, notes:$('#fNotes').value.trim(),
+    dur:parseInt($('#fDur').value,10), fee, feeOnline, feeRaga, currency:$('#fCurrency').value, notes:$('#fNotes').value.trim(),
     partnerId: cat==='RAGA' ? ($('#fPartner').value||null) : null, updatedAt:Date.now()
   };
   let newId;
@@ -3017,7 +3049,9 @@ function renderProfile(){
     .sort((a,b)=> a.date===b.date ? toMin(b.time)-toMin(a.time) : (a.date<b.date?1:-1));
   const compl = hist.filter(c=>c.att[st.id]==='Completed');
   const lastC = compl[0];
-  const feeLine = st.cat==='Personal' ? fmtFee(st,st.fee) : (st.feeRaga ? fmtFee(st,st.feeRaga)+(isUSD(st)?'':' (ref)') : '—');
+  const feeLine = st.cat==='Personal'
+    ? (typeof st.feeOnline==='number' ? fmtFee(st,st.fee)+' Offline · '+fmtFee(st,st.feeOnline)+' Online' : fmtFee(st,st.fee))
+    : (st.feeRaga ? fmtFee(st,st.feeRaga)+(isUSD(st)?'':' (ref)') : '—');
   const midStat = st.cat==='Personal'
     ? '<div class="stat '+(out>0?'alert':'money')+'"><div class="label">Outstanding</div><div class="value num">'+RUPEE.format(Math.max(out,0))+'</div><div class="sub">'+(out<0 ? '<b>'+RUPEE.format(-out)+'</b> advance' : (out>0?'pending collection':'all settled'))+'</div></div>'
     : '<div class="stat money"><div class="label">Earned (all time)</div><div class="value num">'+RUPEE.format(sumCompleted(st,null))+'</div><div class="sub">via RAGA Shiksha'+(pendingINR(st,null)?' · <b>'+pendingINR(st,null)+'</b> ₹ pending':'')+'</div></div>';
@@ -3158,7 +3192,7 @@ function renderAttRows(c){
     const opts = STATUSES.map(x=>'<option'+(c.att[sid]===x?' selected':'')+'>'+x+'</option>').join('');
     const mv = matStatus(c,sid);
     row.innerHTML =
-      '<div class="who"><b>'+esc(st?st.name:sid)+'</b><span>'+(st?st.cat+' · '+fmtFee(st,unitFee(st))+'/class':'')+'</span></div>'+
+      '<div class="who"><b>'+esc(st?st.name:sid)+'</b><span>'+(st?st.cat+' · '+fmtFee(st,unitFee(st,c.mode))+'/class':'')+'</span></div>'+
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
       '<select data-att="'+sid+'" aria-label="Status for '+esc(st?st.name:sid)+'">'+opts+'</select>'+
       (usd ? '<input type="number" min="0" data-inr="'+sid+'" placeholder="₹ for this class" title="INR amount for this class (as credited/charged)" value="'+(cur==null?'':cur)+'" style="width:140px;font:inherit;font-size:.82rem;padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--ink);display:'+(c.att[sid]==='Completed'?'':'none')+'">' : '')+
@@ -3254,7 +3288,7 @@ $('#clsSave').addEventListener('click',()=>{
       const st=sById(sid);
       if(!st) return;
       if(!isUSD(st)){
-        if(newAtt[sid]==='Completed'){ if(newInr[sid]==null) newInr[sid]=unitFee(st); }
+        if(newAtt[sid]==='Completed'){ if(newInr[sid]==null) newInr[sid]=unitFee(st,mode); }
         else delete newInr[sid];
         return;
       }
@@ -3304,7 +3338,7 @@ $('#clsSave').addEventListener('click',()=>{
   }
   dates.forEach(d=>{
     const att={}; ids.forEach(sid=>att[sid]= d < TODAY ? 'Completed' : 'Scheduled');
-    const inr0={}; ids.forEach(sid=>{ const st=sById(sid); if(st && !isUSD(st) && att[sid]==='Completed') inr0[sid]=unitFee(st); });
+    const inr0={}; ids.forEach(sid=>{ const st=sById(sid); if(st && !isUSD(st) && att[sid]==='Completed') inr0[sid]=unitFee(st,mode); });
     S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), studentIds:ids, att, date:d, time, dur, mode,
       link, inr:inr0, mat:{}, topic:'', hw:'', updatedAt:Date.now()});
     S.seq.cls++;
@@ -3403,7 +3437,7 @@ function quickStatus(cid, status){
     const st=sById(sid);
     if(status==='Completed' && st){
       cl.inr ||= {};
-      if(!isUSD(st)) cl.inr[sid]=unitFee(st);
+      if(!isUSD(st)) cl.inr[sid]=unitFee(st,cl.mode);
       else if(cl.inr[sid]==null) usdPend++;
     }
   });
@@ -3422,7 +3456,7 @@ $('#btnAllDone').addEventListener('click',()=>{
     cl.att[sid]='Completed';
     const st=sById(sid);
     cl.inr ||= {};
-    if(st && !isUSD(st)) cl.inr[sid]=unitFee(st);
+    if(st && !isUSD(st)) cl.inr[sid]=unitFee(st,cl.mode);
     else if(st && cl.inr[sid]==null) usdPend++;
     cl.updatedAt=Date.now();
   });
@@ -4372,18 +4406,19 @@ const mLbl = m => m==='all' ? 'All months' : monthLabel(m);
 const fmtDMY = s => s ? s.split('-').reverse().join('-') : '';
 function repMaster(){
   const cat=$('#rMasterCat').value, arch=$('#rMasterArch').checked;
-  const aoa=[['ID','Name','Category','Mode','Level','Mobile','Preferred day','Preferred time','Duration (min)','Fee/class','RAGA rate','Batch partner','Status','Notes']];
+  const aoa=[['ID','Name','Category','Mode','Level','Mobile','Preferred day','Preferred time','Duration (min)','Offline fee/class','Online fee/class','RAGA rate','Batch partner','Status','Notes']];
   S.students.filter(s=>(arch||!s.archived)&&(!cat||s.cat===cat)).forEach(s=>
     aoa.push([s.id,s.name,s.cat,s.mode,s.level,s.mobile||'',dayLabel(s.day),s.time,s.dur,
       s.cat==='Personal'?(isUSD(s)?'$'+s.fee:s.fee):'',
+      s.cat==='Personal'&&typeof s.feeOnline==='number'?(isUSD(s)?'$'+s.feeOnline:s.feeOnline):'',
       s.cat==='RAGA'?(s.feeRaga?(isUSD(s)?'$'+s.feeRaga:s.feeRaga):''):'' ,
       s.partnerId ? (sById(s.partnerId)?.name||'') : '',
       s.archived?'Archived':'Active',s.notes||'']));
-  return {name:'raga-students', title:'Student Master'+(cat?' — '+cat:''), sheets:[{name:'Students', aoa, money:[10,11]}]};
+  return {name:'raga-students', title:'Student Master'+(cat?' — '+cat:''), sheets:[{name:'Students', aoa, money:[10,11,12]}]};
 }
 function repClasses(){
   const m=$('#rClsMonth').value, sid=$('#rClsStudent').value, cat=$('#rClsCat').value;
-  const aoa=[['Date','Time','Student','Category','Mode','Status','INR credited','Batch partner','Topic','Homework','Link']];
+  const aoa=[['Date','Time','Student','Category','Mode','Status','Amount (₹)','Batch partner','Topic','Homework','Link']];
   S.classes.filter(c=>(m==='all'||monthKey(c.date)===m))
     .sort((a,b)=> a.date===b.date?toMin(a.time)-toMin(b.time):(a.date<b.date?-1:1))
     .forEach(c=>c.studentIds.forEach(id=>{
@@ -4391,11 +4426,13 @@ function repClasses(){
       if(sid && id!==sid) return;
       if(cat && st.cat!==cat) return;
       const partner=c.studentIds.filter(x=>x!==id).map(firstName).join(', ');
-      const inrCell = (isUSD(st) && c.att[id]==='Completed') ? (classINR(c,id)!=null?classINR(c,id):'pending') : '';
+      // Was USD-students-only before ("INR credited") — now shows every completed class's actual
+      // billed amount, offline/online rate included, not just the USD-conversion case.
+      const inrCell = c.att[id]!=='Completed' ? '' : (isUSD(st) ? (classINR(c,id)!=null?classINR(c,id):'pending') : classAmount(st,c));
       aoa.push([fmtDMY(c.date),c.time,st.name,st.cat,c.mode,c.att[id],inrCell,partner,c.topic||'',c.hw||'',c.link||'']);
     }));
   const inrTot = aoa.slice(1).reduce((t,r)=> t + (typeof r[6]==='number' ? r[6] : 0), 0);
-  if(inrTot) aoa.push(['','','','','','Total ₹ credited',inrTot,'','','','']);
+  if(inrTot) aoa.push(['','','','','','Total ₹',inrTot,'','','','']);
   const st=sid?sById(sid):null;
   return {name:'raga-class-register-'+(m==='all'?'all':m),
     title:'Class Register — '+mLbl(m)+(st?' · '+st.name:'')+(cat?' · '+cat:''),
@@ -6819,7 +6856,21 @@ $$('.studio-pill').forEach(b=>b.addEventListener('click', ()=>showStudioPane(b.d
    NOTATION LIBRARY
    ===================================================== */
 const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
-let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', editingNotationId = null, viewingNotationId = null;
+let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', notSortBy = 'title', editingNotationId = null, viewingNotationId = null;
+// Shared by the Notation and Recording libraries. 'title' and 'createdAt' are a straight sort;
+// the tag fields (type/raga/tala/composer) group items sharing that tag together — alphabetically
+// by the tag itself, then by title within each group — since a flat sort on 'raga' alone with no
+// secondary key would otherwise leave same-raga entries in an arbitrary order relative to each other.
+function libSortCompare(a, b, sortBy){
+  if(sortBy==='createdAt') return (b.createdAt||0)-(a.createdAt||0);
+  if(sortBy==='createdAtAsc') return (a.createdAt||0)-(b.createdAt||0);
+  if(sortBy==='title') return (a.title||'').localeCompare(b.title||'');
+  const av = a[sortBy]||'', bv = b[sortBy]||'';
+  if(!av && bv) return 1;  // items missing this tag sort after ones that have it
+  if(av && !bv) return -1;
+  const c = av.localeCompare(bv);
+  return c ? c : (a.title||'').localeCompare(b.title||'');
+}
 let viewingNotationPdfBlob = null;
 
 function waDigits(mobile){
@@ -7184,7 +7235,7 @@ function matchesNotationFilters(n){
 }
 function renderNotationList(){
   const listEl = $('#notationList'); if(!listEl) return;
-  const list = (S.notations||[]).filter(matchesNotationFilters).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const list = (S.notations||[]).filter(matchesNotationFilters).sort((a,b)=>libSortCompare(a,b,notSortBy));
   listEl.innerHTML = '';
   const empty = $('#notationEmpty');
   if(!list.length){
@@ -7760,11 +7811,12 @@ $('#notFilterType').addEventListener('change', e=>{ notTypeFilter = e.target.val
 $('#notFilterRaga').addEventListener('change', e=>{ notRagaFilter = e.target.value; renderNotationList(); });
 $('#notFilterTala').addEventListener('change', e=>{ notTalaFilter = e.target.value; renderNotationList(); });
 $('#notFilterComposer').addEventListener('change', e=>{ notComposerFilter = e.target.value; renderNotationList(); });
+$('#notSortBy').addEventListener('change', e=>{ notSortBy = e.target.value; renderNotationList(); });
 
 /* =====================================================
    RECORDINGS LIBRARY
    ===================================================== */
-let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '';
+let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title';
 let recStream = null, recRecorder = null, recChunks = [], recTimerHandle = null, recStartMs = 0, recDurationSec = 0, recBlob = null;
 /* ---------- recording-time tanpura background mix ---------- */
 let recMixDest = null;          // MediaStreamAudioDestinationNode — recorder captures from here
@@ -7867,7 +7919,7 @@ async function refreshRecDriveStorageNote(force){
 function renderRecordingsList(){
   refreshRecDriveStorageNote();
   const listEl = $('#recordingsList'); if(!listEl) return;
-  const list = (S.recordings||[]).filter(matchesRecordingFilter).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const list = (S.recordings||[]).filter(matchesRecordingFilter).sort((a,b)=>libSortCompare(a,b,recSortBy));
   listEl.innerHTML = '';
   const empty = $('#recordingsEmpty');
   if(!list.length){
@@ -8524,6 +8576,7 @@ $('#recFilterType').addEventListener('change', e=>{ recTypeFilter = e.target.val
 $('#recFilterRaga').addEventListener('change', e=>{ recRagaFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterTala').addEventListener('change', e=>{ recTalaFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterComposer').addEventListener('change', e=>{ recComposerFilter = e.target.value; renderRecordingsList(); });
+$('#recSortBy').addEventListener('change', e=>{ recSortBy = e.target.value; renderRecordingsList(); });
 
 let viewingRecordingId = null;
 let viewingRecordingBlob = null;
