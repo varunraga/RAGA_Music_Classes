@@ -936,9 +936,9 @@
             <div class="field"><label for="payDate">Date</label><input id="payDate" type="date"></div>
             <div class="field"><label for="payAmount">Amount (₹)</label><input id="payAmount" type="number" min="1" placeholder="e.g. 3200"></div>
             <div class="field"><label for="payMode">Mode</label><select id="payMode"><option>UPI</option><option>Cash</option><option>Bank Transfer</option><option>Cheque</option></select></div>
-            <div class="field"><label for="payRef">Reference no. (optional)</label><input id="payRef" placeholder="UPI / cheque ref"></div>
+            <div class="field"><label for="payRef">Reference no.</label><input id="payRef" placeholder="UPI / cheque ref"></div>
             <div class="field span2">
-              <label for="payReceiptFile">Receipt / payment proof (optional)</label>
+              <label for="payReceiptFile">Receipt / payment proof</label>
               <input id="payReceiptFile" type="file" accept="image/*,application/pdf">
               <div id="payReceiptChip" class="receipt-chip" style="display:none"></div>
             </div>
@@ -969,10 +969,10 @@
             <div class="field"><label for="wdDate">Date</label><input id="wdDate" type="date"></div>
             <div class="field"><label for="wdAmount">Amount (₹)</label><input id="wdAmount" type="number" min="1" placeholder="e.g. 4500"></div>
             <div class="field"><label for="wdMode">Mode</label><select id="wdMode"><option>Bank Transfer</option><option>UPI</option><option>Cash</option><option>Cheque</option></select></div>
-            <div class="field"><label for="wdRef">Reference no. (optional)</label><input id="wdRef" placeholder="UTR / txn ref"></div>
-            <div class="field span2"><label for="wdRemarks">Remarks (optional)</label><input id="wdRemarks" placeholder="e.g. June payout"></div>
+            <div class="field"><label for="wdRef">Reference no.</label><input id="wdRef" placeholder="UTR / txn ref"></div>
+            <div class="field span2"><label for="wdRemarks">Remarks</label><input id="wdRemarks" placeholder="e.g. June payout"></div>
             <div class="field span2">
-              <label for="wdReceiptFile">Receipt / payout proof (optional)</label>
+              <label for="wdReceiptFile">Receipt / payout proof</label>
               <input id="wdReceiptFile" type="file" accept="image/*,application/pdf">
               <div id="wdReceiptChip" class="receipt-chip" style="display:none"></div>
             </div>
@@ -1000,7 +1000,7 @@
       <div class="studio-pane" data-pane="my-lessons" style="display:none">
         <div class="panel">
           <div class="panel-head"><h3>My lessons</h3><span class="hint" id="myLessonsHint"></span></div>
-          <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
+          <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Fee</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="myLessonsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>No lessons logged yet — schedule one from the Calendar ("My lesson with my Guru").</div>
           <div class="note">Your own practice time with Ranjani Akka and Gayatri Akka — kept separate from your teaching income and stats.</div>
         </div>
@@ -1852,6 +1852,15 @@
     <div id="ownStatusBlock" style="margin-top:14px;display:none">
       <div class="form-grid2">
         <div class="field"><label for="cOwnStatus">Status</label><select id="cOwnStatus"><option>Scheduled</option><option>Completed</option><option>Cancelled</option></select></div>
+        <div class="field"></div>
+        <div class="field"><label for="cOwnFee">Fee paid (₹)</label><input id="cOwnFee" type="number" min="0" placeholder="e.g. 500"></div>
+        <div class="field"><label for="cOwnFeeMode">Mode</label><select id="cOwnFeeMode"><option>UPI</option><option>Cash</option><option>Bank Transfer</option><option>Cheque</option></select></div>
+        <div class="field"><label for="cOwnFeeRef">Reference no.</label><input id="cOwnFeeRef" placeholder="UPI / cheque ref"></div>
+        <div class="field span2">
+          <label for="cOwnFeeReceiptFile">Receipt / payment proof</label>
+          <input id="cOwnFeeReceiptFile" type="file" accept="image/*,application/pdf">
+          <div id="cOwnFeeReceiptChip" class="receipt-chip" style="display:none"></div>
+        </div>
       </div>
     </div>
     <div id="repeatBlock" style="margin-top:14px">
@@ -3161,6 +3170,15 @@ $('#showArchived').addEventListener('change',renderStudents);
    CLASSES / SCHEDULING
    ===================================================== */
 let editingClassId = null;
+let pendingOwnFeeReceiptFile = null, ownFeeReceiptRemoved = false;
+$('#cOwnFeeReceiptFile').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  pendingOwnFeeReceiptFile = f; ownFeeReceiptRemoved = false;
+  renderReceiptChip($('#cOwnFeeReceiptChip'), f.name, ()=>{
+    pendingOwnFeeReceiptFile = null; ownFeeReceiptRemoved = true;
+    $('#cOwnFeeReceiptFile').value=''; $('#cOwnFeeReceiptChip').style.display='none';
+  });
+});
 function studentOptions(sel, includeNone, current){
   sel.innerHTML = includeNone ? '<option value="">— none (solo class) —</option>' : '';
   activeStudents().forEach(s=>{
@@ -3211,6 +3229,18 @@ function openClassModal(cid, presetDate, presetStu){
   studentOptions($('#cStu2'), true,  c ? (c.studentIds[1]||'') : '');
   $('#cGuru').value = c && c.kind==='own-lesson' ? (MY_GURUS.find(g=>g.name===c.withWhom)?.id || 'ranjani') : 'ranjani';
   $('#cOwnStatus').value = c && c.kind==='own-lesson' ? (c.ownStatus||'Scheduled') : 'Scheduled';
+  $('#cOwnFee').value = c && c.kind==='own-lesson' && c.feeAmount!=null ? c.feeAmount : '';
+  $('#cOwnFeeMode').value = c && c.kind==='own-lesson' && c.feeMode ? c.feeMode : 'UPI';
+  $('#cOwnFeeRef').value = c && c.kind==='own-lesson' ? (c.feeRef||'') : '';
+  pendingOwnFeeReceiptFile = null; ownFeeReceiptRemoved = false;
+  $('#cOwnFeeReceiptFile').value = '';
+  if(c && c.kind==='own-lesson' && c.feeReceiptName){
+    renderReceiptChip($('#cOwnFeeReceiptChip'), c.feeReceiptName,
+      ()=>{ ownFeeReceiptRemoved = true; $('#cOwnFeeReceiptChip').style.display='none'; },
+      ()=> viewReceipt('own-lesson-receipt:'+c.cid, c.feeReceiptFileId, c.feeReceiptMime, c.feeReceiptName));
+  } else {
+    $('#cOwnFeeReceiptChip').style.display = 'none';
+  }
   $('#cDate').value = c ? c.date : (presetDate||TODAY);
   $('#cTime').value = c ? c.time : '17:00';
   $('#cDur').value  = c ? String(c.dur) : '60';
@@ -3330,7 +3360,7 @@ function overlapWarning(date,time,dur,excludeCid){
   });
   return clash ? sessionNames(clash)+' at '+fmtTime12(clash.time) : null;
 }
-$('#clsSave').addEventListener('click',()=>{
+$('#clsSave').addEventListener('click', async ()=>{
   const date=$('#cDate').value, time=$('#cTime').value;
   const dur=parseInt($('#cDur').value,10);
   if(!date){ toast('Pick a date'); $('#cDate').focus(); return; }
@@ -3342,8 +3372,25 @@ $('#clsSave').addEventListener('click',()=>{
     const withWhom = MY_GURUS.find(g=>g.id===guruId).name;
     if(editingClassId){
       const c = S.classes.find(x=>x.cid===editingClassId);
-      Object.assign(c,{withWhom, date, time, dur, mode, link,
-        ownStatus:$('#cOwnStatus').value, topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()});
+      const feeRaw = $('#cOwnFee').value.trim();
+      const feeAmount = feeRaw==='' ? null : Math.max(0, parseInt(feeRaw,10)||0);
+      const patch = {withWhom, date, time, dur, mode, link,
+        ownStatus:$('#cOwnStatus').value, feeAmount, feeMode: feeAmount!=null ? $('#cOwnFeeMode').value : null,
+        feeRef: feeAmount!=null ? $('#cOwnFeeRef').value.trim() : '',
+        topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()};
+      const saveBtn = $('#clsSave');
+      if(pendingOwnFeeReceiptFile){
+        saveBtn.disabled=true; saveBtn.textContent='Uploading receipt…';
+        const filenameBase = 'GuruFee_'+withWhom+'_'+date+(feeAmount!=null?'_INR'+feeAmount:'');
+        const {driveFileId, ext, mime, name} = await uploadReceiptFile(pendingOwnFeeReceiptFile, filenameBase, 'Payment made to RAGA classes');
+        try{ await mediaPut('own-lesson-receipt:'+c.cid, pendingOwnFeeReceiptFile, {mimeType:mime, size:pendingOwnFeeReceiptFile.size}); }catch(e){}
+        patch.feeReceiptFileId = driveFileId; patch.feeReceiptExt = ext; patch.feeReceiptMime = mime; patch.feeReceiptName = name;
+        saveBtn.disabled=false; saveBtn.textContent='Save class';
+      } else if(ownFeeReceiptRemoved){
+        patch.feeReceiptFileId = null; patch.feeReceiptExt = null; patch.feeReceiptMime = null; patch.feeReceiptName = null;
+      }
+      Object.assign(c, patch);
+      pendingOwnFeeReceiptFile = null; ownFeeReceiptRemoved = false;
       toast('Lesson updated — with '+withWhom);
       closeModal('m-class'); renderAll(); return;
     }
@@ -3368,7 +3415,9 @@ $('#clsSave').addEventListener('click',()=>{
     }
     dates.forEach(d=>{
       S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'own-lesson', withWhom, studentIds:[], att:{},
-        ownStatus: d < TODAY ? 'Completed' : 'Scheduled', date:d, time, dur, mode, link, topic:'', hw:'', updatedAt:Date.now()});
+        ownStatus: d < TODAY ? 'Completed' : 'Scheduled', feeAmount:null, feeMode:null, feeRef:'',
+        feeReceiptFileId:null, feeReceiptExt:null, feeReceiptMime:null, feeReceiptName:null,
+        date:d, time, dur, mode, link, topic:'', hw:'', updatedAt:Date.now()});
       S.seq.cls++;
     });
     toast(dates.length>1 ? dates.length+' weekly lessons scheduled — with '+withWhom : 'Lesson scheduled — with '+withWhom+' on '+fmtD(date));
@@ -4023,17 +4072,18 @@ function renderReceiptChip(chipEl, name, onRemove, onView){
   if(onView) chipEl.querySelector('[data-act="view"]').addEventListener('click', onView);
   chipEl.querySelector('[data-act="remove"]').addEventListener('click', onRemove);
 }
-async function uploadReceiptFile(file, filenameBase){
+async function uploadReceiptFile(file, filenameBase, folder){
   // Returns {driveFileId, ext, mime, name}. driveFileId can end up null (not signed in, or the
   // upload failed) — the caller still caches the file locally either way, so nothing is lost;
   // it just stays device-only until the next successful sync.
+  folder = folder || 'Payment Receipts';
   const ext = (file.name.includes('.') ? file.name.split('.').pop() : (file.type==='application/pdf' ? 'pdf' : 'dat')).toLowerCase();
   const mime = file.type || (ext==='pdf' ? 'application/pdf' : 'application/octet-stream');
   let driveFileId = null;
   if(gToken){
     try{
       const safeName = filenameBase.replace(/[^\w\-]+/g,'_')+'.'+ext;
-      const uploaded = await driveUploadResumable(file, safeName, mime, 'Payment Receipts');
+      const uploaded = await driveUploadResumable(file, safeName, mime, folder);
       driveFileId = uploaded.id;
     }catch(e){
       toast('Receipt could not upload to Drive ('+driveErrorDetail(e)+') — saved on this device only for now');
@@ -4336,18 +4386,27 @@ function renderMyLessons(){
   $('#myLessonsTable').style.display = lessons.length ? '' : 'none';
   $('#myLessonsEmpty').style.display = lessons.length ? 'none' : '';
   const doneCount = lessons.filter(c=>c.ownStatus==='Completed').length;
-  $('#myLessonsHint').textContent = lessons.length ? (doneCount+' completed · '+lessons.length+' total') : '';
+  const totalPaid = lessons.reduce((t,c)=> t + (c.feeAmount||0), 0);
+  $('#myLessonsHint').textContent = lessons.length
+    ? (doneCount+' completed · '+lessons.length+' total'+(totalPaid ? ' · '+RUPEE.format(totalPaid)+' paid' : ''))
+    : '';
   lessons.forEach(c=>{
     const status = sessionStatus(c);
     tb.insertAdjacentHTML('beforeend','<tr style="cursor:pointer" data-mlopen="'+c.cid+'"><td class="muted">'+fmtD(c.date)+'</td>'+
       '<td class="num">'+fmtTime12(c.time)+'</td><td>'+esc(c.withWhom||'—')+'</td>'+
       '<td class="r num">'+c.dur+' min</td>'+
       '<td><span class="badge '+(status==='completed'?'personal':status==='cancelled'?'archived':'own-lesson')+'">'+(c.ownStatus||'Scheduled')+'</span></td>'+
+      '<td class="r num">'+(c.feeAmount!=null ? RUPEE.format(c.feeAmount) : '—')+(c.feeReceiptName ? '<button class="receipt-icon-btn" data-mlreceipt="'+c.cid+'" title="View receipt: '+esc(c.feeReceiptName)+'"><svg viewBox="0 0 24 24"><path d="M21.4 11.5l-8.5 8.5a4.95 4.95 0 01-7-7l8.5-8.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3l7.8-7.8"/></svg></button>' : '')+'</td>'+
       '<td class="r"><button class="btn tiny" data-mledit="'+c.cid+'">Manage</button></td></tr>');
   });
   tb.querySelectorAll('[data-mlopen],[data-mledit]').forEach(el=>{
     el.addEventListener('click',(e)=>{ e.stopPropagation(); openClassModal(el.dataset.mlopen||el.dataset.mledit); });
   });
+  tb.querySelectorAll('[data-mlreceipt]').forEach(b=>b.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const c=S.classes.find(x=>x.cid===b.dataset.mlreceipt); if(!c) return;
+    viewReceipt('own-lesson-receipt:'+c.cid, c.feeReceiptFileId, c.feeReceiptMime, c.feeReceiptName);
+  }));
 }
 function statementHTML(m){
   const sAll = m==='all';
@@ -5651,7 +5710,7 @@ function driveErrorDetail(e){
 // Distinct from driveFind()/pushToDrive() below, which manage the small JSON data
 // blob in the hidden appdata space — this section manages real, visible folders
 // and files for notation PDFs, recording audio, and (later) Tala video exports.
-const RAGA_DRIVE_SUBFOLDERS = ['Notations', 'Recordings', 'Tala Videos', 'Tanpura Studio Loops', 'Payment Receipts'];
+const RAGA_DRIVE_SUBFOLDERS = ['Notations', 'Recordings', 'Tala Videos', 'Tanpura Studio Loops', 'Payment Receipts', 'Payment made to RAGA classes'];
 async function driveFindOrCreateFolder(name, parentId){
   const safeName = name.replace(/'/g, "\\'");
   const parentClause = parentId ? `'${parentId}' in parents` : `'root' in parents`;
@@ -5923,12 +5982,23 @@ async function mediaGetWithDriveFallback(key, driveFileId){
 // regardless of outcome. It's already just a performance cache at this point (Step 3), so
 // leaving it in place costs nothing and means there is zero risk of losing a file even if
 // a migration run is interrupted or something fails partway through.
+// Payment/withdrawal/own-lesson receipts don't all use the same field names on their parent
+// record (own-lesson fields are prefixed "fee" since they share the class object with a lot of
+// other class data) — this maps each receipt task type to the right ones, used below both to
+// read what to upload and, importantly, to write the resulting Drive file id back to the field
+// the rest of the app actually reads (see the write-back fix in the loop below).
+function receiptFieldNames(type){
+  return type==='own-lesson-receipt'
+    ? {name:'feeReceiptName', ext:'feeReceiptExt', mime:'feeReceiptMime', fileId:'feeReceiptFileId'}
+    : {name:'receiptName', ext:'receiptExt', mime:'receiptMime', fileId:'receiptFileId'};
+}
 function driveFilesNeedingMigration(){
   const tasks = [];
   S.notations.forEach(n=>{ if(n.hasPdf && !n.driveFileId) tasks.push({type:'notation', rec:n, key:'notation-pdf:'+n.id, folder:'Notations'}); });
   S.recordings.forEach(r=>{ if(!r.driveFileId) tasks.push({type:'recording', rec:r, key:'recording-audio:'+r.id, folder:'Recordings'}); });
   S.payments.forEach(p=>{ if(p.receiptName && !p.receiptFileId) tasks.push({type:'payment-receipt', rec:p, key:'payment-receipt:'+p.pid, folder:'Payment Receipts'}); });
   S.withdrawals.forEach(w=>{ if(w.receiptName && !w.receiptFileId) tasks.push({type:'withdrawal-receipt', rec:w, key:'withdrawal-receipt:'+w.wid, folder:'Payment Receipts'}); });
+  S.classes.forEach(c=>{ if(c.kind==='own-lesson' && c.feeReceiptName && !c.feeReceiptFileId) tasks.push({type:'own-lesson-receipt', rec:c, key:'own-lesson-receipt:'+c.cid, folder:'Payment made to RAGA classes'}); });
   return tasks;
 }
 async function driveMigrateExistingFiles(onProgress, isCancelled){
@@ -5937,21 +6007,28 @@ async function driveMigrateExistingFiles(onProgress, isCancelled){
   for(let i=0;i<tasks.length;i++){
     if(isCancelled && isCancelled()){ result.cancelled = true; break; }
     const t = tasks[i];
-    if(onProgress) onProgress({index:i, total:tasks.length, label: t.rec.title || t.rec.pdfName || t.rec.receiptName || t.key});
+    if(onProgress) onProgress({index:i, total:tasks.length, label: t.rec.title || t.rec.pdfName || t.rec.receiptName || t.rec.feeReceiptName || t.key});
     let media = null;
     try{ media = await mediaGet(t.key); }catch(e){ media = null; }
     if(!media){ result.skippedNoLocalCopy++; continue; } // nothing local to migrate — genuinely nothing to do here
     const isNotation = t.type==='notation';
-    const isReceipt = t.type==='payment-receipt' || t.type==='withdrawal-receipt';
-    const ext = isNotation ? 'pdf' : isReceipt ? (t.rec.receiptExt || 'dat') : ((media.blob.type||'').includes('mp4') ? 'm4a' : 'webm');
+    const isReceipt = t.type==='payment-receipt' || t.type==='withdrawal-receipt' || t.type==='own-lesson-receipt';
+    const rf = isReceipt ? receiptFieldNames(t.type) : null;
+    const ext = isNotation ? 'pdf' : isReceipt ? (t.rec[rf.ext] || 'dat') : ((media.blob.type||'').includes('mp4') ? 'm4a' : 'webm');
     const filename = isNotation
       ? (t.rec.pdfName || (t.rec.title||'notation')+'.pdf')
-      : isReceipt ? (t.rec.receiptName || ('receipt.'+ext))
+      : isReceipt ? (t.rec[rf.name] || ('receipt.'+ext))
       : (t.rec.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext;
-    const mimeType = media.blob.type || (isNotation ? 'application/pdf' : isReceipt ? (t.rec.receiptMime||'application/octet-stream') : 'audio/webm');
+    const mimeType = media.blob.type || (isNotation ? 'application/pdf' : isReceipt ? (t.rec[rf.mime]||'application/octet-stream') : 'audio/webm');
     try{
       const driveFile = await driveUploadResumable(media.blob, filename, mimeType, t.folder);
-      t.rec.driveFileId = driveFile.id;
+      // Notations/recordings store their Drive id as .driveFileId directly on the record — but a
+      // receipt's canonical field is .receiptFileId (or .feeReceiptFileId for a lesson fee), which
+      // this used to write to .driveFileId instead: the upload would genuinely succeed, yet the
+      // record's real receipt-id field stayed null, so the app kept treating it as un-migrated and
+      // the receipt was still unreachable from the payment/lesson it belonged to.
+      if(isReceipt) t.rec[rf.fileId] = driveFile.id;
+      else t.rec.driveFileId = driveFile.id;
       result.uploaded++;
       persist(); // save progress after every single file, not just at the end — a later
                  // interruption never loses track of files already successfully uploaded
