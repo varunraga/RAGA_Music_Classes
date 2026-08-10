@@ -1002,7 +1002,7 @@
           <div class="panel-head"><h3>My lessons</h3><span class="hint" id="myLessonsHint"></span></div>
           <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="myLessonsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>No lessons logged yet — schedule one from the Calendar ("My lesson with my Guru").</div>
-          <div class="note">Your own practice time with Ranjani and Gayatri — kept separate from your teaching income and stats.</div>
+          <div class="note">Your own practice time with Ranjani Akka and Gayatri Akka — kept separate from your teaching income and stats.</div>
         </div>
       </div>
     </section>
@@ -1841,7 +1841,7 @@
       <div class="field" id="cStu2Field"><label for="cStu2">Second student (batch)</label><select id="cStu2"></select>
         <div class="tiny" id="cPartnerHint" style="color:var(--muted);margin-top:4px;display:none">Usual batch partner added automatically — pick "none" above to schedule solo.</div>
       </div>
-      <div class="field span2" id="cGuruField" style="display:none"><label for="cGuru">Guru *</label><select id="cGuru"><option value="ranjani">Ranjani</option><option value="gayatri">Gayatri</option></select></div>
+      <div class="field span2" id="cGuruField" style="display:none"><label for="cGuru">Guru *</label><select id="cGuru"><option value="ranjani">Ranjani Akka</option><option value="gayatri">Gayatri Akka</option></select></div>
       <div class="field"><label for="cDate">Date *</label><input id="cDate" type="date"></div>
       <div class="field"><label for="cTime">Time *</label><input id="cTime" type="time" value="17:00"></div>
       <div class="field span2" id="tzComputedLines" style="display:none"></div>
@@ -1864,9 +1864,11 @@
     <div id="attBlock" style="margin-top:14px;display:none">
       <div class="field" style="margin-bottom:8px"><label>Attendance / status per student</label></div>
       <div id="attRows"></div>
-      <div class="form-grid2" style="margin-top:12px">
+    </div>
+    <div id="topicHwBlock" style="margin-top:14px;display:none">
+      <div class="form-grid2">
         <div class="field span2"><label for="cTopic">Topic covered</label><input id="cTopic" placeholder="e.g. Sarali Varisai, speed 2"></div>
-        <div class="field span2"><label for="cHw">Homework</label><input id="cHw" placeholder="e.g. Practice at both speeds daily"></div>
+        <div class="field span2"><label for="cHw" id="cHwLabel">Homework</label><input id="cHw" placeholder="e.g. Practice at both speeds daily"></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -2084,7 +2086,7 @@ let S = loadState() || { students:[], classes:[], payments:[], seq:{stu:1, cls:1
 // function below. On load, we walk through each version in order so no matter how old the data
 // is, it always arrives at the current shape. This replaces the scattered ||= fallbacks —
 // those stay as a safety net, but the numbered migrations are the canonical path.
-const CURRENT_SCHEMA = 1;
+const CURRENT_SCHEMA = 2;
 S._schemaVersion ||= 0;
 function migrateSchema(){
   // Version 0 → 1: consolidate all the scattered ||= defaults into one place
@@ -2104,8 +2106,18 @@ function migrateSchema(){
     S.classes.forEach(cl=>cl.mat ||= {});
     S._schemaVersion = 1;
   }
+  // Version 1 → 2: Gurus renamed from "Ranjani"/"Gayatri" to "Ranjani Akka"/"Gayatri Akka" —
+  // update any own-lesson classes already saved under the old bare names so old and new entries
+  // read consistently, instead of only affecting lessons created from here on.
+  if(S._schemaVersion < 2){
+    (S.classes||[]).forEach(cl=>{
+      if(cl.withWhom==='Ranjani') cl.withWhom='Ranjani Akka';
+      else if(cl.withWhom==='Gayatri') cl.withWhom='Gayatri Akka';
+    });
+    S._schemaVersion = 2;
+  }
   // Future migrations go here:
-  // if(S._schemaVersion < 2){ ... S._schemaVersion = 2; }
+  // if(S._schemaVersion < 3){ ... S._schemaVersion = 3; }
 }
 migrateSchema();
 // Safety-net fallbacks (still here for belt-and-suspenders, but the migration above is canonical)
@@ -2398,7 +2410,7 @@ const fmtTime12 = t => {
 /* ---------- lookups ---------- */
 const sById = id => S.students.find(s=>s.id===id);
 const firstName = id => { const s=sById(id); return s ? s.name.split(' ')[0] : '?'; };
-const MY_GURUS = [{id:'ranjani', name:'Ranjani'}, {id:'gayatri', name:'Gayatri'}];
+const MY_GURUS = [{id:'ranjani', name:'Ranjani Akka'}, {id:'gayatri', name:'Gayatri Akka'}];
 const sessionNames = c => c.kind==='own-lesson' ? ('My lesson — '+(c.withWhom||'Guru')) : c.studentIds.map(firstName).join(' & ');
 const activeStudents = () => S.students.filter(s=>!s.archived);
 function sessionCategory(c){
@@ -3197,7 +3209,7 @@ function openClassModal(cid, presetDate, presetStu){
     : 'Pick one student, or two for a batch class — or switch to "My lesson with my Guru" above.';
   studentOptions($('#cStu1'), false, c ? c.studentIds[0] : undefined);
   studentOptions($('#cStu2'), true,  c ? (c.studentIds[1]||'') : '');
-  $('#cGuru').value = c && c.kind==='own-lesson' ? (c.withWhom==='Gayatri' ? 'gayatri' : 'ranjani') : 'ranjani';
+  $('#cGuru').value = c && c.kind==='own-lesson' ? (MY_GURUS.find(g=>g.name===c.withWhom)?.id || 'ranjani') : 'ranjani';
   $('#cOwnStatus').value = c && c.kind==='own-lesson' ? (c.ownStatus||'Scheduled') : 'Scheduled';
   $('#cDate').value = c ? c.date : (presetDate||TODAY);
   $('#cTime').value = c ? c.time : '17:00';
@@ -3272,6 +3284,9 @@ function setClsKind(kind, isEdit){
   $('#cGuruField').style.display = teaching ? 'none' : '';
   $('#attBlock').style.display = (teaching && isEdit) ? '' : 'none';
   $('#ownStatusBlock').style.display = (!teaching && isEdit) ? '' : 'none';
+  $('#topicHwBlock').style.display = isEdit ? '' : 'none';
+  $('#cHwLabel').textContent = teaching ? 'Homework' : 'Notes / feedback from Guru';
+  $('#cHw').placeholder = teaching ? 'e.g. Practice at both speeds daily' : 'e.g. Focus on gamakas in Todi next time';
 }
 $('#kindTeachingBtn').addEventListener('click', ()=>{ if(!editingClassId) setClsKind('teaching', false); });
 $('#kindOwnBtn').addEventListener('click', ()=>{ if(!editingClassId) setClsKind('own-lesson', false); });
