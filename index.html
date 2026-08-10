@@ -43,6 +43,7 @@
     --blue:#2D6CFF; --blue-bg:#DCE7FF; --blue-ink:#1339A6;
     --teal:#00B8C4; --teal-bg:#C8F5F8; --teal-ink:#00707A;
     --rose:#E5477A; --rose-bg:#FFD9E6; --rose-ink:#9C1D48;
+    --yellow:#E8B800; --yellow-bg:#FFF3B8; --yellow-ink:#7A5E00;
     --shadow:0 1px 2px rgba(14,20,32,.06),0 4px 16px rgba(14,20,32,.08);
   }
   [data-theme="dark"]{
@@ -56,6 +57,7 @@
     --blue:#6FA8FF; --blue-bg:#1B2E5C; --blue-ink:#AEC8FF;
     --teal:#4DE8F0; --teal-bg:#0A3D40; --teal-ink:#9DF3F8;
     --rose:#FF7FAE; --rose-bg:#4A1830; --rose-ink:#FFB8D2;
+    --yellow:#FFDD44; --yellow-bg:#4A3E00; --yellow-ink:#FFECA0;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -229,6 +231,7 @@
   .badge.online{background:var(--gold-bg);color:var(--gold-ink)}
   .badge.offline{background:var(--grey-bg);color:var(--grey-ink)}
   .badge.archived{background:var(--grey-bg);color:var(--grey-ink)}
+  .badge.own-lesson{background:var(--yellow-bg);color:var(--yellow-ink)}
   .amount-due{color:var(--red);font-weight:600}
   .amount-ok{color:var(--green);font-weight:600}
   .muted{color:var(--muted)}
@@ -253,6 +256,7 @@
   .cal-ev b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cal-ev.personal{background:var(--green-bg);border-color:var(--green);color:var(--green-ink)}
   .cal-ev.raga{background:var(--purple-bg);border-color:var(--purple);color:var(--purple-ink)}
+  .cal-ev.own-lesson{background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow-ink)}
   .cal-ev.status-cancelled{opacity:.72;text-decoration:line-through}
   .legend{display:flex;gap:16px;font-size:.78rem;color:var(--muted);flex-wrap:wrap;align-items:center}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
@@ -326,6 +330,7 @@
   .chip{display:block;border-radius:6px;padding:2px 6px;margin-bottom:3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid transparent;font-size:.68rem}
   .chip.personal{background:var(--green-bg);border-color:var(--green);color:var(--green-ink)}
   .chip.raga{background:var(--purple-bg);border-color:var(--purple);color:var(--purple-ink)}
+  .chip.own-lesson{background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow-ink)}
   .chip.status-cancelled{opacity:.72;text-decoration:line-through}
   .btn.seg{border:1.5px solid var(--gold);border-radius:999px;color:var(--gold-ink);background:var(--card)}
   .btn.seg.on{background:var(--gold);border-color:var(--gold);color:#fff}
@@ -867,6 +872,7 @@
             <div class="legend" id="calLegend">
               <span class="legend-item" data-cat="personal"><i style="background:var(--green)"></i>Personal</span>
               <span class="legend-item" data-cat="raga"><i style="background:var(--purple)"></i>RAGA</span>
+              <span class="legend-item" data-cat="own-lesson"><i style="background:var(--yellow)"></i>My lesson</span>
               <span class="sep"></span>
               <span class="legend-item" data-status="completed"><span class="status-badge legend completed">✓</span>Completed</span>
               <span class="legend-item" data-status="cancelled"><span class="status-badge legend cancelled">×</span>Cancelled</span>
@@ -899,6 +905,7 @@
         <div class="studio-pills" id="earningsPills">
           <button class="studio-pill on" data-pane="personal" aria-pressed="true">Personal</button>
           <button class="studio-pill" data-pane="raga" aria-pressed="false">Raga Shiksha</button>
+          <button class="studio-pill" data-pane="my-lessons" aria-pressed="false">My Lessons</button>
         </div>
       </div>
 
@@ -989,6 +996,14 @@
           <div class="note">Earnings accrue the moment you mark a RAGA class completed, at each student's saved rate. This tracker mirrors the RAGA website — it never affects your Personal billing.</div>
         </div>
       </div>
+      </div>
+      <div class="studio-pane" data-pane="my-lessons" style="display:none">
+        <div class="panel">
+          <div class="panel-head"><h3>My lessons</h3><span class="hint" id="myLessonsHint"></span></div>
+          <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
+          <div class="empty" id="myLessonsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>No lessons logged yet — schedule one from the Calendar ("My lesson with my Guru").</div>
+          <div class="note">Your own practice time with Ranjani and Gayatri — kept separate from your teaching income and stats.</div>
+        </div>
       </div>
     </section>
 
@@ -1817,17 +1832,27 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="clsModalTitle">
     <h3 id="clsModalTitle">Schedule class</h3>
     <div class="sub" id="clsModalSub">Pick one student, or two for a batch class.</div>
+    <div class="form-grid2" id="clsKindToggle" style="margin-bottom:4px">
+      <button type="button" class="btn small gold" id="kindTeachingBtn" data-kind="teaching">Class with a student</button>
+      <button type="button" class="btn small" id="kindOwnBtn" data-kind="own-lesson">My lesson with my Guru</button>
+    </div>
     <div class="form-grid2">
-      <div class="field"><label for="cStu1">Student *</label><select id="cStu1"></select></div>
-      <div class="field"><label for="cStu2">Second student (batch)</label><select id="cStu2"></select>
+      <div class="field" id="cStu1Field"><label for="cStu1">Student *</label><select id="cStu1"></select></div>
+      <div class="field" id="cStu2Field"><label for="cStu2">Second student (batch)</label><select id="cStu2"></select>
         <div class="tiny" id="cPartnerHint" style="color:var(--muted);margin-top:4px;display:none">Usual batch partner added automatically — pick "none" above to schedule solo.</div>
       </div>
+      <div class="field span2" id="cGuruField" style="display:none"><label for="cGuru">Guru *</label><select id="cGuru"><option value="ranjani">Ranjani</option><option value="gayatri">Gayatri</option></select></div>
       <div class="field"><label for="cDate">Date *</label><input id="cDate" type="date"></div>
       <div class="field"><label for="cTime">Time *</label><input id="cTime" type="time" value="17:00"></div>
       <div class="field span2" id="tzComputedLines" style="display:none"></div>
       <div class="field"><label for="cDur">Duration (min)</label><select id="cDur"><option>30</option><option>45</option><option selected>60</option><option>90</option></select></div>
       <div class="field"><label for="cMode">Mode</label><select id="cMode"><option>Offline</option><option>Online</option></select></div>
       <div class="field span2" id="linkField" style="display:none"><label for="cLink">Class link (Zoom / Meet)</label><input id="cLink" type="url" placeholder="https://…"></div>
+    </div>
+    <div id="ownStatusBlock" style="margin-top:14px;display:none">
+      <div class="form-grid2">
+        <div class="field"><label for="cOwnStatus">Status</label><select id="cOwnStatus"><option>Scheduled</option><option>Completed</option><option>Cancelled</option></select></div>
+      </div>
     </div>
     <div id="repeatBlock" style="margin-top:14px">
       <div class="form-grid2">
@@ -2373,13 +2398,20 @@ const fmtTime12 = t => {
 /* ---------- lookups ---------- */
 const sById = id => S.students.find(s=>s.id===id);
 const firstName = id => { const s=sById(id); return s ? s.name.split(' ')[0] : '?'; };
-const sessionNames = c => c.studentIds.map(firstName).join(' & ');
+const MY_GURUS = [{id:'ranjani', name:'Ranjani'}, {id:'gayatri', name:'Gayatri'}];
+const sessionNames = c => c.kind==='own-lesson' ? ('My lesson — '+(c.withWhom||'Guru')) : c.studentIds.map(firstName).join(' & ');
 const activeStudents = () => S.students.filter(s=>!s.archived);
 function sessionCategory(c){
+  if(c.kind==='own-lesson') return 'own-lesson';
   const prim = sById(c.studentIds[0]);
   return prim && prim.cat==='RAGA' ? 'raga' : 'personal';
 }
 function sessionStatus(c){
+  if(c.kind==='own-lesson'){
+    if(c.ownStatus==='Cancelled') return 'cancelled';
+    if(c.ownStatus==='Completed') return 'completed';
+    return 'scheduled';
+  }
   const sts = c.studentIds.map(id=>c.att[id]);
   if(sts.length && sts.every(x=>CANC.includes(x))) return 'cancelled';
   if(sts.length && sts.every(x=>x!=='Scheduled')) return 'completed';
@@ -2390,7 +2422,7 @@ function statusBadgeHTML(status){
   if(status==='cancelled') return '<span class="status-badge cancelled" title="Cancelled">×</span>';
   return '';
 }
-const sessionScheduled = c => c.studentIds.some(id=>c.att[id]==='Scheduled');
+const sessionScheduled = c => c.kind==='own-lesson' ? (c.ownStatus!=='Completed' && c.ownStatus!=='Cancelled') : c.studentIds.some(id=>c.att[id]==='Scheduled');
 const matStatus = (c,sid) => (c.mat && c.mat[sid]) || null;
 function matCellHTML(c, sid){
   const v = matStatus(c, sid);
@@ -3157,12 +3189,16 @@ function openClassModal(cid, presetDate, presetStu){
   editingClassId = cid || null;
   const c = cid ? S.classes.find(x=>x.cid===cid) : null;
   if(!cid && !activeStudents().length){ toast('Add a student first — the class form needs one'); openStudentModal(); return; }
+  const kind = c ? (c.kind||'teaching') : 'teaching';
+  $('#clsKindToggle').style.display = c ? 'none' : ''; // can't change type once a class exists
   $('#clsModalTitle').textContent = c ? 'Manage class' : 'Schedule class';
   $('#clsModalSub').textContent = c
     ? sessionNames(c)+' · '+fmtD(c.date)+' '+fmtTime12(c.time)+(c.studentIds.length>1?' · batch class':'')
-    : 'Pick one student, or two for a batch class.';
+    : 'Pick one student, or two for a batch class — or switch to "My lesson with my Guru" above.';
   studentOptions($('#cStu1'), false, c ? c.studentIds[0] : undefined);
   studentOptions($('#cStu2'), true,  c ? (c.studentIds[1]||'') : '');
+  $('#cGuru').value = c && c.kind==='own-lesson' ? (c.withWhom==='Gayatri' ? 'gayatri' : 'ranjani') : 'ranjani';
+  $('#cOwnStatus').value = c && c.kind==='own-lesson' ? (c.ownStatus||'Scheduled') : 'Scheduled';
   $('#cDate').value = c ? c.date : (presetDate||TODAY);
   $('#cTime').value = c ? c.time : '17:00';
   $('#cDur').value  = c ? String(c.dur) : '60';
@@ -3173,9 +3209,9 @@ function openClassModal(cid, presetDate, presetStu){
   $('#cRepeat').value='none'; $('#cWeeks').value='4'; $('#cUntil').value='';
   $('#repeatBlock').style.display = c ? 'none' : '';
   toggleRepeatFields();
-  $('#attBlock').style.display = c ? '' : 'none';
+  setClsKind(kind, !!c);
   $('#clsDelete').style.display = c ? '' : 'none';
-  if(c) renderAttRows(c);
+  if(c && kind==='teaching') renderAttRows(c);
   toggleLinkField();
   if(!c && presetStu){ $('#cStu1').value = presetStu; }
   if(!c) autofillFromPrimary();
@@ -3225,6 +3261,20 @@ function toggleLinkField(){
   $('#linkField').style.display = $('#cMode').value==='Online' ? '' : 'none';
 }
 $('#cMode').addEventListener('change',toggleLinkField);
+let clsKind = 'teaching';
+function setClsKind(kind, isEdit){
+  clsKind = kind;
+  $('#kindTeachingBtn').className = 'btn small'+(kind==='teaching'?' gold':'');
+  $('#kindOwnBtn').className = 'btn small'+(kind==='own-lesson'?' gold':'');
+  const teaching = kind==='teaching';
+  $('#cStu1Field').style.display = teaching ? '' : 'none';
+  $('#cStu2Field').style.display = teaching ? '' : 'none';
+  $('#cGuruField').style.display = teaching ? 'none' : '';
+  $('#attBlock').style.display = (teaching && isEdit) ? '' : 'none';
+  $('#ownStatusBlock').style.display = (!teaching && isEdit) ? '' : 'none';
+}
+$('#kindTeachingBtn').addEventListener('click', ()=>{ if(!editingClassId) setClsKind('teaching', false); });
+$('#kindOwnBtn').addEventListener('click', ()=>{ if(!editingClassId) setClsKind('own-lesson', false); });
 function toggleRepeatFields(){
   const weekly = $('#cRepeat').value==='weekly';
   $('#repN').style.display = weekly ? '' : 'none';
@@ -3266,14 +3316,53 @@ function overlapWarning(date,time,dur,excludeCid){
   return clash ? sessionNames(clash)+' at '+fmtTime12(clash.time) : null;
 }
 $('#clsSave').addEventListener('click',()=>{
-  const s1=$('#cStu1').value, s2=$('#cStu2').value;
-  if(!s1){ toast('Select a student'); return; }
-  if(s2 && s2===s1){ toast('The two batch students must be different'); return; }
   const date=$('#cDate').value, time=$('#cTime').value;
   const dur=parseInt($('#cDur').value,10);
   if(!date){ toast('Pick a date'); $('#cDate').focus(); return; }
   if(!time){ toast('Pick a time'); $('#cTime').focus(); return; }
   const mode=$('#cMode').value, link=$('#cLink').value.trim();
+
+  if(clsKind==='own-lesson'){
+    const guruId = $('#cGuru').value;
+    const withWhom = MY_GURUS.find(g=>g.id===guruId).name;
+    if(editingClassId){
+      const c = S.classes.find(x=>x.cid===editingClassId);
+      Object.assign(c,{withWhom, date, time, dur, mode, link,
+        ownStatus:$('#cOwnStatus').value, topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()});
+      toast('Lesson updated — with '+withWhom);
+      closeModal('m-class'); renderAll(); return;
+    }
+    let dates=[date];
+    if($('#cRepeat').value==='weekly'){
+      const until=$('#cUntil').value;
+      if(until){
+        if(until<=date){ toast('"Repeat until" must be after the first date'); return; }
+        let d=date, guard=0; dates=[];
+        while(d<=until && guard<53){ dates.push(d); d=addDaysS(d,7); guard++; }
+      }else{
+        let n=parseInt($('#cWeeks').value,10);
+        if(isNaN(n)||n<2){ toast('Occurrences must be at least 2 (or choose "Does not repeat")'); return; }
+        n=Math.min(n,52);
+        dates=[]; for(let i=0;i<n;i++) dates.push(addDaysS(date,7*i));
+      }
+    }
+    const clashes = dates.map(d=>({d,w:overlapWarning(d,time,dur,null)})).filter(x=>x.w);
+    if(clashes.length){
+      const list = clashes.slice(0,4).map(x=>fmtD(x.d)+' — clashes with '+x.w).join('\n');
+      if(!confirm('Time clash detected:\n\n'+list+(clashes.length>4?'\n…and '+(clashes.length-4)+' more':'')+'\n\nSchedule anyway?')) return;
+    }
+    dates.forEach(d=>{
+      S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'own-lesson', withWhom, studentIds:[], att:{},
+        ownStatus: d < TODAY ? 'Completed' : 'Scheduled', date:d, time, dur, mode, link, topic:'', hw:'', updatedAt:Date.now()});
+      S.seq.cls++;
+    });
+    toast(dates.length>1 ? dates.length+' weekly lessons scheduled — with '+withWhom : 'Lesson scheduled — with '+withWhom+' on '+fmtD(date));
+    closeModal('m-class'); renderAll(); return;
+  }
+
+  const s1=$('#cStu1').value, s2=$('#cStu2').value;
+  if(!s1){ toast('Select a student'); return; }
+  if(s2 && s2===s1){ toast('The two batch students must be different'); return; }
   const ids = s2 ? [s1,s2] : [s1];
 
   if(editingClassId){
@@ -3309,7 +3398,7 @@ $('#clsSave').addEventListener('click',()=>{
       const v = grp ? grp.dataset.selected : '';
       if(v) newMat[sid]=v; else delete newMat[sid];
     });
-    Object.assign(c,{studentIds:ids, att:newAtt, inr:newInr, mat:newMat, date, time, dur, mode, link,
+    Object.assign(c,{kind:'teaching', studentIds:ids, att:newAtt, inr:newInr, mat:newMat, date, time, dur, mode, link,
       topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()});
     toast('Class updated — '+sessionNames(c));
     closeModal('m-class'); renderAll(); return;
@@ -3339,7 +3428,7 @@ $('#clsSave').addEventListener('click',()=>{
   dates.forEach(d=>{
     const att={}; ids.forEach(sid=>att[sid]= d < TODAY ? 'Completed' : 'Scheduled');
     const inr0={}; ids.forEach(sid=>{ const st=sById(sid); if(st && !isUSD(st) && att[sid]==='Completed') inr0[sid]=unitFee(st,mode); });
-    S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), studentIds:ids, att, date:d, time, dur, mode,
+    S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'teaching', studentIds:ids, att, date:d, time, dur, mode,
       link, inr:inr0, mat:{}, topic:'', hw:'', updatedAt:Date.now()});
     S.seq.cls++;
   });
@@ -3479,7 +3568,7 @@ function renderUpcoming(){
     tr.title='View this week on the calendar';
     tr.innerHTML='<td><b>'+when+'</b> <span class="muted num">'+fmtTime12(c.time)+'</span></td>'+
       '<td>'+esc(sessionNames(c))+(c.studentIds.length>1?' <span class="muted">(batch)</span>':'')+'</td>'+
-      '<td><span class="badge '+(prim&&prim.cat==='RAGA'?'raga':'personal')+'">'+(prim?prim.cat:'—')+'</span></td>'+
+      '<td><span class="badge '+(c.kind==='own-lesson'?'own-lesson':(prim&&prim.cat==='RAGA'?'raga':'personal'))+'">'+(c.kind==='own-lesson'?'My lesson':(prim?prim.cat:'—'))+'</span></td>'+
       '<td><span class="badge '+(c.mode==='Online'?'online':'offline')+'">'+c.mode+'</span></td>'+
       '<td class="r"><button class="btn small" data-manage="'+c.cid+'">Manage</button></td>';
     tr.addEventListener('click', e=>{
@@ -4226,6 +4315,25 @@ function renderRaga(){
   etb.querySelectorAll('[data-ropen]').forEach(b=>b.addEventListener('click',()=>openProfile(b.dataset.ropen)));
 }
 $('#ragaMonth').addEventListener('change',renderRaga);
+function renderMyLessons(){
+  const lessons = S.classes.filter(c=>c.kind==='own-lesson').sort((a,b)=> a.date===b.date?toMin(b.time)-toMin(a.time):(a.date<b.date?1:-1));
+  const tb=$('#myLessonsTable tbody'); tb.innerHTML='';
+  $('#myLessonsTable').style.display = lessons.length ? '' : 'none';
+  $('#myLessonsEmpty').style.display = lessons.length ? 'none' : '';
+  const doneCount = lessons.filter(c=>c.ownStatus==='Completed').length;
+  $('#myLessonsHint').textContent = lessons.length ? (doneCount+' completed · '+lessons.length+' total') : '';
+  lessons.forEach(c=>{
+    const status = sessionStatus(c);
+    tb.insertAdjacentHTML('beforeend','<tr style="cursor:pointer" data-mlopen="'+c.cid+'"><td class="muted">'+fmtD(c.date)+'</td>'+
+      '<td class="num">'+fmtTime12(c.time)+'</td><td>'+esc(c.withWhom||'—')+'</td>'+
+      '<td class="r num">'+c.dur+' min</td>'+
+      '<td><span class="badge '+(status==='completed'?'personal':status==='cancelled'?'archived':'own-lesson')+'">'+(c.ownStatus||'Scheduled')+'</span></td>'+
+      '<td class="r"><button class="btn tiny" data-mledit="'+c.cid+'">Manage</button></td></tr>');
+  });
+  tb.querySelectorAll('[data-mlopen],[data-mledit]').forEach(el=>{
+    el.addEventListener('click',(e)=>{ e.stopPropagation(); openClassModal(el.dataset.mlopen||el.dataset.mledit); });
+  });
+}
 function statementHTML(m){
   const sAll = m==='all';
   const rows=ragaStudents().map(s=>{
@@ -9795,7 +9903,7 @@ $('#talaExportShareBtn').addEventListener('click', async ()=>{
 function renderAll(){
   persist();
   renderStats(); renderTimeline(); renderUpcoming(); renderRecent(); renderPending();
-  renderStudents(); renderCalendar(); renderBilling(); renderPersonalCards(); renderPayments(); renderRaga(); renderReports(); renderInsights(); renderWeekCheck(); renderNavBadge(); renderBackupStatus();
+  renderStudents(); renderCalendar(); renderBilling(); renderPersonalCards(); renderPayments(); renderRaga(); renderMyLessons(); renderReports(); renderInsights(); renderWeekCheck(); renderNavBadge(); renderBackupStatus();
   renderNotationFilters(); renderNotationList(); renderRecordingsFilters(); renderRecordingsList(); renderTalaSavedRow(); renderTalaVideoList();
   scheduleSync();
   const pv=document.getElementById('view-student');
