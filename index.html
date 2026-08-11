@@ -70,7 +70,7 @@
   /* ---------- shell ---------- */
   .shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
   .sidebar{border-right:1px solid var(--line);padding:28px 18px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow-y:auto}
-  .brand{padding:2px 8px 16px;border-bottom:1px solid var(--line);margin-bottom:14px;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
+  .brand{padding:2px 8px 16px;border-bottom:1px solid var(--line);margin-bottom:14px;display:flex;flex-direction:column;align-items:flex-start;text-align:left;position:relative}
   .brand::before{content:'';position:absolute;top:-16px;left:50%;transform:translateX(-50%);width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 50% 42%,rgba(184,137,46,.06),transparent 62%);pointer-events:none}
   .brand::after{content:'';position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:132px;height:132px;border-radius:50%;border:1px solid rgba(184,137,46,.05);pointer-events:none}
   [data-theme="dark"] .brand::before{background:radial-gradient(circle at 50% 42%,rgba(230,190,80,.08),transparent 62%)}
@@ -926,9 +926,16 @@
           <tbody></tbody>
         </table></div>
         <div class="empty" id="billingEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>No Personal students yet — billing applies only to Personal students.</div>
-        <div class="note">Only completed Personal classes are billed — each student at their own fee, even inside a batch class. Cancelled classes and absences are never billed. A negative balance means an advance; it rolls into the next month automatically.</div>
+        <div class="note">Only completed Personal classes are billed — each student at their own fee (Online and Offline can differ), even inside a batch class. Cancelled classes and absences are never billed. A negative balance means an advance; it rolls into the next month automatically.</div>
       </div>
-      <div class="two-col">
+      <div class="panel">
+        <div class="panel-head"><h3>Payment register</h3><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><select id="payFilterMonth" class="search-input" aria-label="Filter payments by month"></select><span class="hint" id="payTotalHint"></span></div></div>
+        <div class="tscroll"><table id="paymentsTable">
+          <thead><tr><th>Date</th><th>Student</th><th>Billing month</th><th>Mode</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div class="empty" id="paymentsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No payments recorded yet.</div>
+      </div>
       <div class="panel">
         <div class="panel-head"><h3 id="payFormTitle">Record a payment</h3></div>
         <div class="panel-body">
@@ -951,19 +958,21 @@
           </div>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Payment register</h3><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><select id="payFilterMonth" class="search-input" aria-label="Filter payments by month"></select><span class="hint" id="payTotalHint"></span></div></div>
-        <div class="tscroll"><table id="paymentsTable">
-          <thead><tr><th>Date</th><th>Student</th><th>Billing month</th><th>Mode</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead>
-          <tbody></tbody>
-        </table></div>
-        <div class="empty" id="paymentsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No payments recorded yet.</div>
-      </div>
-      </div>
       </div>
 
       <div class="studio-pane" data-pane="raga" style="display:none">
       <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="ragaCards"></div>
+      <div class="panel">
+        <div class="panel-head"><h3>Monthly earnings</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="ragaMonth" class="search-input" aria-label="Earnings month"></select><button class="btn small" id="btnStatement">Print statement</button></div></div>
+        <div class="tscroll"><table id="ragaEarnTable"><thead><tr><th>Student</th><th class="r">Completed</th><th class="r">Fee/class</th><th class="r">Earned</th><th class="r">Withdrawn</th><th class="r">Balance</th></tr></thead><tbody></tbody></table></div>
+        <div class="empty" id="ragaEarnEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="14" r="2.5"/></svg>No RAGA students yet — add one to start tracking earnings.</div>
+        <div class="note">Earnings accrue the moment you mark a RAGA class completed, at each student's saved rate. This tracker mirrors the RAGA website — it never affects your Personal billing.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Withdrawal register</h3><span class="hint" id="wdTotalHint"></span></div>
+        <div class="tscroll"><table id="wdTable"><thead><tr><th>Date</th><th>Mode</th><th>Remarks</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
+        <div class="empty" id="wdEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No withdrawals recorded yet — your first one starts the rolling 31-day cycle.</div>
+      </div>
       <div class="panel">
         <div class="panel-head"><h3 id="wdFormTitle">Record a withdrawal</h3><span class="hint">money moved from the RAGA website to your account</span></div>
         <div class="panel-body">
@@ -985,19 +994,6 @@
           </div>
         </div>
       </div>
-      <div class="two-col">
-        <div class="panel">
-          <div class="panel-head"><h3>Withdrawal register</h3><span class="hint" id="wdTotalHint"></span></div>
-          <div class="tscroll"><table id="wdTable"><thead><tr><th>Date</th><th>Mode</th><th>Remarks</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
-          <div class="empty" id="wdEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No withdrawals recorded yet — your first one starts the rolling 31-day cycle.</div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h3>Monthly earnings</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="ragaMonth" class="search-input" aria-label="Earnings month"></select><button class="btn small" id="btnStatement">Print statement</button></div></div>
-          <div class="tscroll"><table id="ragaEarnTable"><thead><tr><th>Student</th><th class="r">Completed</th><th class="r">Rate</th><th class="r">Earned</th><th class="r">All-time</th></tr></thead><tbody></tbody></table></div>
-          <div class="empty" id="ragaEarnEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="14" r="2.5"/></svg>No RAGA students yet — add one to start tracking earnings.</div>
-          <div class="note">Earnings accrue the moment you mark a RAGA class completed, at each student's saved rate. This tracker mirrors the RAGA website — it never affects your Personal billing.</div>
-        </div>
-      </div>
       </div>
       <div class="studio-pane" data-pane="my-lessons" style="display:none">
       <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="myLessonsCards"></div>
@@ -1005,7 +1001,7 @@
           <div class="panel-head"><h3>My lessons</h3><span class="hint" id="myLessonsHint"></span></div>
           <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Fee</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="myLessonsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>No lessons logged yet — schedule one from the Calendar ("My lesson with my Guru").</div>
-          <div class="note">Your own practice time with Ranjani Akka and Gayatri Akka — kept separate from your teaching income and stats.</div>
+          <div class="note">Your own practice time with Ranjani Akka and Gayatri Akka, including what you paid each lesson — kept separate from your teaching income and stats.</div>
       </div>
       </div>
     </section>
@@ -1107,7 +1103,7 @@
 
       <div class="studio-pane" data-pane="tanpura">
         <div class="panel">
-          <div class="panel-head"><h3>Tanpura</h3><span class="hint">a synthesized drone — no recordings, generated live</span><button class="btn tiny" id="btnManageTanpuraLoops">Manage studio recordings</button></div>
+          <div class="panel-head"><h3>Tanpura</h3><span class="hint">a tanpura drone for practice — synthesized live, or play back your own studio recording</span><button class="btn tiny" id="btnManageTanpuraLoops">Manage studio recordings</button></div>
           <div class="studio-banner-wrap">
             <img id="studioBannerImg" class="banner studio-banner" alt="Tanpura">
           </div>
@@ -1162,7 +1158,7 @@
 
       <div class="studio-pane" data-pane="notation" style="display:none">
         <div class="panel">
-          <div class="panel-head"><h3>Notation library</h3><span class="hint">your compositions — lyrics, meaning and the notation PDF, searchable by raga, tala, composer or deity</span></div>
+          <div class="panel-head"><h3>Notation library</h3><span class="hint">your composition library — lyrics, meaning and notation PDFs, for what you teach and what you're learning yourself</span></div>
           <div class="studio-banner-wrap">
             <img id="notationBannerImg" class="banner studio-banner" alt="Notation">
           </div>
@@ -1199,7 +1195,7 @@
 
       <div class="studio-pane" data-pane="recordings" style="display:none">
         <div class="panel">
-          <div class="panel-head"><h3>Recordings</h3><span class="hint">your voice library — record once, reuse across any student or class</span></div>
+          <div class="panel-head"><h3>Recordings</h3><span class="hint">your voice recording library — for what you teach and your own practice recordings</span></div>
           <div class="studio-banner-wrap">
             <img id="recordingsBannerImg" class="banner studio-banner" alt="Recordings">
           </div>
@@ -1474,7 +1470,7 @@
           <option>Varase &amp; Alankaras</option>
           <option>Kriti</option><option>Varnam</option><option>Geetham</option><option>Swarajathi</option>
           <option>Padam</option><option>Javali</option><option>Thillana</option><option>Devarnama</option>
-          <option>Abhangam</option><option value="__other">Other</option>
+          <option>Abhang</option><option value="__other">Other</option>
         </select>
         <input id="notTypeOther" placeholder="Type it in" style="display:none;margin-top:6px">
       </div>
@@ -1742,7 +1738,7 @@
           <option>Varase &amp; Alankaras</option>
           <option>Kriti</option><option>Varnam</option><option>Geetham</option><option>Swarajathi</option>
           <option>Padam</option><option>Javali</option><option>Thillana</option><option>Devarnama</option>
-          <option>Abhangam</option><option value="__other">Other</option>
+          <option>Abhang</option><option value="__other">Other</option>
         </select>
         <input id="recEditTypeOther" placeholder="Type it in" style="display:none;margin-top:6px">
       </div>
@@ -2140,7 +2136,7 @@ let S = loadState() || { students:[], classes:[], payments:[], seq:{stu:1, cls:1
 // function below. On load, we walk through each version in order so no matter how old the data
 // is, it always arrives at the current shape. This replaces the scattered ||= fallbacks —
 // those stay as a safety net, but the numbered migrations are the canonical path.
-const CURRENT_SCHEMA = 3;
+const CURRENT_SCHEMA = 4;
 S._schemaVersion ||= 0;
 function migrateSchema(){
   // Version 0 → 1: consolidate all the scattered ||= defaults into one place
@@ -2179,8 +2175,15 @@ function migrateSchema(){
     (S.recordings||[]).forEach(r=>{ r.source ||= 'teaching'; });
     S._schemaVersion = 3;
   }
+  // Version 3 → 4: renamed the "Abhangam" type to "Abhang" in the recognized type list — anything
+  // already saved with the old name is renamed here too, so it doesn't silently fall into "Other".
+  if(S._schemaVersion < 4){
+    (S.notations||[]).forEach(n=>{ if(n.type==='Abhangam') n.type='Abhang'; });
+    (S.recordings||[]).forEach(r=>{ if(r.type==='Abhangam') r.type='Abhang'; });
+    S._schemaVersion = 4;
+  }
   // Future migrations go here:
-  // if(S._schemaVersion < 4){ ... S._schemaVersion = 4; }
+  // if(S._schemaVersion < 5){ ... S._schemaVersion = 5; }
 }
 migrateSchema();
 // Safety-net fallbacks (still here for belt-and-suspenders, but the migration above is canonical)
@@ -2580,6 +2583,19 @@ function stampFees(d){
 }
 function sumCompleted(st,m){
   return S.classes.filter(c=>c.att[st.id]==='Completed' && (m==null||m==='all'||monthKey(c.date)===m))
+                  .reduce((t,c)=>t+classAmount(st,c),0);
+}
+// Sums the same completed-class amounts as sumCompleted(), but only classes dated on or before
+// cutoffDate. Used to approximate "how much of this student's earnings were already withdrawn" —
+// RAGA withdrawals aren't tied to individual students or classes, they're one lump sum pulled from
+// the collective pot, so there's no ledger saying "this specific class's fee was in that specific
+// withdrawal." Treating the latest withdrawal's date as the cutover point (classes on/before it =
+// presumably already cashed out, classes after it = not yet) is the same logic the RAGA-wide
+// "Eligible to withdraw" figure already relies on (total accrued minus total withdrawn) — this
+// just breaks that same idea down per student instead of leaving it as one combined number.
+function sumCompletedUpTo(st,m,cutoffDate){
+  if(!cutoffDate) return 0;
+  return S.classes.filter(c=>c.att[st.id]==='Completed' && (m==null||m==='all'||monthKey(c.date)===m) && c.date<=cutoffDate)
                   .reduce((t,c)=>t+classAmount(st,c),0);
 }
 function pendingINR(st,m){
@@ -4419,20 +4435,23 @@ function renderRaga(){
   const rs=ragaStudents();
   $('#ragaEarnEmpty').style.display = rs.length?'none':'';
   $('#ragaEarnTable').style.display = rs.length?'':'none';
-  let mTotal=0;
+  let mTotal=0, mWithdrawn=0;
   rs.forEach(s=>{
     const done = rAll ? ragaCompletedAll(s) : completedCount(s.id,m);
     const earned = rAll ? sumCompleted(s,null) : sumCompleted(s,m);
+    const withdrawn = sumCompletedUpTo(s, rAll?null:m, lw?lw.date:null);
+    const balance = earned - withdrawn;
     const rPend = pendingINR(s, rAll?null:m);
-    mTotal+=earned;
+    mTotal+=earned; mWithdrawn+=withdrawn;
     etb.insertAdjacentHTML('beforeend','<tr'+(s.archived?' style="opacity:.55"':'')+'>'+
       '<td><div class="name-cell">'+avatarHTML(s.name)+'<div><b class="stu-link" data-ropen="'+s.id+'">'+esc(s.name)+'</b>'+(s.archived?' <span class="badge archived">Archived</span>':'')+'</div></div></td>'+
       '<td class="r num">'+done+'</td>'+
       '<td class="r num">'+fmtFee(s,ragaRate(s))+'</td>'+
       '<td class="r num">'+RUPEE.format(earned)+(rPend?' <span class="badge hold" title="awaiting ₹ entry">'+rPend+' ₹?</span>':'')+'</td>'+
-      '<td class="r num muted">'+RUPEE.format(sumCompleted(s,null))+'</td></tr>');
+      '<td class="r num muted">'+RUPEE.format(withdrawn)+'</td>'+
+      '<td class="r num'+(balance>0?' amount-ok':'')+'">'+RUPEE.format(balance)+'</td></tr>');
   });
-  if(rs.length) etb.insertAdjacentHTML('beforeend','<tr><td><b>Total — '+(rAll?'all months':monthLabel(m))+'</b></td><td></td><td></td><td class="r num"><b>'+RUPEE.format(mTotal)+'</b></td><td></td></tr>');
+  if(rs.length) etb.insertAdjacentHTML('beforeend','<tr><td><b>Total — '+(rAll?'all months':monthLabel(m))+'</b></td><td></td><td></td><td class="r num"><b>'+RUPEE.format(mTotal)+'</b></td><td class="r num muted"><b>'+RUPEE.format(mWithdrawn)+'</b></td><td class="r num"><b>'+RUPEE.format(mTotal-mWithdrawn)+'</b></td></tr>');
   etb.querySelectorAll('[data-ropen]').forEach(b=>b.addEventListener('click',()=>openProfile(b.dataset.ropen)));
 }
 $('#ragaMonth').addEventListener('change',renderRaga);
@@ -5535,8 +5554,8 @@ function normalizeData(d){
   d.seq ||= {}; d.seq.stu ||= 1; d.seq.cls ||= 1; d.seq.pay ||= 1; d.seq.wd ||= 1; d.seq.not ||= 1; d.seq.rec ||= 1; d.seq.tala ||= 1; d.seq.talaExport ||= 1;
   d.meta ||= {};
   (d.classes||[]).forEach(cl=>cl.mat ||= {});
-  (d.notations||[]).forEach(n=>{ n.hasPdf ||= false; n.pdfName ||= null; });
-  (d.recordings||[]).forEach(r=>{ r.raga ||= ''; r.tala ||= ''; r.composer ||= ''; });
+  (d.notations||[]).forEach(n=>{ n.hasPdf ||= false; n.pdfName ||= null; n.source ||= 'teaching'; if(n.type==='Abhangam') n.type='Abhang'; });
+  (d.recordings||[]).forEach(r=>{ r.raga ||= ''; r.tala ||= ''; r.composer ||= ''; r.source ||= 'teaching'; if(r.type==='Abhangam') r.type='Abhang'; });
   (d.students||[]).forEach(s=>{ s.country ||= ''; s.timezone ||= ''; });
   stampFees(d);
   return d;
@@ -7239,7 +7258,7 @@ $$('.studio-pill').forEach(b=>b.addEventListener('click', ()=>showStudioPane(b.d
 /* =====================================================
    NOTATION LIBRARY
    ===================================================== */
-const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
+const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhang'];
 let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', notSortBy = 'title', notSourceFilter = 'teaching', editingNotationId = null, viewingNotationId = null;
 // Shared by the Notation and Recording libraries. 'title' and 'createdAt' are a straight sort;
 // the tag fields (type/raga/tala/composer) group items sharing that tag together — alphabetically
