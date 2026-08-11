@@ -623,9 +623,9 @@
   .bnav[data-view="studio"].active{background:var(--rose-bg)}
   .bnav[data-view="studio"].active svg{color:var(--rose-ink)}
   @media (max-width:760px){
-    #personalCards,#ragaCards,#insCards,.stat-row{grid-template-columns:1fr!important}
-    #personalCards .stat,#ragaCards .stat,#insCards .stat,.stat-row .stat{min-width:0;padding:13px 14px}
-    #personalCards .value,#ragaCards .value,#insCards .value{font-size:1.2rem!important;overflow-wrap:break-word}
+    #personalCards,#ragaCards,#insCards,#insMyPracticeCards,.stat-row{grid-template-columns:1fr!important}
+    #personalCards .stat,#ragaCards .stat,#insCards .stat,#insMyPracticeCards .stat,.stat-row .stat{min-width:0;padding:13px 14px}
+    #personalCards .value,#ragaCards .value,#insCards .value,#insMyPracticeCards .value{font-size:1.2rem!important;overflow-wrap:break-word}
     .top-actions{flex-direction:column;align-items:stretch;width:100%;gap:8px}
     .top-actions .gsearch input{width:100%!important}
     .top-actions #themeToggle{align-self:flex-start;width:44px}
@@ -1032,6 +1032,12 @@
           <button class="btn small gold" data-report="classes">Download</button>
         </div>
         <div class="report-row">
+          <span class="ricon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg></span>
+          <div class="rinfo"><b>My Lessons register</b><span>Your own lessons with Ranjani Akka and Gayatri Akka — status, fee paid and reference</span></div>
+          <div class="rfilters"><select id="rMyLessonsMonth"></select></div>
+          <button class="btn small gold" data-report="mylessons">Download</button>
+        </div>
+        <div class="report-row">
           <span class="ricon"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></span>
           <div class="rinfo"><b>Personal billing summary</b><span>Completed classes, due, paid and balance per student per month</span></div>
           <div class="rfilters"><select id="rBillMonth"></select></div>
@@ -1074,6 +1080,7 @@
     <!-- ======== INSIGHTS ======== -->
     <section class="view" id="view-insights">
       <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="insCards"></div>
+      <div class="mini-stats" style="grid-template-columns:repeat(3,1fr);margin-top:2px" id="insMyPracticeCards"></div>
       <div class="panel">
         <div class="panel-head"><h3>Monthly income</h3><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div class="ins-rangebar"><select class="ins-mode-sel"><option value="qtr">Quarter</option><option value="6mo" selected>6 Months</option><option value="1yr">1 Year</option><option value="fy">Financial Year</option><option value="all">All Time</option></select><button class="ins-flip-prev" title="Earlier period">&#9664;</button><span class="ins-period-label"></span><button class="ins-flip-next" title="Later period">&#9654;</button></div><span class="hint"><span class="dot" style="background:var(--green)"></span> Personal + <span class="dot" style="background:var(--purple)"></span> RAGA · * current month so far · tap a bar for the split</span></div></div>
         <div class="panel-body" id="insBars"></div>
@@ -4548,7 +4555,7 @@ function fillStudentOpts(sel, onlyPersonal, allowAll){
 }
 function renderReports(){
   if(!document.getElementById('rClsMonth')) return;
-  fillMonthOpts($('#rClsMonth')); fillMonthOpts($('#rBillMonth')); fillMonthOpts($('#rPayMonth')); fillMonthOpts($('#rRagaMonth')); fillFYOpts($('#rFYSel'));
+  fillMonthOpts($('#rClsMonth')); fillMonthOpts($('#rBillMonth')); fillMonthOpts($('#rPayMonth')); fillMonthOpts($('#rRagaMonth')); fillMonthOpts($('#rMyLessonsMonth')); fillFYOpts($('#rFYSel'));
   fillStudentOpts($('#rClsStudent'), false, true);
   fillStudentOpts($('#rPayStudent'), true, true);
   fillStudentOpts($('#rStmtStudent'), false, false);
@@ -4671,6 +4678,19 @@ function repClasses(){
     title:'Class Register — '+mLbl(m)+(st?' · '+st.name:'')+(cat?' · '+cat:''),
     sheets:[{name:'Classes', aoa, money:[7]}]};
 }
+function repMyLessons(){
+  const m=$('#rMyLessonsMonth').value;
+  const aoa=[['Date','Time','With','Duration (min)','Status','Fee paid (₹)','Mode','Reference','Notes/feedback']];
+  S.classes.filter(c=>c.kind==='own-lesson' && (m==='all'||monthKey(c.date)===m))
+    .sort((a,b)=> a.date===b.date?toMin(a.time)-toMin(b.time):(a.date<b.date?-1:1))
+    .forEach(c=>{
+      aoa.push([fmtDMY(c.date),c.time,c.withWhom||'',c.dur,c.ownStatus||'Scheduled',c.feeAmount!=null?c.feeAmount:'',c.feeMode||'',c.feeRef||'',c.hw||'']);
+    });
+  const feeTot = aoa.slice(1).reduce((t,r)=> t + (typeof r[5]==='number' ? r[5] : 0), 0);
+  if(feeTot) aoa.push(['','','','','Total ₹ paid',feeTot,'','','']);
+  return {name:'raga-my-lessons-'+(m==='all'?'all':m), title:'My Lessons Register — '+mLbl(m),
+    sheets:[{name:'My Lessons', aoa, money:[5]}]};
+}
 function repBilling(){
   const m=$('#rBillMonth').value;
   const months = m==='all' ? monthsWithData().slice().sort() : [m];
@@ -4754,7 +4774,7 @@ function repEverything(){
   return {name:'raga-complete-export', title:'Complete Data Export', sheets};
 }
 $$('#view-reports [data-report]').forEach(b=>b.addEventListener('click',()=>{
-  const builders={master:repMaster,classes:repClasses,billing:repBilling,payments:repPayments,raga:repRaga,statement:repStatement,fysummary:repFYSummary,everything:repEverything};
+  const builders={master:repMaster,classes:repClasses,mylessons:repMyLessons,billing:repBilling,payments:repPayments,raga:repRaga,statement:repStatement,fysummary:repFYSummary,everything:repEverything};
   const r=builders[b.dataset.report]();
   if(r) aoaDownload(r.name+'-'+TODAY, r.title, r.sheets);
 }));
@@ -4912,6 +4932,16 @@ function renderInsights(){
     '<div class="stat"><div class="label">Average monthly income</div><div class="value num" style="font-size:1.45rem">'+RUPEE.format(avg6)+'</div><div class="sub">last 6 months</div></div>'+
     '<div class="stat"><div class="label">Top student</div><div class="value" style="font-size:1.2rem">'+(topSt&&topSt.v?esc(topSt.s.name):'—')+'</div><div class="sub">'+(topSt&&topSt.v?RUPEE.format(topSt.v)+' earned all time':'')+'</div></div>'+
     '<div class="stat"><div class="label">Most regular</div><div class="value" style="font-size:1.2rem">'+(reg?esc(reg.s.name):'—')+'</div><div class="sub">'+(reg?'<b>'+reg.pct+'%</b> attendance ('+reg.n+' classes)':'needs 5+ classes to rank')+'</div></div>';
+  // ---- my practice (kept separate from teaching income above — this is what YOU pay, not earn) ----
+  const periodLessons = S.classes.filter(c=>c.kind==='own-lesson' && ms.includes(monthKey(c.date)));
+  const doneLessons = periodLessons.filter(c=>c.ownStatus==='Completed');
+  const practiceHrs = doneLessons.reduce((t,c)=>t+c.dur,0)/60;
+  const practiceFees = periodLessons.reduce((t,c)=>t+(c.feeAmount||0),0);
+  const lastLesson = S.classes.filter(c=>c.kind==='own-lesson' && c.ownStatus==='Completed').sort((a,b)=>a.date<b.date?1:-1)[0];
+  $('#insMyPracticeCards').innerHTML =
+    '<div class="stat"><div class="label">My lessons this period</div><div class="value num" style="font-size:1.45rem">'+doneLessons.length+'</div><div class="sub">'+(practiceHrs?practiceHrs.toFixed(1)+' hours practiced':'with Ranjani Akka / Gayatri Akka')+'</div></div>'+
+    '<div class="stat"><div class="label">Paid to my Gurus</div><div class="value num" style="font-size:1.45rem">'+RUPEE.format(practiceFees)+'</div><div class="sub">this period · separate from your teaching income</div></div>'+
+    '<div class="stat"><div class="label">Last lesson</div><div class="value" style="font-size:1.2rem">'+(lastLesson?fmtD(lastLesson.date):'—')+'</div><div class="sub">'+(lastLesson?'with '+esc(lastLesson.withWhom||''):'none logged yet')+'</div></div>';
   // ---- income bars ----
   const W=720,H=240,PL=46,PR=12,PB=26,PT=16;
   const max=Math.max(1,...inc.map(x=>x.p+x.r));
