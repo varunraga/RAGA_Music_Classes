@@ -1157,8 +1157,12 @@
             <img id="notationBannerImg" class="banner studio-banner" alt="Notation">
           </div>
           <div class="not-toolbar">
-            <input id="notSearch" class="search-input" placeholder="Search title, raga, tala, composer…" style="flex:1 1 220px;min-width:0">
+            <input id="notSearch" class="search-input" placeholder="Search title, raga, tala, composer, lyrics…" style="flex:1 1 220px;min-width:0">
             <button class="btn gold" id="btnAddNotation">+ Add composition</button>
+          </div>
+          <div class="not-toolbar" style="padding-top:8px">
+            <button type="button" class="btn small gold" id="notSrcTeachingBtn" data-src="teaching">My Teaching</button>
+            <button type="button" class="btn small" id="notSrcOwnBtn" data-src="own-practice">My Lessons/Practice</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
             <select id="notSortBy" title="Sort by">
@@ -1195,6 +1199,10 @@
             <button class="btn" id="btnUploadRecording">&#128228; Upload recording</button>
             <input id="recUploadFile" type="file" accept="audio/*" multiple style="display:none">
             <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
+          </div>
+          <div class="not-toolbar" style="padding-top:8px">
+            <button type="button" class="btn small gold" id="recSrcTeachingBtn" data-src="teaching">My Teaching</button>
+            <button type="button" class="btn small" id="recSrcOwnBtn" data-src="own-practice">My Lessons/Practice</button>
           </div>
           <div class="not-toolbar" style="padding-top:10px">
             <select id="recSortBy" title="Sort by">
@@ -1440,6 +1448,10 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="notModalTitle">
     <h3 id="notModalTitle">Add composition</h3>
     <div class="sub">Title, raga, tala, composer and deity tag it for search. Lyrics and meaning stay as searchable text — attach the notation PDF you've already made from Word, if you have it.</div>
+    <div class="form-grid2" style="margin-bottom:4px">
+      <button type="button" class="btn small gold" id="notModalSrcTeachingBtn" data-src="teaching">My Teaching</button>
+      <button type="button" class="btn small" id="notModalSrcOwnBtn" data-src="own-practice">My Lessons/Practice</button>
+    </div>
     <div class="form-grid2">
       <div class="field span2"><label for="notTitle">Title *</label><input id="notTitle" placeholder="e.g. Vatapi Ganapatim"></div>
       <div class="field"><label for="notRaga">Raga</label><input id="notRaga" list="dlRaga" placeholder="e.g. Hamsadhwani"><datalist id="dlRaga"></datalist></div>
@@ -1704,6 +1716,10 @@
     <h3 id="recViewTitle">Recording</h3>
     <div class="sub" id="recViewSub"></div>
     <audio id="recViewAudio" controls style="width:100%;margin:12px 0"></audio>
+    <div class="form-grid2" style="margin-bottom:4px">
+      <button type="button" class="btn small gold" id="recModalSrcTeachingBtn" data-src="teaching">My Teaching</button>
+      <button type="button" class="btn small" id="recModalSrcOwnBtn" data-src="own-practice">My Lessons/Practice</button>
+    </div>
     <div class="form-grid2">
       <div class="field span2"><label for="recEditTitle">Title</label><input id="recEditTitle"></div>
       <div class="field"><label for="recEditRaga">Raga</label><input id="recEditRaga" list="dlRaga" placeholder="e.g. Hamsadhwani"></div>
@@ -2095,7 +2111,7 @@ let S = loadState() || { students:[], classes:[], payments:[], seq:{stu:1, cls:1
 // function below. On load, we walk through each version in order so no matter how old the data
 // is, it always arrives at the current shape. This replaces the scattered ||= fallbacks —
 // those stay as a safety net, but the numbered migrations are the canonical path.
-const CURRENT_SCHEMA = 2;
+const CURRENT_SCHEMA = 3;
 S._schemaVersion ||= 0;
 function migrateSchema(){
   // Version 0 → 1: consolidate all the scattered ||= defaults into one place
@@ -2125,8 +2141,17 @@ function migrateSchema(){
     });
     S._schemaVersion = 2;
   }
+  // Version 2 → 3: Notations and Recordings gained a source ('teaching' vs 'own-practice') so
+  // your own lesson material from Ranjani Akka/Gayatri Akka can live alongside your teaching
+  // library without mixing into it. Every existing entry predates this, so all of it defaults to
+  // 'teaching' — nothing in your current library changes or disappears.
+  if(S._schemaVersion < 3){
+    (S.notations||[]).forEach(n=>{ n.source ||= 'teaching'; });
+    (S.recordings||[]).forEach(r=>{ r.source ||= 'teaching'; });
+    S._schemaVersion = 3;
+  }
   // Future migrations go here:
-  // if(S._schemaVersion < 3){ ... S._schemaVersion = 3; }
+  // if(S._schemaVersion < 4){ ... S._schemaVersion = 4; }
 }
 migrateSchema();
 // Safety-net fallbacks (still here for belt-and-suspenders, but the migration above is canonical)
@@ -5711,6 +5736,14 @@ function driveErrorDetail(e){
 // blob in the hidden appdata space — this section manages real, visible folders
 // and files for notation PDFs, recording audio, and (later) Tala video exports.
 const RAGA_DRIVE_SUBFOLDERS = ['Notations', 'Recordings', 'Tala Videos', 'Tanpura Studio Loops', 'Payment Receipts', 'Payment made to RAGA classes'];
+// Own-practice notations/recordings (material from your own Guru lessons) get their own Notations
+// and Recordings folders too, but nested one level down inside "My Lessons from RAGA" rather than
+// mixed into the top-level teaching folders above. driveFolders stays a flat name->id map either
+// way — nested ones are just stored under a "Parent/Child" compound key (see notationDriveFolder()
+// / recordingDriveFolder(), which decide which key a given item's uploads use).
+const RAGA_DRIVE_NESTED_SUBFOLDERS = { 'My Lessons from RAGA': ['Notations', 'Recordings'] };
+function notationDriveFolder(n){ return (n && n.source==='own-practice') ? 'My Lessons from RAGA/Notations' : 'Notations'; }
+function recordingDriveFolder(r){ return (r && r.source==='own-practice') ? 'My Lessons from RAGA/Recordings' : 'Recordings'; }
 async function driveFindOrCreateFolder(name, parentId){
   const safeName = name.replace(/'/g, "\\'");
   const parentClause = parentId ? `'${parentId}' in parents` : `'root' in parents`;
@@ -5744,6 +5777,13 @@ function driveEnsureFileStorageFolders(){
       const folders = { root: rootId };
       for(const sub of RAGA_DRIVE_SUBFOLDERS){
         folders[sub] = await driveFindOrCreateFolder(sub, rootId);
+      }
+      for(const [parent, children] of Object.entries(RAGA_DRIVE_NESTED_SUBFOLDERS)){
+        const parentId = await driveFindOrCreateFolder(parent, rootId);
+        folders[parent] = parentId;
+        for(const child of children){
+          folders[parent+'/'+child] = await driveFindOrCreateFolder(child, parentId);
+        }
       }
       S.meta.driveFolders = folders;
       persist();
@@ -5994,8 +6034,8 @@ function receiptFieldNames(type){
 }
 function driveFilesNeedingMigration(){
   const tasks = [];
-  S.notations.forEach(n=>{ if(n.hasPdf && !n.driveFileId) tasks.push({type:'notation', rec:n, key:'notation-pdf:'+n.id, folder:'Notations'}); });
-  S.recordings.forEach(r=>{ if(!r.driveFileId) tasks.push({type:'recording', rec:r, key:'recording-audio:'+r.id, folder:'Recordings'}); });
+  S.notations.forEach(n=>{ if(n.hasPdf && !n.driveFileId) tasks.push({type:'notation', rec:n, key:'notation-pdf:'+n.id, folder:notationDriveFolder(n)}); });
+  S.recordings.forEach(r=>{ if(!r.driveFileId) tasks.push({type:'recording', rec:r, key:'recording-audio:'+r.id, folder:recordingDriveFolder(r)}); });
   S.payments.forEach(p=>{ if(p.receiptName && !p.receiptFileId) tasks.push({type:'payment-receipt', rec:p, key:'payment-receipt:'+p.pid, folder:'Payment Receipts'}); });
   S.withdrawals.forEach(w=>{ if(w.receiptName && !w.receiptFileId) tasks.push({type:'withdrawal-receipt', rec:w, key:'withdrawal-receipt:'+w.wid, folder:'Payment Receipts'}); });
   S.classes.forEach(c=>{ if(c.kind==='own-lesson' && c.feeReceiptName && !c.feeReceiptFileId) tasks.push({type:'own-lesson-receipt', rec:c, key:'own-lesson-receipt:'+c.cid, folder:'Payment made to RAGA classes'}); });
@@ -7056,7 +7096,7 @@ $$('.studio-pill').forEach(b=>b.addEventListener('click', ()=>showStudioPane(b.d
    NOTATION LIBRARY
    ===================================================== */
 const NOTATION_TYPES = ['Varase & Alankaras','Kriti','Varnam','Geetham','Swarajathi','Padam','Javali','Thillana','Devarnama','Abhangam'];
-let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', notSortBy = 'title', editingNotationId = null, viewingNotationId = null;
+let notSearchQuery = '', notTypeFilter = '', notRagaFilter = '', notTalaFilter = '', notComposerFilter = '', notSortBy = 'title', notSourceFilter = 'teaching', editingNotationId = null, viewingNotationId = null;
 // Shared by the Notation and Recording libraries. 'title' and 'createdAt' are a straight sort;
 // the tag fields (type/raga/tala/composer) group items sharing that tag together — alphabetically
 // by the tag itself, then by title within each group — since a flat sort on 'raga' alone with no
@@ -7422,13 +7462,14 @@ function renderNotationFilters(){
 }
 function matchesNotationFilters(n){
   if(n.deletedAt) return false; // soft-deleted — lives in Recently Deleted instead
+  if((n.source||'teaching')!==notSourceFilter) return false;
   if(notTypeFilter && n.type!==notTypeFilter) return false;
   if(notRagaFilter && n.raga!==notRagaFilter) return false;
   if(notTalaFilter && n.tala!==notTalaFilter) return false;
   if(notComposerFilter && n.composer!==notComposerFilter) return false;
   if(notSearchQuery){
     const q = notSearchQuery.toLowerCase();
-    const hay = [n.title,n.raga,n.tala,n.composer,n.deity].filter(Boolean).join(' ').toLowerCase();
+    const hay = [n.title,n.raga,n.tala,n.composer,n.deity,n.lyrics,n.meaning].filter(Boolean).join(' ').toLowerCase();
     if(!hay.includes(q)) return false;
   }
   return true;
@@ -7460,6 +7501,7 @@ function openNotationModal(id){
   editingNotationId = id || null;
   const n = id ? S.notations.find(x=>x.id===id) : null;
   $('#notModalTitle').textContent = n ? 'Edit composition' : 'Add composition';
+  setNotModalSrc(n ? (n.source||'teaching') : notSourceFilter);
   $('#notTitle').value = n ? n.title : '';
   $('#notRaga').value = n ? (n.raga||'') : '';
   $('#notTala').value = n ? (n.tala||'') : '';
@@ -7479,7 +7521,23 @@ function openNotationModal(id){
   openModal('m-notation');
 }
 $('#notType').addEventListener('change', ()=>{ $('#notTypeOther').style.display = $('#notType').value==='__other' ? '' : 'none'; });
+let notModalSrc = 'teaching';
+function setNotModalSrc(src){
+  notModalSrc = src;
+  $('#notModalSrcTeachingBtn').className = 'btn small'+(src==='teaching'?' gold':'');
+  $('#notModalSrcOwnBtn').className = 'btn small'+(src==='own-practice'?' gold':'');
+}
+$('#notModalSrcTeachingBtn').addEventListener('click', ()=>setNotModalSrc('teaching'));
+$('#notModalSrcOwnBtn').addEventListener('click', ()=>setNotModalSrc('own-practice'));
 $('#recEditType').addEventListener('change', ()=>{ $('#recEditTypeOther').style.display = $('#recEditType').value==='__other' ? '' : 'none'; });
+let recModalSrc = 'teaching';
+function setRecModalSrc(src){
+  recModalSrc = src;
+  $('#recModalSrcTeachingBtn').className = 'btn small'+(src==='teaching'?' gold':'');
+  $('#recModalSrcOwnBtn').className = 'btn small'+(src==='own-practice'?' gold':'');
+}
+$('#recModalSrcTeachingBtn').addEventListener('click', ()=>setRecModalSrc('teaching'));
+$('#recModalSrcOwnBtn').addEventListener('click', ()=>setRecModalSrc('own-practice'));
 $('#btnAddNotation').addEventListener('click', ()=>openNotationModal());
 $('#notSave').addEventListener('click', async ()=>{
   const title = $('#notTitle').value.trim();
@@ -7489,7 +7547,7 @@ $('#notSave').addEventListener('click', async ()=>{
     title, raga:$('#notRaga').value.trim(), tala:$('#notTala').value.trim(),
     composer:$('#notComposer').value.trim(), deity:$('#notDeity').value.trim(), type:typeVal,
     lyrics:$('#notLyrics').value.slice(0,10000), meaning:$('#notMeaning').value.slice(0,10000),
-    refLink:$('#notRefLink').value.trim().slice(0,500),
+    refLink:$('#notRefLink').value.trim().slice(0,500), source: notModalSrc,
     updatedAt:Date.now()
   };
   let id = editingNotationId;
@@ -7526,7 +7584,7 @@ $('#notSave').addEventListener('click', async ()=>{
               // Drive keeps the old version as a revision) rather than creating a disconnected
               // second file — that's what makes "Version history" below actually mean something.
               const wasReplace = !!rec.driveFileId;
-              const driveFile = await driveUploadResumable(file, file.name, file.type, 'Notations', (frac)=>{
+              const driveFile = await driveUploadResumable(file, file.name, file.type, notationDriveFolder(rec), (frac)=>{
                 $('#notPdfUploadFill').style.width = Math.round(frac*100)+'%';
               }, rec.driveFileId || null);
               rec.driveFileId = driveFile.id;
@@ -7720,7 +7778,7 @@ async function openNotationVersions(){
       btn.disabled = true; btn.textContent = 'Restoring…';
       try{
         const blob = await driveDownloadRevision(n.driveFileId, revId);
-        const driveFile = await driveUploadResumable(blob, n.pdfName||'notation.pdf', 'application/pdf', 'Notations', null, n.driveFileId);
+        const driveFile = await driveUploadResumable(blob, n.pdfName||'notation.pdf', 'application/pdf', notationDriveFolder(n), null, n.driveFileId);
         n.driveFileId = driveFile.id;
         n.driveModifiedTime = driveFile.modifiedTime || null;
         driveKeepLatestRevisionForever(driveFile.id);
@@ -7761,7 +7819,7 @@ async function openRecordingVersions(){
         const blob = await driveDownloadRevision(r.driveFileId, revId);
         const ext = audioExtFromType(blob.type);
         const filename = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext;
-        const driveFile = await driveUploadResumable(blob, filename, blob.type||'audio/wav', 'Recordings', null, r.driveFileId);
+        const driveFile = await driveUploadResumable(blob, filename, blob.type||'audio/wav', recordingDriveFolder(r), null, r.driveFileId);
         r.driveFileId = driveFile.id;
         driveKeepLatestRevisionForever(driveFile.id);
         try{ await mediaPut('recording-audio:'+r.id, blob, {mimeType:blob.type, size:blob.size}); }catch(e){} // refresh the local cache too
@@ -8007,6 +8065,14 @@ $('#notDeleteBtn').addEventListener('click', async ()=>{
   renderNotationFilters(); renderNotationList();
 });
 $('#notSearch').addEventListener('input', e=>{ notSearchQuery = e.target.value.trim(); renderNotationList(); });
+function setNotSourceFilter(src){
+  notSourceFilter = src;
+  $('#notSrcTeachingBtn').className = 'btn small'+(src==='teaching'?' gold':'');
+  $('#notSrcOwnBtn').className = 'btn small'+(src==='own-practice'?' gold':'');
+  renderNotationFilters(); renderNotationList();
+}
+$('#notSrcTeachingBtn').addEventListener('click', ()=>setNotSourceFilter('teaching'));
+$('#notSrcOwnBtn').addEventListener('click', ()=>setNotSourceFilter('own-practice'));
 $('#notFilterType').addEventListener('change', e=>{ notTypeFilter = e.target.value; renderNotationList(); });
 $('#notFilterRaga').addEventListener('change', e=>{ notRagaFilter = e.target.value; renderNotationList(); });
 $('#notFilterTala').addEventListener('change', e=>{ notTalaFilter = e.target.value; renderNotationList(); });
@@ -8016,7 +8082,7 @@ $('#notSortBy').addEventListener('change', e=>{ notSortBy = e.target.value; rend
 /* =====================================================
    RECORDINGS LIBRARY
    ===================================================== */
-let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title';
+let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title', recSourceFilter = 'teaching';
 let recStream = null, recRecorder = null, recChunks = [], recTimerHandle = null, recStartMs = 0, recDurationSec = 0, recBlob = null;
 /* ---------- recording-time tanpura background mix ---------- */
 let recMixDest = null;          // MediaStreamAudioDestinationNode — recorder captures from here
@@ -8044,6 +8110,7 @@ function recordingTagsLine(r){
 }
 function matchesRecordingFilter(r){
   if(r.deletedAt) return false; // soft-deleted — lives in Recently Deleted instead
+  if((r.source||'teaching')!==recSourceFilter) return false;
   if(recTypeFilter && r.type!==recTypeFilter) return false;
   if(recRagaFilter && r.raga!==recRagaFilter) return false;
   if(recTalaFilter && r.tala!==recTalaFilter) return false;
@@ -8100,17 +8167,21 @@ let recDriveStorageCache = null, recDriveStorageFetching = false;
 async function refreshRecDriveStorageNote(force){
   const el = $('#recDriveStorageNote'); if(!el) return;
   if(!gToken){ el.textContent = ''; return; }
+  // Which folder this figure covers depends on which source tab you're viewing — Teaching and My
+  // Lessons/Practice recordings live in different Drive folders now, so the cache is keyed by
+  // folder name too, not just staleness, or switching tabs would show the wrong total for a bit.
+  const folderName = recordingDriveFolder({source: recSourceFilter});
   const staleMs = 3*60*1000; // avoids re-querying Drive on every single render — this is a nice-to-know, not something that needs to be second-by-second accurate
-  if(!force && recDriveStorageCache && (Date.now()-recDriveStorageCache.at) < staleMs){
+  if(!force && recDriveStorageCache && recDriveStorageCache.folder===folderName && (Date.now()-recDriveStorageCache.at) < staleMs){
     el.textContent = '· '+fmtBytesShort(recDriveStorageCache.bytes)+' in Drive';
     return;
   }
   if(recDriveStorageFetching) return;
   recDriveStorageFetching = true;
   try{
-    const bytes = await driveFolderTotalSize('Recordings');
+    const bytes = await driveFolderTotalSize(folderName);
     if(bytes!=null){
-      recDriveStorageCache = {bytes, at: Date.now()};
+      recDriveStorageCache = {bytes, at: Date.now(), folder: folderName};
       el.textContent = '· '+fmtBytesShort(bytes)+' in Drive';
     }
   }catch(e){ /* quiet — a nice-to-have figure isn't worth a toast if this particular call fails */ }
@@ -8582,7 +8653,7 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
   // local cache write further down has a hiccup (device storage pressure, etc.), the recording
   // is never silently lost track of — worst case, it's an entry with no local copy yet, not a
   // Drive file the app has completely forgotten exists.
-  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null, linkedNotationId:null};
+  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', source:recSourceFilter, durationSec:recDurationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null, linkedNotationId:null};
   if(pendingRecordingTags){
     entry.raga = pendingRecordingTags.raga||''; entry.tala = pendingRecordingTags.tala||'';
     entry.composer = pendingRecordingTags.composer||''; entry.type = pendingRecordingTags.type||'';
@@ -8598,7 +8669,7 @@ $('#recKeepBtn').addEventListener('click', async ()=>{
       $('#recUploadStatus').textContent = 'Uploading to Drive…';
       const ext = audioExtFromType(recBlob.type);
       try{
-        const driveFile = await driveUploadResumable(recBlob, (title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, recBlob.type||'audio/webm', 'Recordings', (frac)=>{
+        const driveFile = await driveUploadResumable(recBlob, (title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, recBlob.type||'audio/webm', recordingDriveFolder(entry), (frac)=>{
           $('#recUploadFill').style.width = Math.round(frac*100)+'%';
         });
         entry.driveFileId = driveFile.id;
@@ -8663,7 +8734,7 @@ $('#btnFixAllRecordings').addEventListener('click', async ()=>{
       if(gToken && r.driveFileId){
         try{
           const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.mp3';
-          await driveUploadResumable(mp3Blob, newName, 'audio/mpeg', 'Recordings', null, r.driveFileId);
+          await driveUploadResumable(mp3Blob, newName, 'audio/mpeg', recordingDriveFolder(r), null, r.driveFileId);
           driveKeepLatestRevisionForever(r.driveFileId);
         }catch(e){}
       }
@@ -8721,13 +8792,13 @@ async function importOneRecording(file){
   }
   const title = filenameToTitle(file.name);
   const id = 'REC'+pad(S.seq.rec).padStart(3,'0')+'-'+uniqueSuffix(); S.seq.rec++;
-  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', durationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null, linkedNotationId:null};
+  const entry = {id, title, type:'', raga:'', tala:'', composer:'', notes:'', source:recSourceFilter, durationSec, createdAt:Date.now(), updatedAt:Date.now(), driveFileId:null, linkedNotationId:null};
   S.recordings.push(entry);
   persist();
   if(gToken){
     try{
       const ext = audioExtFromType(mp3Blob.type);
-      const driveFile = await driveUploadResumable(mp3Blob, title.replace(/[^\w\-]+/g,'_')+'.'+ext, mp3Blob.type||'audio/mpeg', 'Recordings');
+      const driveFile = await driveUploadResumable(mp3Blob, title.replace(/[^\w\-]+/g,'_')+'.'+ext, mp3Blob.type||'audio/mpeg', recordingDriveFolder(entry));
       entry.driveFileId = driveFile.id;
       persist();
     }catch(e){
@@ -8772,6 +8843,14 @@ $('#recUploadFile').addEventListener('change', async (e)=>{
   if(ok===1 && lastEntry) openRecordingView(lastEntry.id);
 });
 $('#recSearch').addEventListener('input', e=>{ recSearchQuery = e.target.value.trim(); renderRecordingsList(); });
+function setRecSourceFilter(src){
+  recSourceFilter = src;
+  $('#recSrcTeachingBtn').className = 'btn small'+(src==='teaching'?' gold':'');
+  $('#recSrcOwnBtn').className = 'btn small'+(src==='own-practice'?' gold':'');
+  renderRecordingsFilters(); renderRecordingsList();
+}
+$('#recSrcTeachingBtn').addEventListener('click', ()=>setRecSourceFilter('teaching'));
+$('#recSrcOwnBtn').addEventListener('click', ()=>setRecSourceFilter('own-practice'));
 $('#recFilterType').addEventListener('change', e=>{ recTypeFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterRaga').addEventListener('change', e=>{ recRagaFilter = e.target.value; renderRecordingsList(); });
 $('#recFilterTala').addEventListener('change', e=>{ recTalaFilter = e.target.value; renderRecordingsList(); });
@@ -8785,6 +8864,7 @@ async function openRecordingView(id){
   viewingRecordingId = id;
   $('#recViewTitle').textContent = r.title || '(untitled)';
   $('#recViewSub').textContent = fmtDuration(r.durationSec)+' · recorded '+fmtRecDate(r.createdAt);
+  setRecModalSrc(r.source||'teaching');
   $('#recEditTitle').value = r.title || '';
   $('#recEditRaga').value = r.raga || '';
   $('#recEditTala').value = r.tala || '';
@@ -8903,7 +8983,7 @@ $('#recSaveBtn').addEventListener('click', ()=>{
   const titleChanged = title !== r.title;
   const typeVal = $('#recEditType').value==='__other' ? $('#recEditTypeOther').value.trim() : $('#recEditType').value;
   r.title = title; r.raga = $('#recEditRaga').value.trim(); r.tala = $('#recEditTala').value.trim();
-  r.composer = $('#recEditComposer').value.trim(); r.type = typeVal; r.notes = $('#recEditNotes').value.trim(); r.updatedAt = Date.now();
+  r.composer = $('#recEditComposer').value.trim(); r.type = typeVal; r.notes = $('#recEditNotes').value.trim(); r.source = recModalSrc; r.updatedAt = Date.now();
   closeModal('m-recording-view');
   toast('Recording updated');
   renderAll();
@@ -8990,7 +9070,7 @@ $('#recFixFormatBtn').addEventListener('click', async ()=>{
     if(gToken && r.driveFileId){
       try{
         const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.mp3';
-        await driveUploadResumable(mp3Blob, newName, 'audio/mpeg', 'Recordings', null, r.driveFileId);
+        await driveUploadResumable(mp3Blob, newName, 'audio/mpeg', recordingDriveFolder(r), null, r.driveFileId);
         driveKeepLatestRevisionForever(r.driveFileId);
       }catch(e){ toast('Converted on this device, but could not update Drive ('+driveErrorDetail(e)+') — try again when back online'); }
     }
