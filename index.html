@@ -35,7 +35,7 @@
   :root{
     --paper:#F4F7FB; --card:#FFFFFF; --ink:#0E1420; --muted:#5B6675;
     --line:#D8E0EA; --line-soft:#E9EEF4;
-    --gold:#FF9500; --gold-ink:#7A3E00; --gold-bg:#FFE3B0;
+    --gold:#FF9500; --gold-ink:#7A3E00; --gold-bg:#FFE3B0; --gold-bg-subtle:#FFF7E8;
     --green:#00C853; --green-bg:#C6F7D9; --green-ink:#00752E;
     --purple:#7C3AED; --purple-bg:#E6D9FF; --purple-ink:#4C1D95;
     --red:#FF3B30; --red-bg:#FFD6D2; --red-ink:#B0180F;
@@ -43,13 +43,13 @@
     --blue:#2D6CFF; --blue-bg:#DCE7FF; --blue-ink:#1339A6;
     --teal:#00B8C4; --teal-bg:#C8F5F8; --teal-ink:#00707A;
     --rose:#E5477A; --rose-bg:#FFD9E6; --rose-ink:#9C1D48;
-    --yellow:#E8B800; --yellow-bg:#FFF3B8; --yellow-ink:#7A5E00;
+    --yellow:#FFFF00; --yellow-bg:#FFFACD; --yellow-ink:#6B5E00;
     --shadow:0 1px 2px rgba(14,20,32,.06),0 4px 16px rgba(14,20,32,.08);
   }
   [data-theme="dark"]{
     --paper:#090D14; --card:#131A24; --ink:#F5F8FC; --muted:#9FB0C3;
     --line:#293646; --line-soft:#1C2530;
-    --gold:#FFB100; --gold-ink:#FFD670; --gold-bg:#4A3200;
+    --gold:#FFB100; --gold-ink:#FFD670; --gold-bg:#4A3200; --gold-bg-subtle:#241C0C;
     --green:#22FF9E; --green-bg:#0A3D28; --green-ink:#7FFFC8;
     --purple:#B98CFF; --purple-bg:#3A2170; --purple-ink:#E2CFFF;
     --red:#FF5C50; --red-bg:#4A1512; --red-ink:#FFB1AA;
@@ -248,10 +248,11 @@
   .cal-grid{display:grid;grid-template-columns:58px repeat(7,1fr);border-top:1px solid var(--line-soft);min-width:828px}
   .cal-grid .head{padding:10px 6px;text-align:center;font-size:.78rem;font-weight:700;border-bottom:1px solid var(--line);border-left:1px solid var(--line-soft)}
   .cal-grid .head small{display:block;color:var(--muted);font-weight:500;font-size:.72rem;margin-top:2px}
-  .cal-grid .head.today{color:var(--gold-ink)}
+  .cal-grid .head.today{color:var(--gold-ink);font-weight:800}
   .cal-grid .head.today small{color:var(--gold-ink)}
   .hour-label{font-size:.68rem;color:var(--muted);text-align:right;padding:4px 8px 0 0;border-bottom:1px solid var(--line-soft);height:52px}
   .cal-cell{border-left:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);height:52px;position:relative}
+  .cal-cell.today{background:var(--gold-bg-subtle)}
   .cal-ev{position:absolute;left:3px;right:3px;border-radius:7px;padding:4px 7px;font-size:.7rem;line-height:1.25;border:1px solid transparent;overflow:hidden;z-index:2;cursor:pointer}
   .cal-ev b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cal-ev.personal{background:var(--green-bg);border-color:var(--green);color:var(--green-ink)}
@@ -535,6 +536,7 @@
   *::-webkit-scrollbar-thumb:hover{background:var(--gold)}
   #personalCards .stat{border-top:3px solid var(--green)}
   #ragaCards .stat{border-top:3px solid var(--purple)}
+  #myLessonsCards .stat{border-top:3px solid var(--yellow)}
   .stat-row .stat:nth-child(5){border-left:3px solid var(--gold);background:linear-gradient(135deg,rgba(214,158,32,.09),transparent 55%),var(--card)}
   .badge.hold{background:rgba(184,134,11,.16)!important;color:var(--gold-ink)!important;border:1px solid rgba(184,134,11,.42);font-weight:700}
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -987,7 +989,7 @@
         <div class="panel">
           <div class="panel-head"><h3>Withdrawal register</h3><span class="hint" id="wdTotalHint"></span></div>
           <div class="tscroll"><table id="wdTable"><thead><tr><th>Date</th><th>Mode</th><th>Remarks</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
-          <div class="empty" id="wdEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No withdrawals recorded yet — your first one starts the rolling 30-day cycle.</div>
+          <div class="empty" id="wdEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No withdrawals recorded yet — your first one starts the rolling 31-day cycle.</div>
         </div>
         <div class="panel">
           <div class="panel-head"><h3>Monthly earnings</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="ragaMonth" class="search-input" aria-label="Earnings month"></select><button class="btn small" id="btnStatement">Print statement</button></div></div>
@@ -998,13 +1000,13 @@
       </div>
       </div>
       <div class="studio-pane" data-pane="my-lessons" style="display:none">
-        <div class="panel">
+      <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="myLessonsCards"></div>
+      <div class="panel">
           <div class="panel-head"><h3>My lessons</h3><span class="hint" id="myLessonsHint"></span></div>
-          <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="myLessonsCards"></div>
           <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Fee</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="myLessonsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>No lessons logged yet — schedule one from the Calendar ("My lesson with my Guru").</div>
           <div class="note">Your own practice time with Ranjani Akka and Gayatri Akka — kept separate from your teaching income and stats.</div>
-        </div>
+      </div>
       </div>
     </section>
 
@@ -1587,6 +1589,7 @@
       <div class="data-backup-row"><a href="#" class="foot-link" id="lnkDriveSwitch">Switch account</a><div class="tiny" style="color:var(--muted)">Sign in with a different Google account for Drive sync.</div></div>
       <div class="data-backup-row"><a href="#" class="foot-link" id="lnkDriveSignOut">Sign out</a><div class="tiny" style="color:var(--muted)">Disconnect Google Drive on this device.</div></div>
       <div class="data-backup-row"><a href="#" class="foot-link" id="lnkDriveMigrate">Upload existing files</a><div class="tiny" style="color:var(--muted)">One-time upload of anything only ever saved locally, so it's backed up to Drive too.</div></div>
+      <div class="data-backup-row" style="border-bottom:none"><a href="#" class="foot-link" id="lnkDriveStorage">Storage usage</a><div class="tiny" style="color:var(--muted)">See how much space each folder is using in Drive, and your overall Drive account total.</div></div>
     </div>
 
     <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">BACKUP &amp; RESTORE</div>
@@ -1836,6 +1839,24 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="m-drive-storage">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="driveStorageTitle">
+    <h3 id="driveStorageTitle">Storage usage</h3>
+    <div class="sub" id="driveStorageSub">How much space each of this app's Drive folders is using, and your overall Google Drive account total.</div>
+    <div id="driveStorageLoading" style="padding:24px 0;text-align:center;color:var(--muted)">Checking folders…</div>
+    <div id="driveStorageBody" style="display:none">
+      <div id="driveStorageFolderList" style="margin:10px 0"></div>
+      <div class="data-backup-row" style="display:flex;justify-content:space-between;font-weight:700"><span>Total (this app)</span><span id="driveStorageAppTotal"></span></div>
+      <div class="data-backup-row" style="display:flex;justify-content:space-between;margin-top:10px"><span>Your Google Drive account</span><span id="driveStorageAccountTotal"></span></div>
+      <div class="tiny" id="driveStorageAsOf" style="color:var(--muted);margin-top:6px"></div>
+    </div>
+    <div class="modal-foot">
+      <a href="#" class="foot-link" id="driveStorageRefreshBtn">Refresh</a>
+      <div class="right"><button class="btn gold" data-close="m-drive-storage">Close</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="m-tala-video-view">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="talaVideoViewTitle">
     <h3 id="talaVideoViewTitle">Exported video</h3>
@@ -1869,7 +1890,7 @@
       <div class="field"><label for="cDate">Date *</label><input id="cDate" type="date"></div>
       <div class="field"><label for="cTime">Time *</label><input id="cTime" type="time" value="17:00"></div>
       <div class="field span2" id="tzComputedLines" style="display:none"></div>
-      <div class="field"><label for="cDur">Duration (min)</label><select id="cDur"><option>30</option><option>45</option><option selected>60</option><option>90</option></select></div>
+      <div class="field"><label for="cDur">Duration (min)</label><select id="cDur"><option>30</option><option>45</option><option selected>60</option><option>90</option><option>120</option><option>150</option><option>180</option></select></div>
       <div class="field"><label for="cMode">Mode</label><select id="cMode"><option>Offline</option><option>Online</option></select></div>
       <div class="field span2" id="linkField" style="display:none"><label for="cLink">Class link (Zoom / Meet)</label><input id="cLink" type="url" placeholder="https://…"></div>
     </div>
@@ -2584,7 +2605,7 @@ const ragaAccruedAll = () => ragaStudents().reduce((t,s)=> t + sumCompleted(s,nu
 const ragaWithdrawnAll = () => S.withdrawals.reduce((t,w)=>t+w.amount,0);
 const ragaEligible = () => ragaAccruedAll() - ragaWithdrawnAll();
 function lastWithdrawal(){ return S.withdrawals.length ? S.withdrawals.reduce((a,b)=> a.date>b.date?a:b) : null; }
-function nextWithdrawDate(){ const lw=lastWithdrawal(); return lw ? addDaysS(lw.date,30) : null; }
+function nextWithdrawDate(){ const lw=lastWithdrawal(); return lw ? addDaysS(lw.date,31) : null; }
 function withdrawOpen(){ const nd=nextWithdrawDate(); return !nd || TODAY>=nd; }
 function daysUntil(s){ return Math.round((parseD(s)-parseD(TODAY))/86400000); }
 
@@ -3904,7 +3925,7 @@ function renderCalendar(){
     grid.insertAdjacentHTML('beforeend','<div class="hour-label num">'+fmtTime12(pad(h)+':00')+'</div>');
     for(let i=0;i<7;i++){
       const d=addDaysS(mon,i);
-      const cell=document.createElement('div'); cell.className='cal-cell';
+      const cell=document.createElement('div'); cell.className='cal-cell'+(d===TODAY?' today':'');
       cell.title='Click to schedule at '+fmtTime12(pad(h)+':00');
       cell.addEventListener('dblclick',()=>{ openClassModal(null,d); $('#cTime').value=pad(h)+':00'; });
       S.classes.filter(c=>c.date===d && Math.floor(toMin(c.time)/60)===h && calEventVisible(c)).forEach(c=>{
@@ -4293,7 +4314,7 @@ $('#wdAdd').addEventListener('click', async ()=>{
   if(amt>eligNow && !confirm('This withdrawal ('+RUPEE.format(amt)+') exceeds the amount currently eligible ('+RUPEE.format(Math.max(eligNow,0))+').\n\nRecord it anyway?')) return;
   if(!editingWithdrawalId){
     const nd=nextWithdrawDate();
-    if(nd && date<nd && !confirm('The rolling 30-day window opens on '+fmtDFull(nd)+' ('+daysUntil(nd)+' days from today).\n\nRecord this withdrawal anyway?')) return;
+    if(nd && date<nd && !confirm('The rolling 31-day window opens on '+fmtDFull(nd)+' ('+daysUntil(nd)+' days from today).\n\nRecord this withdrawal anyway?')) return;
   }
   const btn = $('#wdAdd');
   const rec={date, amount:amt, mode:$('#wdMode').value, ref:$('#wdRef').value.trim(), remarks:$('#wdRemarks').value.trim(), updatedAt:Date.now()};
@@ -4354,7 +4375,7 @@ function cancelWdEdit(){
 $('#wdCancelEdit').addEventListener('click',cancelWdEdit);
 function deleteWithdrawal(wid){
   const w=S.withdrawals.find(x=>x.wid===wid); if(!w) return;
-  if(!confirm('Delete this withdrawal?\n\n'+RUPEE.format(w.amount)+' on '+fmtDFull(w.date)+'\n\nThe eligible amount and 30-day window will be recalculated.')) return;
+  if(!confirm('Delete this withdrawal?\n\n'+RUPEE.format(w.amount)+' on '+fmtDFull(w.date)+'\n\nThe eligible amount and 31-day window will be recalculated.')) return;
   const removed=w;
   S.withdrawals = S.withdrawals.filter(x=>x.wid!==wid);
   if(editingWithdrawalId===wid) cancelWdEdit();
@@ -4370,7 +4391,7 @@ function renderRaga(){
     '<div class="stat '+(elig<0?'alert':'money')+'"><div class="label">Eligible to withdraw</div><div class="value num">'+RUPEE.format(elig)+'</div><div class="sub">'+(open?'<a href="https://ragashiksha.com/" target="_blank" rel="noopener" class="raga-link"><b>window open</b></a> — withdraw on ragashiksha.com':'window opens '+fmtD(nd))+(pendAllR?' · <b style="color:var(--gold-ink)">'+pendAllR+'</b> class'+(pendAllR===1?'':'es')+' awaiting ₹ entry':'')+'</div></div>'+
     '<div class="stat"><div class="label">Total income (all time)</div><div class="value num">'+RUPEE.format(accr)+'</div><div class="sub">from <b>'+totalDone+'</b> completed RAGA classes</div></div>'+
     '<div class="stat"><div class="label">Total withdrawn</div><div class="value num">'+RUPEE.format(wdn)+'</div><div class="sub"><b>'+S.withdrawals.length+'</b> withdrawal'+(S.withdrawals.length===1?'':'s')+'</div></div>'+
-    '<div class="stat"><div class="label">Next withdrawal</div><div class="value" style="font-size:1.3rem">'+(open?'Available now':fmtD(nd))+'</div><div class="sub">'+(open?(lw?'rolling 30 days from last ('+fmtD(lw.date)+')':'no withdrawals yet — anytime'):'in <b>'+daysUntil(nd)+'</b> days')+'</div></div>';
+    '<div class="stat"><div class="label">Next withdrawal</div><div class="value" style="font-size:1.3rem">'+(open?'Available now':fmtD(nd))+'</div><div class="sub">'+(open?(lw?'rolling 31 days from last ('+fmtD(lw.date)+')':'no withdrawals yet — anytime'):'in <b>'+daysUntil(nd)+'</b> days')+'</div></div>';
   if(!$('#wdDate').value) $('#wdDate').value=TODAY;
   const tb=$('#wdTable tbody'); tb.innerHTML='';
   $('#wdEmpty').style.display = S.withdrawals.length?'none':'';
@@ -4680,16 +4701,16 @@ function repClasses(){
 }
 function repMyLessons(){
   const m=$('#rMyLessonsMonth').value;
-  const aoa=[['Date','Time','With','Duration (min)','Status','Fee paid (₹)','Mode','Reference','Notes/feedback']];
+  const aoa=[['Date','Time','With','Duration (min)','Status','Topic covered','Fee paid (₹)','Mode','Reference','Notes/feedback']];
   S.classes.filter(c=>c.kind==='own-lesson' && (m==='all'||monthKey(c.date)===m))
     .sort((a,b)=> a.date===b.date?toMin(a.time)-toMin(b.time):(a.date<b.date?-1:1))
     .forEach(c=>{
-      aoa.push([fmtDMY(c.date),c.time,c.withWhom||'',c.dur,c.ownStatus||'Scheduled',c.feeAmount!=null?c.feeAmount:'',c.feeMode||'',c.feeRef||'',c.hw||'']);
+      aoa.push([fmtDMY(c.date),c.time,c.withWhom||'',c.dur,c.ownStatus||'Scheduled',c.topic||'',c.feeAmount!=null?c.feeAmount:'',c.feeMode||'',c.feeRef||'',c.hw||'']);
     });
-  const feeTot = aoa.slice(1).reduce((t,r)=> t + (typeof r[5]==='number' ? r[5] : 0), 0);
-  if(feeTot) aoa.push(['','','','','Total ₹ paid',feeTot,'','','']);
+  const feeTot = aoa.slice(1).reduce((t,r)=> t + (typeof r[6]==='number' ? r[6] : 0), 0);
+  if(feeTot) aoa.push(['','','','','Total ₹ paid','',feeTot,'','','']);
   return {name:'raga-my-lessons-'+(m==='all'?'all':m), title:'My Lessons Register — '+mLbl(m),
-    sheets:[{name:'My Lessons', aoa, money:[5]}]};
+    sheets:[{name:'My Lessons', aoa, money:[7]}]};
 }
 function repBilling(){
   const m=$('#rBillMonth').value;
@@ -6419,6 +6440,73 @@ $('#lnkDriveMigrate').addEventListener('click', async e=>{
 });
 $('#driveMigrateCancelBtn').addEventListener('click', ()=>{ driveMigrateCancelled = true; });
 $('#driveMigrateCloseBtn').addEventListener('click', ()=>{ closeModal('m-drive-migrate'); });
+
+// Every Drive folder this app writes to — the flat ones plus the two nested under "My Lessons
+// from RAGA" — each with a friendly label for the breakdown list.
+const DRIVE_STORAGE_FOLDERS = [
+  {key:'Notations', label:'Notations'},
+  {key:'Recordings', label:'Recordings'},
+  {key:'Tala Videos', label:'Tala Videos'},
+  {key:'Tanpura Studio Loops', label:'Tanpura Studio Loops'},
+  {key:'Payment Receipts', label:'Payment Receipts'},
+  {key:'Payment made to RAGA classes', label:'Payment made to RAGA classes'},
+  {key:'My Lessons from RAGA/Notations', label:'My Lessons from RAGA — Notations'},
+  {key:'My Lessons from RAGA/Recordings', label:'My Lessons from RAGA — Recordings'},
+];
+let driveStorageCache = null; // {folders:[{label,bytes}], appTotal, accountUsage, accountLimit, at}
+let driveStorageFetching = false;
+async function driveFetchAccountQuota(){
+  try{
+    const r = await dFetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota');
+    const j = await r.json();
+    const q = j.storageQuota || {};
+    return { usage: q.usage!=null ? parseInt(q.usage,10) : null, limit: q.limit!=null ? parseInt(q.limit,10) : null };
+  }catch(e){ return { usage:null, limit:null }; }
+}
+async function driveComputeStorageBreakdown(){
+  const sizes = await Promise.all(DRIVE_STORAGE_FOLDERS.map(f=>driveFolderTotalSize(f.key)));
+  const folders = DRIVE_STORAGE_FOLDERS.map((f,i)=>({label:f.label, bytes: sizes[i]||0}))
+    .sort((a,b)=>b.bytes-a.bytes); // largest first, so what's actually eating space is immediately visible
+  const appTotal = folders.reduce((t,f)=>t+f.bytes,0);
+  const quota = await driveFetchAccountQuota();
+  return { folders, appTotal, accountUsage: quota.usage, accountLimit: quota.limit, at: Date.now() };
+}
+function renderDriveStorageResult(data){
+  $('#driveStorageLoading').style.display = 'none';
+  $('#driveStorageBody').style.display = '';
+  $('#driveStorageFolderList').innerHTML = data.folders.map(f=>
+    '<div class="data-backup-row" style="display:flex;justify-content:space-between"><span>'+esc(f.label)+'</span><span class="tiny" style="color:var(--muted)">'+(f.bytes ? fmtBytesShort(f.bytes) : '—')+'</span></div>'
+  ).join('');
+  $('#driveStorageAppTotal').textContent = fmtBytesShort(data.appTotal) || '0 KB';
+  $('#driveStorageAccountTotal').textContent = (data.accountUsage!=null)
+    ? fmtBytesShort(data.accountUsage) + (data.accountLimit!=null ? ' of '+fmtBytesShort(data.accountLimit) : ' (no fixed limit on this account)')
+    : 'Could not fetch';
+  $('#driveStorageAsOf').textContent = 'As of '+new Date(data.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+async function openDriveStorageModal(force){
+  if(!gToken){ toast('Connect Google Drive first'); return; }
+  closeModal('m-data-backup');
+  openModal('m-drive-storage');
+  const freshMs = 5*60*1000; // a moment-old figure is still meaningful for "what's using space" — no need to hit Drive again every re-open
+  if(!force && driveStorageCache && (Date.now()-driveStorageCache.at) < freshMs){
+    renderDriveStorageResult(driveStorageCache);
+    return;
+  }
+  if(driveStorageFetching) return;
+  driveStorageFetching = true;
+  $('#driveStorageLoading').style.display = '';
+  $('#driveStorageLoading').textContent = 'Checking folders…';
+  $('#driveStorageBody').style.display = 'none';
+  try{
+    driveStorageCache = await driveComputeStorageBreakdown();
+    renderDriveStorageResult(driveStorageCache);
+  }catch(e){
+    $('#driveStorageLoading').textContent = 'Could not check storage usage ('+driveErrorDetail(e)+') — tap Refresh to try again.';
+  }
+  driveStorageFetching = false;
+}
+$('#lnkDriveStorage').addEventListener('click', e=>{ e.preventDefault(); openDriveStorageModal(false); });
+$('#driveStorageRefreshBtn').addEventListener('click', e=>{ e.preventDefault(); openDriveStorageModal(true); });
 // Belt-and-suspenders: scheduleSync() is a cheap no-op when nothing's pending, so polling this
 // periodically costs nothing in the common case, but quietly recovers from a one-off network
 // hiccup that isn't tied to a fresh edit or a browser online/offline transition.
