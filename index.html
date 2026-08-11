@@ -910,7 +910,7 @@
       </div>
 
       <div class="studio-pane" data-pane="personal">
-      <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="personalCards"></div>
+      <div class="mini-stats" style="grid-template-columns:repeat(5,1fr)" id="personalCards"></div>
       <div class="panel">
         <div class="panel-head">
           <h3>Monthly billing</h3>
@@ -1000,6 +1000,7 @@
       <div class="studio-pane" data-pane="my-lessons" style="display:none">
         <div class="panel">
           <div class="panel-head"><h3>My lessons</h3><span class="hint" id="myLessonsHint"></span></div>
+          <div class="mini-stats" style="grid-template-columns:repeat(4,1fr)" id="myLessonsCards"></div>
           <div class="tscroll"><table id="myLessonsTable"><thead><tr><th>Date</th><th>Time</th><th>With</th><th class="r">Duration</th><th>Status</th><th class="r">Fee</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="myLessonsEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c1-4 4-6 8-6s7 2 8 6"/></svg>No lessons logged yet — schedule one from the Calendar ("My lesson with my Guru").</div>
           <div class="note">Your own practice time with Ranjani Akka and Gayatri Akka — kept separate from your teaching income and stats.</div>
@@ -4072,6 +4073,7 @@ function renderPersonalCards(){
   const personal = S.students.filter(s=>s.cat==='Personal');
   const outT = personal.reduce((t,s)=>{ const o=outstandingFor(s); return t+(o>0?o:0); },0);
   const billedM = personal.reduce((t,s)=>t+sumCompleted(s,CURM),0);
+  const billedAll = personal.reduce((t,s)=>t+sumCompleted(s,null),0); // accrual basis, all time — every completed class × its fee, whether or not you've actually been paid for it yet
   const pendP = personal.reduce((t,s)=>t+pendingINR(s,null),0);
   const collM = S.payments.filter(p=>monthKey(p.date)===CURM).reduce((t,p)=>t+p.amount,0);
   const collAll = S.payments.reduce((t,p)=>t+p.amount,0);
@@ -4079,6 +4081,7 @@ function renderPersonalCards(){
   $('#personalCards').innerHTML =
     '<div class="stat alert"><div class="label">Total outstanding</div><div class="value num">'+RUPEE.format(outT)+'</div><div class="sub"><b>'+pend+'</b> student'+(pend===1?'':'s')+' pending'+(pendP?' · <b>'+pendP+'</b> ₹ entr'+(pendP===1?'y':'ies')+' awaited':'')+'</div></div>'+
     '<div class="stat"><div class="label">Billed this month</div><div class="value num">'+RUPEE.format(billedM)+'</div><div class="sub">completed classes × fee · '+monthLabel(CURM)+'</div></div>'+
+    '<div class="stat"><div class="label">Total income (all time)</div><div class="value num">'+RUPEE.format(billedAll)+'</div><div class="sub">every completed class × fee — received or not</div></div>'+
     '<div class="stat money"><div class="label">Collected this month</div><div class="value num">'+RUPEE.format(collM)+'</div><div class="sub">payments dated '+monthLabel(CURM)+'</div></div>'+
     '<div class="stat"><div class="label">Total collected</div><div class="value num">'+RUPEE.format(collAll)+'</div><div class="sub"><b>'+S.payments.length+'</b> payment'+(S.payments.length===1?'':'s')+' all time</div></div>';
 }
@@ -4358,7 +4361,7 @@ function renderRaga(){
   const totalDone=ragaStudents().reduce((t,s)=>t+ragaCompletedAll(s),0);
   $('#ragaCards').innerHTML =
     '<div class="stat '+(elig<0?'alert':'money')+'"><div class="label">Eligible to withdraw</div><div class="value num">'+RUPEE.format(elig)+'</div><div class="sub">'+(open?'<a href="https://ragashiksha.com/" target="_blank" rel="noopener" class="raga-link"><b>window open</b></a> — withdraw on ragashiksha.com':'window opens '+fmtD(nd))+(pendAllR?' · <b style="color:var(--gold-ink)">'+pendAllR+'</b> class'+(pendAllR===1?'':'es')+' awaiting ₹ entry':'')+'</div></div>'+
-    '<div class="stat"><div class="label">Total accrued</div><div class="value num">'+RUPEE.format(accr)+'</div><div class="sub">from <b>'+totalDone+'</b> completed RAGA classes</div></div>'+
+    '<div class="stat"><div class="label">Total income (all time)</div><div class="value num">'+RUPEE.format(accr)+'</div><div class="sub">from <b>'+totalDone+'</b> completed RAGA classes</div></div>'+
     '<div class="stat"><div class="label">Total withdrawn</div><div class="value num">'+RUPEE.format(wdn)+'</div><div class="sub"><b>'+S.withdrawals.length+'</b> withdrawal'+(S.withdrawals.length===1?'':'s')+'</div></div>'+
     '<div class="stat"><div class="label">Next withdrawal</div><div class="value" style="font-size:1.3rem">'+(open?'Available now':fmtD(nd))+'</div><div class="sub">'+(open?(lw?'rolling 30 days from last ('+fmtD(lw.date)+')':'no withdrawals yet — anytime'):'in <b>'+daysUntil(nd)+'</b> days')+'</div></div>';
   if(!$('#wdDate').value) $('#wdDate').value=TODAY;
@@ -4415,6 +4418,29 @@ function renderMyLessons(){
   $('#myLessonsHint').textContent = lessons.length
     ? (doneCount+' completed · '+lessons.length+' total'+(totalPaid ? ' · '+RUPEE.format(totalPaid)+' paid' : ''))
     : '';
+  // Per-guru breakdown reads straight off whichever names actually appear in your lessons —
+  // not hardcoded to Ranjani/Gayatri — so a future third guru shows up here automatically.
+  const byGuru = {};
+  lessons.forEach(c=>{
+    const who = c.withWhom || 'Unspecified';
+    byGuru[who] ||= {paid:0, attended:0};
+    byGuru[who].paid += (c.feeAmount||0);
+    if(c.ownStatus==='Completed') byGuru[who].attended++;
+  });
+  const guruNames = Object.keys(byGuru);
+  const paidBreakdown = guruNames.filter(g=>byGuru[g].paid>0).map(g=>RUPEE.format(byGuru[g].paid)+' '+esc(g)).join(' · ');
+  const attendedBreakdown = guruNames.filter(g=>byGuru[g].attended>0).map(g=>'<b>'+byGuru[g].attended+'</b> with '+esc(g)).join(' · ');
+  const scheduledCount = lessons.filter(c=>c.ownStatus==='Scheduled').length;
+  const cancelledCount = lessons.filter(c=>c.ownStatus==='Cancelled').length;
+  const monthLessons = lessons.filter(c=>monthKey(c.date)===CURM);
+  const monthPaid = monthLessons.reduce((t,c)=>t+(c.feeAmount||0),0);
+  const monthAttended = monthLessons.filter(c=>c.ownStatus==='Completed').length;
+  const upcoming = lessons.filter(c=>c.ownStatus==='Scheduled' && c.date>=TODAY).sort((a,b)=> a.date===b.date?toMin(a.time)-toMin(b.time):(a.date<b.date?-1:1))[0];
+  $('#myLessonsCards').innerHTML =
+    '<div class="stat"><div class="label">Total paid</div><div class="value num">'+RUPEE.format(totalPaid)+'</div><div class="sub">'+(paidBreakdown || 'no fees logged yet')+'</div></div>'+
+    '<div class="stat"><div class="label">Classes attended</div><div class="value num">'+doneCount+'</div><div class="sub">'+(attendedBreakdown || (lessons.length ? 'none completed yet' : 'no lessons yet'))+(scheduledCount||cancelledCount ? ' · '+scheduledCount+' scheduled'+(cancelledCount?', '+cancelledCount+' cancelled':'') : '')+'</div></div>'+
+    '<div class="stat"><div class="label">This month</div><div class="value num">'+RUPEE.format(monthPaid)+'</div><div class="sub"><b>'+monthAttended+'</b> attended in '+monthLabel(CURM)+'</div></div>'+
+    '<div class="stat"><div class="label">Next lesson</div><div class="value" style="font-size:1.3rem">'+(upcoming ? fmtD(upcoming.date) : 'None scheduled')+'</div><div class="sub">'+(upcoming ? esc(upcoming.withWhom||'')+' · '+fmtTime12(upcoming.time)+(upcoming.date===TODAY?' · today':' · in '+daysUntil(upcoming.date)+' days') : 'schedule one from the Calendar')+'</div></div>';
   lessons.forEach(c=>{
     const status = sessionStatus(c);
     tb.insertAdjacentHTML('beforeend','<tr style="cursor:pointer" data-mlopen="'+c.cid+'"><td class="muted">'+fmtD(c.date)+'</td>'+
@@ -4449,7 +4475,7 @@ function statementHTML(m){
     '<tbody>'+(rows||'<tr><td colspan="4">No RAGA students.</td></tr>')+
     '<tr><td><b>'+(sAll?'Total (all months)':'Month total')+'</b></td><td></td><td></td><td class="r"><b>'+RUPEE.format(mTotal)+'</b></td></tr></tbody></table>'+
     '<table style="margin-top:10px"><tbody>'+
-    '<tr><td>Total accrued (all time)</td><td class="r">'+RUPEE.format(ragaAccruedAll())+'</td></tr>'+
+    '<tr><td>Total income (all time)</td><td class="r">'+RUPEE.format(ragaAccruedAll())+'</td></tr>'+
     '<tr><td>Total withdrawn</td><td class="r">'+RUPEE.format(ragaWithdrawnAll())+'</td></tr>'+
     '<tr><td><b>Eligible to withdraw</b></td><td class="r"><b>'+RUPEE.format(ragaEligible())+'</b></td></tr>'+
     '<tr><td>Last withdrawal</td><td class="r">'+(lw?fmtDFull(lw.date):'—')+'</td></tr>'+
