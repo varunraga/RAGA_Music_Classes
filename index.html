@@ -71,8 +71,8 @@
   .shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
   .sidebar{border-right:1px solid var(--line);padding:28px 18px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow-y:auto}
   .brand{padding:2px 8px 16px;border-bottom:1px solid var(--line);margin-bottom:14px;display:flex;flex-direction:column;align-items:flex-start;text-align:left;position:relative}
-  .brand::before{content:'';position:absolute;top:-16px;left:50%;transform:translateX(-50%);width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 50% 42%,rgba(184,137,46,.06),transparent 62%);pointer-events:none}
-  .brand::after{content:'';position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:132px;height:132px;border-radius:50%;border:1px solid rgba(184,137,46,.05);pointer-events:none}
+  .brand::before{content:'';position:absolute;top:-16px;left:-20px;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 50% 42%,rgba(184,137,46,.06),transparent 62%);pointer-events:none}
+  .brand::after{content:'';position:absolute;top:-4px;left:-2px;width:132px;height:132px;border-radius:50%;border:1px solid rgba(184,137,46,.05);pointer-events:none}
   [data-theme="dark"] .brand::before{background:radial-gradient(circle at 50% 42%,rgba(230,190,80,.08),transparent 62%)}
   .brand h1{font-family:'Marcellus',Georgia,serif;line-height:1.25;text-transform:uppercase;position:relative;width:100%}
   .brand h1 .brand-raga{display:block;font-size:2.1rem;font-weight:900;letter-spacing:.1em;margin:0 0 3px;
@@ -96,13 +96,11 @@
     background-position:-160% 0,0 0;
     -webkit-background-clip:text;background-clip:text;
     filter:drop-shadow(0 -1px 0 rgba(255,224,130,.45)) drop-shadow(0 0 8px rgba(95,203,156,.45)) drop-shadow(0 0 2px rgba(189,240,214,.35))}
-  .brand h1 .brand-rule{display:flex;align-items:center;gap:6px;color:var(--gold);font-size:.5rem;line-height:1;margin:1px 12px 5px}
-  .brand h1 .brand-rule i{flex:1;height:1px;background:linear-gradient(90deg,transparent,#B8892E)}
+  .brand h1 .brand-rule{display:flex;align-items:center;gap:6px;color:var(--gold);font-size:.5rem;line-height:1;margin:1px 0 5px}
+  .brand h1 .brand-rule i{flex:0 0 16px;height:1px;background:linear-gradient(90deg,transparent,#B8892E)}
   .brand h1 .brand-rule i:last-child{background:linear-gradient(90deg,#B8892E,transparent)}
   .brand h1 .brand-sub{display:flex;align-items:center;gap:8px;font-size:.82rem;font-weight:700;letter-spacing:.2em;color:#6E2F14;white-space:nowrap;text-shadow:0 0 1px rgba(201,162,39,.28)}
   [data-theme="dark"] .brand h1 .brand-sub{color:#C98B6B}
-  .brand h1 .brand-sub i{flex:1;height:1px;background:linear-gradient(90deg,transparent,#B8892E)}
-  .brand h1 .brand-sub i:last-child{background:linear-gradient(90deg,#B8892E,transparent)}
   .brand .swave{width:160px;max-width:100%;height:23px;margin-top:7px;display:block}
   .brand .swave .clef path{stroke:var(--gold-ink);stroke-width:1.25;stroke-linecap:round}
   [data-theme="dark"] .brand .swave .clef path{stroke:var(--gold)}
@@ -686,7 +684,7 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
     <div class="brand">
-      <h1><span class="brand-raga">RAGA</span><span class="brand-rule" aria-hidden="true"><i></i>&#9670;<i></i></span><span class="brand-sub"><i></i>Music Classes<i></i></span></h1>
+      <h1><span class="brand-raga">RAGA</span><span class="brand-rule" aria-hidden="true"><i></i>&#9670;<i></i></span><span class="brand-sub">Music Classes</span></h1>
       <svg class="swave" viewBox="0 0 172 24" aria-hidden="true">
         <path class="wl" d="M14 12 C 42 4, 66 20, 92 11 C 118 3, 142 18, 170 9"/>
         <path class="wl w2" d="M14 16 C 42 8, 66 24, 92 15 C 118 7, 142 22, 170 13"/>
@@ -1544,6 +1542,12 @@
 <div class="modal-backdrop" id="m-file-viewer">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fileViewerTitle" style="max-width:820px">
     <h3 id="fileViewerTitle" style="margin-bottom:0"></h3>
+    <div id="fileViewerZoomBar" style="display:none;align-items:center;gap:10px;margin-top:8px">
+      <button type="button" class="btn tiny" id="fileViewerZoomOutBtn" title="Zoom out" style="font-size:1.1rem;line-height:1;padding:4px 12px">−</button>
+      <span class="tiny" id="fileViewerZoomLabel" style="min-width:44px;text-align:center;color:var(--muted)">100%</span>
+      <button type="button" class="btn tiny" id="fileViewerZoomInBtn" title="Zoom in" style="font-size:1.1rem;line-height:1;padding:4px 12px">+</button>
+      <span class="tiny" style="color:var(--muted)">re-renders sharp at every zoom level — not stretched</span>
+    </div>
     <div id="fileViewerBody" style="height:70vh;max-height:70vh;background:#2b2b2b;border-radius:8px;overflow:auto;margin-top:10px;-webkit-overflow-scrolling:touch">
       <div id="fileViewerLoading" class="tiny" style="display:none;color:#ccc;text-align:center;padding:40px 12px"></div>
       <div id="fileViewerPdfPages" style="display:none;flex-direction:column;align-items:center;gap:14px;padding:14px 10px;box-sizing:border-box"></div>
@@ -2764,14 +2768,20 @@ try{ history.replaceState({t:'view', view:'dashboard'}, ''); }catch(e){}
 // Android browsers, and iPad Safari showed only the first page with no way to scroll further.
 // Rendering it ourselves means every platform behaves identically.
 let fileViewerRenderToken = 0;
+let fileViewerPdfDoc = null; // cached loaded PDF, reused across zoom in/out so re-zooming doesn't re-fetch/re-parse
+let fileViewerZoom = 1; // multiplier on top of the fit-to-width base scale — 1 = fit width
+const FILE_VIEWER_ZOOM_MIN = 0.5, FILE_VIEWER_ZOOM_MAX = 2.5, FILE_VIEWER_ZOOM_STEP = 0.25;
 function openFileViewer(opts){
   const {title, url, mime, filename} = opts;
   $('#fileViewerTitle').textContent = title || filename || 'Preview';
   const img = $('#fileViewerImg'), pages = $('#fileViewerPdfPages'), loading = $('#fileViewerLoading');
   fileViewerRenderToken++; // invalidates any still-in-flight render from a previous open
+  fileViewerPdfDoc = null;
+  fileViewerZoom = 1;
   img.style.display = 'none'; img.src = '';
   pages.style.display = 'none'; pages.innerHTML = '';
   loading.style.display = 'none';
+  $('#fileViewerZoomBar').style.display = 'none';
   $('#fileViewerDownloadBtn').onclick = ()=>{
     const a=document.createElement('a'); a.href=url; a.download=filename||'file';
     document.body.appendChild(a); a.click(); a.remove();
@@ -2801,20 +2811,33 @@ async function fileViewerRenderPdf(url){
   if(myToken !== fileViewerRenderToken) return; // viewer was closed/reopened with something else while this loaded
   const doc = await pdfjsLib.getDocument({data: arrayBuf}).promise;
   if(myToken !== fileViewerRenderToken) return;
+  fileViewerPdfDoc = doc;
+  $('#fileViewerZoomBar').style.display = 'flex';
+  fileViewerUpdateZoomLabel();
+  await fileViewerRenderPagesAtZoom(myToken);
+}
+// Re-rasterizes every page at the current zoom level via pdf.js, instead of the browser stretching
+// an already-rendered bitmap when you pinch-zoom — that stretching is exactly what was making text
+// go blurry. Re-rendering at the target resolution keeps it just as sharp at 250% as it is at 100%.
+async function fileViewerRenderPagesAtZoom(myToken){
+  const doc = fileViewerPdfDoc; if(!doc) return;
   const pages = $('#fileViewerPdfPages');
   pages.innerHTML = '';
   const bodyWidth = Math.max(200, $('#fileViewerBody').clientWidth - 20);
   const dpr = window.devicePixelRatio || 1;
+  const MAX_CANVAS_DIM = 3500; // stays well under browsers' practical canvas size ceilings even at max zoom on a high-DPI phone
   for(let i=1;i<=doc.numPages;i++){
     if(myToken !== fileViewerRenderToken) return;
     const page = await doc.getPage(i);
     const unscaled = page.getViewport({scale:1});
     const fitScale = Math.min(2.5, Math.max(0.4, bodyWidth / unscaled.width));
-    const viewport = page.getViewport({scale: fitScale * dpr});
+    let scale = fitScale * fileViewerZoom * dpr;
+    if(unscaled.width * scale > MAX_CANVAS_DIM) scale = MAX_CANVAS_DIM / unscaled.width;
+    const viewport = page.getViewport({scale});
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width; canvas.height = viewport.height;
     canvas.style.width = (viewport.width/dpr)+'px';
-    canvas.style.maxWidth = '100%';
+    canvas.style.maxWidth = fileViewerZoom<=1 ? '100%' : 'none'; // zoomed-in pages are meant to overflow and scroll, not squash back down
     canvas.style.background = '#fff';
     canvas.style.boxShadow = '0 1px 6px rgba(0,0,0,.4)';
     pages.appendChild(canvas);
@@ -2824,12 +2847,32 @@ async function fileViewerRenderPdf(url){
   $('#fileViewerLoading').style.display = 'none';
   pages.style.display = 'flex';
 }
+function fileViewerUpdateZoomLabel(){
+  $('#fileViewerZoomLabel').textContent = Math.round(fileViewerZoom*100)+'%';
+  $('#fileViewerZoomOutBtn').disabled = fileViewerZoom<=FILE_VIEWER_ZOOM_MIN;
+  $('#fileViewerZoomInBtn').disabled = fileViewerZoom>=FILE_VIEWER_ZOOM_MAX;
+}
+async function fileViewerChangeZoom(delta){
+  if(!fileViewerPdfDoc) return;
+  const next = Math.min(FILE_VIEWER_ZOOM_MAX, Math.max(FILE_VIEWER_ZOOM_MIN, +(fileViewerZoom+delta).toFixed(2)));
+  if(next === fileViewerZoom) return;
+  fileViewerZoom = next;
+  fileViewerRenderToken++; // cancels a still-in-flight render from a previous zoom click, so rapid +/- taps can't interleave and duplicate pages
+  const myToken = fileViewerRenderToken;
+  $('#fileViewerZoomOutBtn').disabled = true; $('#fileViewerZoomInBtn').disabled = true;
+  $('#fileViewerZoomLabel').textContent = Math.round(fileViewerZoom*100)+'%';
+  await fileViewerRenderPagesAtZoom(myToken);
+  if(myToken === fileViewerRenderToken) fileViewerUpdateZoomLabel(); // re-enables buttons per the new bounds, only if nothing newer has since started
+}
+$('#fileViewerZoomOutBtn').addEventListener('click', ()=>fileViewerChangeZoom(-FILE_VIEWER_ZOOM_STEP));
+$('#fileViewerZoomInBtn').addEventListener('click', ()=>fileViewerChangeZoom(FILE_VIEWER_ZOOM_STEP));
 $('#m-file-viewer').addEventListener('mousedown', (e)=>{
   // Base modal-backdrop click-to-close (wired below) already covers the backdrop; this just
   // clears state on any close path so a slow/in-flight PDF render doesn't keep working in the
   // background or land on a viewer the person has already moved away from.
   if(e.target.closest('[data-close="m-file-viewer"]') || e.target.id==='m-file-viewer'){
     fileViewerRenderToken++;
+    fileViewerPdfDoc = null;
     setTimeout(()=>{ $('#fileViewerImg').src=''; $('#fileViewerPdfPages').innerHTML=''; }, 0);
   }
 });
@@ -9296,23 +9339,65 @@ function renderSharePickerList(){
   });
 }
 $('#sharePickerSearch').addEventListener('input', renderSharePickerList);
-function confirmSharePick(itemId){
+async function confirmSharePick(itemId){
   const st = sById(sharePickerSid);
   if(!st){ toast('Could not find that student'); closeModal('m-share-picker'); return; }
-  const num = waDigits(st.mobile);
-  if(!num){ toast(st.name+' has no mobile number saved — add one in their profile first'); closeModal('m-share-picker'); return; }
+  closeModal('m-share-picker');
   if(sharePickerMode==='notation'){
     const n = S.notations.find(x=>x.id===itemId); if(!n) return;
-    window.open('https://wa.me/'+num+'?text='+encodeURIComponent(notationShareText(n)), '_blank');
-    toast('Chat opened for '+st.name);
+    if(!n.hasPdf){
+      // No PDF on this composition — share the lyrics/meaning as text instead, since there's no
+      // file to attach. Falls back to copying to the clipboard on browsers without a share sheet.
+      const text = notationShareText(n);
+      if(navigator.share){ try{ await navigator.share({text, title:n.title}); }catch(e){ if(e && e.name==='AbortError') return; } }
+      else{ try{ await navigator.clipboard.writeText(text); toast('Copied — paste it wherever you like'); }catch(e){ toast('Could not share automatically on this browser'); return; } }
+      if(sharePickerOnShared) sharePickerOnShared();
+      return;
+    }
+    toast('Preparing "'+n.title+'"…');
+    let rec;
+    try{ rec = await mediaGetWithDriveFallback('notation-pdf:'+n.id, n.driveFileId); }
+    catch(e){ toast('Could not read the PDF ('+driveErrorDetail(e)+')'); return; }
+    if(!rec){ toast('PDF not found on this device or in Drive'); return; }
+    const file = new File([rec.blob], n.pdfName||'notation.pdf', {type:'application/pdf'});
+    let shared = false;
+    if(navigator.share){
+      try{ await navigator.share({files:[file], title:n.title}); shared = true; }
+      catch(e){ if(e && e.name==='AbortError') return; console.warn('Share failed:', e.name, e.message); }
+    }
+    if(!shared){
+      const url = URL.createObjectURL(rec.blob);
+      const a=document.createElement('a'); a.href=url; a.download=file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      toast('Downloaded — attach it from your files');
+    }
+    if(sharePickerOnShared) sharePickerOnShared();
   } else {
     const r = S.recordings.find(x=>x.id===itemId); if(!r) return;
-    const text = 'Sharing a recording: '+(r.title||'(untitled)')+' — attaching the audio now.';
-    window.open('https://wa.me/'+num+'?text='+encodeURIComponent(text), '_blank');
-    toast('Chat opened — attach the audio file from there');
+    toast('Preparing "'+(r.title||'recording')+'"…');
+    let rec;
+    try{ rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId); }
+    catch(e){ toast('Could not read the recording ('+driveErrorDetail(e)+')'); return; }
+    if(!rec){ toast('Recording not found on this device or in Drive'); return; }
+    const ext = audioExtFromType(rec.blob.type);
+    const mimeMap = {mp3:'audio/mpeg', wav:'audio/wav', m4a:'audio/mp4', webm:'audio/webm'};
+    const mime = mimeMap[ext] || rec.blob.type || 'audio/mpeg';
+    const file = new File([rec.blob], (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, {type: mime});
+    let shared = false;
+    if(navigator.share){
+      try{ await navigator.share({files:[file], title:r.title}); shared = true; }
+      catch(e){ if(e && e.name==='AbortError') return; console.warn('Share failed:', e.name, e.message); }
+    }
+    if(!shared){
+      const url = URL.createObjectURL(rec.blob);
+      const a=document.createElement('a'); a.href=url; a.download=file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      toast('Downloaded — attach it from your files');
+    }
+    if(sharePickerOnShared) sharePickerOnShared();
   }
-  closeModal('m-share-picker');
-  if(sharePickerOnShared) sharePickerOnShared();
 }
 
 /* =====================================================
