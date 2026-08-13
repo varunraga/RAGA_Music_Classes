@@ -1693,12 +1693,13 @@
         </div>
       </div>
       <div class="field" id="recMonitorVolField"><label for="recMonitorVol">Monitor volume (what you hear now)</label>
-        <div style="display:flex;align-items:center;gap:8px">
+        <label class="check" id="recMuteSpeakerCheck" style="font-weight:400;margin:2px 0 6px"><input type="checkbox" id="recMuteSpeakerToggle"> Mute Tanpura from speaker entirely (zero bleed into the mic)</label>
+        <div id="recMonitorVolSliderRow" style="display:flex;align-items:center;gap:8px">
           <button type="button" class="btn small" id="recMonitorVolDown" aria-label="Decrease monitor volume" style="width:32px;padding:0;flex:0 0 auto">−</button>
           <input type="range" id="recMonitorVol" min="0" max="100" value="8" step="1" style="flex:1 1 auto">
           <button type="button" class="btn small" id="recMonitorVolUp" aria-label="Increase monitor volume" style="width:32px;padding:0;flex:0 0 auto">+</button>
         </div>
-        <div class="tiny" style="color:var(--muted);margin-top:4px">Kept low by default — quieter through the speaker means less for the phone to fight when cancelling that echo. The recording itself always gets the fuller Mix volume above, unaffected by this.</div>
+        <div class="tiny" id="recMonitorVolNote" style="color:var(--muted);margin-top:4px">Kept low by default — quieter through the speaker means less for the phone to fight when cancelling that echo. The recording itself always gets the fuller Mix volume above, unaffected by this.</div>
       </div>
       <div class="hint" id="recTanpuraSrcHint"></div>
     </div>
@@ -1736,6 +1737,20 @@
     <h3 id="recViewTitle">Recording</h3>
     <div class="sub" id="recViewSub"></div>
     <audio id="recViewAudio" controls style="width:100%;margin:12px 0"></audio>
+    <div id="recEnhanceSection" style="margin-bottom:14px">
+      <button type="button" class="btn small" id="recEnhanceOpenBtn">✨ Enhance audio</button>
+      <div id="recEnhancePanel" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:8px">
+        <div class="tiny" style="color:var(--muted);margin-bottom:8px">Preview a few seconds with each preset before deciding — the saved recording isn't touched until you confirm.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn small" data-preset="natural">Natural</button>
+          <button type="button" class="btn small" data-preset="clear">Clear</button>
+          <button type="button" class="btn small" data-preset="warm">Warm</button>
+        </div>
+        <div id="recEnhanceStatus" class="tiny" style="color:var(--muted);margin-top:8px"></div>
+        <audio id="recEnhancePreviewAudio" controls style="width:100%;margin-top:8px;display:none"></audio>
+        <button type="button" class="btn small gold" id="recEnhanceConfirmBtn" style="display:none;margin-top:8px">Use this version (replaces the saved recording)</button>
+      </div>
+    </div>
     <div class="form-grid2" style="margin-bottom:20px">
       <button type="button" class="btn small gold" id="recModalSrcTeachingBtn" data-src="teaching">My Teaching</button>
       <button type="button" class="btn small" id="recModalSrcOwnBtn" data-src="own-practice">My Lessons/Practice</button>
@@ -8592,6 +8607,88 @@ async function convertBlobToMp3(blob, kbps){
   const audioBuf = await recWaveCtx.decodeAudioData(arrayBuf);
   return pcmToMp3Blob(audioBuf, kbps);
 }
+
+/* ---------- Enhance: studio-style polish for a recording (Equalizer feature, step 1 of 3) ----------
+   Three presets, each the same shape of chain — noise gate, then a filter/compressor/limiter pass —
+   just tuned differently. This file only builds the processing engine; the UI (preset picker, quick
+   preview, confirm/discard) is a separate step so it can be reviewed on its own.
+   Deliberately excludes true broadband denoising (separating a persistent hum/hiss from voice) —
+   that's a much harder DSP problem than fits here. The gate below only quiets genuinely low-level
+   sound in the gaps between phrases; it was never sold as more than that. */
+const ENHANCE_PRESETS = {
+  natural: { name:'Natural', highpassHz:70,  presenceHz:3000, presenceDb:1.5, warmthHz:220, warmthDb:0,  gateDb:-52, compThreshold:-24, compRatio:2   },
+  clear:   { name:'Clear',   highpassHz:90,  presenceHz:3500, presenceDb:4,   warmthHz:220, warmthDb:0,  gateDb:-46, compThreshold:-20, compRatio:3   },
+  warm:    { name:'Warm',    highpassHz:70,  presenceHz:3000, presenceDb:2,   warmthHz:250, warmthDb:3,  gateDb:-52, compThreshold:-22, compRatio:2.5 },
+};
+// A gentle, soft-knee noise gate — attenuates proportionally as the signal approaches the
+// threshold rather than snapping fully silent, so it quiets room hiss/fan noise between phrases
+// without an audible "chopping" artifact when you're actually singing. Runs directly on the
+// decoded samples (before the OfflineAudioContext filter chain below), since Web Audio has no
+// built-in gate node — DynamicsCompressorNode only reduces loud signal, the opposite of what's
+// needed here.
+function applyNoiseGate(audioBuffer, thresholdDb){
+  const thresholdLinear = Math.pow(10, thresholdDb/20);
+  const attackN = Math.max(1, Math.round(0.005 * audioBuffer.sampleRate));  // 5ms — opens fast so it doesn't eat the start of a word
+  const releaseN = Math.max(1, Math.round(0.15 * audioBuffer.sampleRate));  // 150ms — closes slowly so it doesn't chop between syllables
+  for(let ch=0; ch<audioBuffer.numberOfChannels; ch++){
+    const data = audioBuffer.getChannelData(ch);
+    let envelope = 0, gain = 1;
+    for(let i=0;i<data.length;i++){
+      const level = Math.abs(data[i]);
+      envelope += (level-envelope) * (level>envelope ? 1/attackN : 1/releaseN);
+      const targetGain = envelope<thresholdLinear ? Math.max(0, envelope/thresholdLinear) : 1;
+      gain += (targetGain-gain) * (targetGain<gain ? 1/attackN : 1/releaseN);
+      data[i] *= gain;
+    }
+  }
+}
+// Returns a new, shorter AudioBuffer containing just the first maxSeconds — used for the quick
+// preview in step 2, so comparing presets means rendering a few seconds, not the whole recording.
+function sliceAudioBufferStart(audioBuffer, maxSeconds){
+  const frames = Math.min(audioBuffer.length, Math.round(maxSeconds*audioBuffer.sampleRate));
+  const out = new AudioBuffer({length:frames, numberOfChannels:audioBuffer.numberOfChannels, sampleRate:audioBuffer.sampleRate});
+  for(let ch=0; ch<audioBuffer.numberOfChannels; ch++){
+    out.copyToChannel(audioBuffer.getChannelData(ch).subarray(0,frames), ch);
+  }
+  return out;
+}
+// The filter/compressor/limiter pass — real Web Audio nodes, rendered offline (faster than
+// realtime, no audible playback) rather than live, so this can never introduce the kind of
+// live-processing artifact echo cancellation does elsewhere in this app.
+async function renderEnhancedBuffer(audioBuffer, presetKey){
+  const preset = ENHANCE_PRESETS[presetKey];
+  if(!preset) throw new Error('Unknown enhance preset: '+presetKey);
+  applyNoiseGate(audioBuffer, preset.gateDb);
+  const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
+  const src = offlineCtx.createBufferSource();
+  src.buffer = audioBuffer;
+  const highpass = offlineCtx.createBiquadFilter();
+  highpass.type = 'highpass'; highpass.frequency.value = preset.highpassHz; highpass.Q.value = 0.7;
+  const presenceEQ = offlineCtx.createBiquadFilter();
+  presenceEQ.type = 'peaking'; presenceEQ.frequency.value = preset.presenceHz; presenceEQ.gain.value = preset.presenceDb; presenceEQ.Q.value = 1;
+  const warmthEQ = offlineCtx.createBiquadFilter();
+  warmthEQ.type = 'lowshelf'; warmthEQ.frequency.value = preset.warmthHz; warmthEQ.gain.value = preset.warmthDb;
+  const compressor = offlineCtx.createDynamicsCompressor();
+  compressor.threshold.value = preset.compThreshold; compressor.ratio.value = preset.compRatio;
+  compressor.attack.value = 0.003; compressor.release.value = 0.25; compressor.knee.value = 6;
+  const limiter = offlineCtx.createDynamicsCompressor(); // safety net so nothing clips after the EQ/compressor boosts
+  limiter.threshold.value = -1; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.05; limiter.knee.value = 0;
+  src.connect(highpass).connect(presenceEQ).connect(warmthEQ).connect(compressor).connect(limiter).connect(offlineCtx.destination);
+  src.start();
+  return await offlineCtx.startRendering();
+}
+// Top-level entry point step 2's UI will call. Pass opts.previewSeconds for a fast preview render
+// (only the first few seconds, processed and encoded); omit it for the full recording. Always
+// returns an MP3 blob, matching how every other recording in this app is stored.
+async function enhanceRecordingBlob(blob, presetKey, opts){
+  if(!recWaveCtx) recWaveCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const arrayBuf = await blob.arrayBuffer();
+  let audioBuf = await recWaveCtx.decodeAudioData(arrayBuf);
+  if(opts && opts.previewSeconds) audioBuf = sliceAudioBufferStart(audioBuf, opts.previewSeconds);
+  const rendered = await renderEnhancedBuffer(audioBuf, presetKey);
+  return pcmToMp3Blob(rendered, 128);
+}
+
 const recWaveformCache = {}; // recording id -> already-computed peak array, so replaying doesn't re-decode
 async function drawRecordingWaveform(id, canvas, opts){
   if(!canvas) return;
@@ -8689,12 +8786,29 @@ function recUpdateTanpuraHint(){
     ? ('Using your studio-recorded '+pitch+' scale tanpura ('+tuningLabel+')')
     : ('Using the synthesized tanpura — scale '+pitch+', '+tuningLabel+' (mellow tone, pause after last string)');
 }
+function recEffectiveMonitorVol(){
+  // Zero bleed mode: speaker output silenced entirely, regardless of whatever the Monitor
+  // volume slider is set to. The recording itself is untouched either way — it's always fed by
+  // recMixBus directly, never through this gain node — so muting here costs you the ability to
+  // hear Tanpura as a pitch reference while singing, in exchange for guaranteeing nothing from
+  // the speaker can possibly bleed into the mic at all.
+  if($('#recMuteSpeakerToggle') && $('#recMuteSpeakerToggle').checked) return 0;
+  return (+$('#recMonitorVol').value)/100 * 0.88;
+}
+function recSyncMuteSpeakerUI(){
+  const muted = $('#recMuteSpeakerToggle') ? $('#recMuteSpeakerToggle').checked : false;
+  if($('#recMonitorVolSliderRow')) $('#recMonitorVolSliderRow').style.display = muted ? 'none' : '';
+  if($('#recMonitorVolNote')) $('#recMonitorVolNote').textContent = muted
+    ? 'Speaker fully muted — you won\'t hear Tanpura while recording, but nothing can bleed into the mic either. Uncheck to bring the speaker back.'
+    : 'Kept low by default — quieter through the speaker means less for the phone to fight when cancelling that echo. The recording itself always gets the fuller Mix volume above, unaffected by this.';
+}
 function recSyncTanpuraControls(){
   recUpdateTanpuraHint();
   const on = $('#recTanpuraToggle') ? $('#recTanpuraToggle').checked : true;
   if($('#recTanpuraVolField')) $('#recTanpuraVolField').style.display = on ? '' : 'none';
   if($('#recMonitorVolField')) $('#recMonitorVolField').style.display = on ? '' : 'none';
   if($('#recHeadphonesField')) $('#recHeadphonesField').style.display = on ? '' : 'none'; // only matters when Tanpura is actually going to play out loud
+  recSyncMuteSpeakerUI();
 }
 async function recStartTanpuraMix(){
   if(!tpCtx){
@@ -8717,7 +8831,7 @@ async function recStartTanpuraMix(){
   recMixBus = tpCtx.createGain();
   recMixBus.gain.value = 1; // pure routing/fan-out node — this is the quick mute point for the on/off switch
   recMonitorGain = tpCtx.createGain();
-  recMonitorGain.gain.value = (+$('#recMonitorVol').value)/100 * 0.88; // independent, speaker-only — doesn't touch what's recorded
+  recMonitorGain.gain.value = recEffectiveMonitorVol(); // independent, speaker-only — doesn't touch what's recorded
   recMixBus.connect(recMonitorGain);
   recMonitorGain.connect(tpCtx.destination); // audible while recording, as a pitch reference — at the (usually quieter) monitor level
   recMixBus.connect(recMixDest);             // captured into the take at the full Mix level, regardless of monitor volume
@@ -8906,7 +9020,11 @@ function recAdjustTanpuraVol(delta){
 $('#recTanpuraVolDown').addEventListener('click', ()=> recAdjustTanpuraVol(-5));
 $('#recTanpuraVolUp').addEventListener('click', ()=> recAdjustTanpuraVol(5));
 $('#recMonitorVol').addEventListener('input', ()=>{
-  if(recMonitorGain) recMonitorGain.gain.value = (+$('#recMonitorVol').value)/100 * 0.88;
+  if(recMonitorGain) recMonitorGain.gain.value = recEffectiveMonitorVol();
+});
+$('#recMuteSpeakerToggle').addEventListener('change', ()=>{
+  recSyncMuteSpeakerUI();
+  if(recMonitorGain) recMonitorGain.gain.value = recEffectiveMonitorVol(); // live, if already recording
 });
 function recAdjustMonitorVol(delta){
   const el = $('#recMonitorVol');
@@ -9131,9 +9249,22 @@ $('#recSortBy').addEventListener('change', e=>{ recSortBy = e.target.value; rend
 
 let viewingRecordingId = null;
 let viewingRecordingBlob = null;
+let recEnhancePreviewUrl = null, recEnhanceBusy = false, recEnhanceLastPreset = null, recEnhanceOriginalBlob = null;
+function resetRecEnhancePanel(){
+  $('#recEnhancePanel').style.display = 'none';
+  $('#recEnhanceStatus').textContent = '';
+  $('#recEnhancePreviewAudio').style.display = 'none';
+  $('#recEnhancePreviewAudio').pause();
+  $('#recEnhancePreviewAudio').src = '';
+  $('#recEnhanceConfirmBtn').style.display = 'none';
+  recEnhanceLastPreset = null;
+  recEnhanceOriginalBlob = null;
+  if(recEnhancePreviewUrl){ URL.revokeObjectURL(recEnhancePreviewUrl); recEnhancePreviewUrl = null; }
+}
 async function openRecordingView(id){
   const r = S.recordings.find(x=>x.id===id); if(!r) return;
   viewingRecordingId = id;
+  resetRecEnhancePanel(); // a stale preview from whichever recording was open last should never carry over
   $('#recViewTitle').textContent = r.title || '(untitled)';
   $('#recViewSub').textContent = fmtDuration(r.durationSec)+' · recorded '+fmtRecDate(r.createdAt);
   setRecModalSrc(r.source||'teaching');
@@ -9247,6 +9378,68 @@ $('#recOpenNotationBtn').addEventListener('click', ()=>{
   const nid = r.linkedNotationId;
   closeModal('m-recording-view');
   openNotationView(nid);
+});
+$('#recEnhanceOpenBtn').addEventListener('click', ()=>{
+  const panel = $('#recEnhancePanel');
+  panel.style.display = panel.style.display==='none' ? '' : 'none';
+});
+$('#recEnhancePanel').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('[data-preset]'); if(!btn || recEnhanceBusy) return;
+  const presetKey = btn.dataset.preset;
+  const preset = ENHANCE_PRESETS[presetKey];
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
+  recEnhanceBusy = true;
+  $('#recEnhanceStatus').textContent = 'Rendering '+preset.name+' preview…';
+  $('#recEnhancePreviewAudio').style.display = 'none';
+  $('#recEnhanceConfirmBtn').style.display = 'none';
+  try{
+    if(!recEnhanceOriginalBlob){
+      const media = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId);
+      if(!media){ $('#recEnhanceStatus').textContent = 'Recording not available on this device — sign in to Drive to fetch it.'; recEnhanceBusy=false; return; }
+      recEnhanceOriginalBlob = media.blob; // cached so confirming afterward doesn't re-fetch what we already have
+    }
+    const previewBlob = await enhanceRecordingBlob(recEnhanceOriginalBlob, presetKey, {previewSeconds:8});
+    if(recEnhancePreviewUrl) URL.revokeObjectURL(recEnhancePreviewUrl);
+    recEnhancePreviewUrl = URL.createObjectURL(previewBlob);
+    const audioEl = $('#recEnhancePreviewAudio');
+    audioEl.src = recEnhancePreviewUrl;
+    audioEl.style.display = '';
+    audioEl.play().catch(()=>{});
+    recEnhanceLastPreset = presetKey;
+    $('#recEnhanceConfirmBtn').style.display = '';
+    $('#recEnhanceConfirmBtn').textContent = 'Use '+preset.name+' (replaces the saved recording)';
+    $('#recEnhanceStatus').textContent = preset.name+' preview (first 8s) — your saved recording is still the original, untouched.';
+  }catch(e){
+    $('#recEnhanceStatus').textContent = 'Could not render this preview ('+(e && e.message || e)+')';
+  }
+  recEnhanceBusy = false;
+});
+$('#recEnhanceConfirmBtn').addEventListener('click', async ()=>{
+  const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r || !recEnhanceLastPreset || !recEnhanceOriginalBlob || recEnhanceBusy) return;
+  const preset = ENHANCE_PRESETS[recEnhanceLastPreset];
+  recEnhanceBusy = true;
+  $('#recEnhanceConfirmBtn').disabled = true;
+  $('#recEnhanceStatus').textContent = 'Rendering the full '+preset.name+' version…';
+  try{
+    // Full render this time — no previewSeconds — using the same original blob already fetched
+    // for the preview, so this doesn't re-download anything from Drive.
+    const finalBlob = await enhanceRecordingBlob(recEnhanceOriginalBlob, recEnhanceLastPreset);
+    await mediaPut('recording-audio:'+r.id, finalBlob, {mimeType:finalBlob.type, size:finalBlob.size});
+    if(gToken && r.driveFileId){
+      try{
+        const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.mp3';
+        await driveUploadResumable(finalBlob, newName, 'audio/mpeg', recordingDriveFolder(r), null, r.driveFileId);
+        driveKeepLatestRevisionForever(r.driveFileId);
+      }catch(e){ toast('Enhanced on this device, but could not update Drive ('+driveErrorDetail(e)+') — try again when back online'); }
+    }
+    $('#recViewAudio').src = trackBlobUrl('recViewAudio', URL.createObjectURL(finalBlob));
+    resetRecEnhancePanel();
+    toast(preset.name+' version saved — this recording is now enhanced');
+  }catch(e){
+    $('#recEnhanceStatus').textContent = 'Could not save this version ('+(e && e.message || e)+')';
+  }
+  recEnhanceBusy = false;
+  $('#recEnhanceConfirmBtn').disabled = false;
 });
 $('#recSaveBtn').addEventListener('click', ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
