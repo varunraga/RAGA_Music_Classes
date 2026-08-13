@@ -1203,6 +1203,15 @@
             <button class="btn" id="btnUploadRecording">&#128228; Upload recording</button>
             <input id="recUploadFile" type="file" accept="audio/*" multiple style="display:none">
             <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
+            <button class="btn tiny" id="recBulkModeBtn">&#10024; Enhance several…</button>
+          </div>
+          <div class="not-toolbar" id="recBulkBar" style="display:none;padding:10px 12px;background:var(--paper);border:1px solid var(--line);border-radius:8px;align-items:center;flex-wrap:wrap;gap:10px">
+            <span class="tiny" id="recBulkCount" style="color:var(--muted)">0 selected</span>
+            <button type="button" class="btn tiny" data-bulk-preset="natural" disabled>Natural</button>
+            <button type="button" class="btn tiny" data-bulk-preset="clear" disabled>Clear</button>
+            <button type="button" class="btn tiny" data-bulk-preset="warm" disabled>Warm</button>
+            <button type="button" class="btn tiny" id="recBulkCancelBtn">Cancel</button>
+            <span class="tiny" id="recBulkStatus" style="color:var(--muted);flex-basis:100%"></span>
           </div>
           <div class="not-toolbar" style="padding-top:8px">
             <button type="button" class="btn small gold" id="recSrcTeachingBtn" data-src="teaching">My Teaching</button>
@@ -8340,6 +8349,54 @@ $('#notSortBy').addEventListener('change', e=>{ notSortBy = e.target.value; rend
    RECORDINGS LIBRARY
    ===================================================== */
 let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title', recSourceFilter = 'teaching';
+let recBulkMode = false, recBulkSelected = new Set(), recBulkBusy = false;
+function recUpdateBulkBar(){
+  $('#recBulkCount').textContent = recBulkSelected.size+' selected';
+  $$('#recBulkBar [data-bulk-preset]').forEach(b=> b.disabled = recBulkSelected.size===0 || recBulkBusy);
+}
+$('#recBulkModeBtn').addEventListener('click', ()=>{
+  recBulkMode = !recBulkMode;
+  recBulkSelected.clear();
+  $('#recBulkBar').style.display = recBulkMode ? 'flex' : 'none';
+  $('#recBulkModeBtn').textContent = recBulkMode ? 'Cancel selecting' : '✨ Enhance several…';
+  $('#recBulkStatus').textContent = '';
+  recUpdateBulkBar();
+  renderRecordingsList();
+});
+$('#recBulkCancelBtn').addEventListener('click', ()=> $('#recBulkModeBtn').click());
+$('#recBulkBar').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('[data-bulk-preset]'); if(!btn || recBulkBusy || recBulkSelected.size===0) return;
+  const presetKey = btn.dataset.bulkPreset;
+  const preset = ENHANCE_PRESETS[presetKey];
+  const ids = Array.from(recBulkSelected);
+  if(!confirm('Enhance '+ids.length+' recording'+(ids.length===1?'':'s')+' with the '+preset.name+' preset?\n\nThis replaces each saved recording (and its Drive copy) — the originals won\'t be kept alongside them.')) return;
+  recBulkBusy = true;
+  recUpdateBulkBar();
+  let done=0, failed=0;
+  for(const id of ids){
+    const r = S.recordings.find(x=>x.id===id); if(!r) continue;
+    $('#recBulkStatus').textContent = 'Enhancing '+(done+failed+1)+' of '+ids.length+' — '+(r.title||'(untitled)')+'…';
+    try{
+      const media = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId);
+      if(!media) throw new Error('not available on this device');
+      const finalBlob = await enhanceRecordingBlob(media.blob, presetKey);
+      await mediaPut('recording-audio:'+r.id, finalBlob, {mimeType:finalBlob.type, size:finalBlob.size});
+      if(gToken && r.driveFileId){
+        const newName = (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.mp3';
+        await driveUploadResumable(finalBlob, newName, 'audio/mpeg', recordingDriveFolder(r), null, r.driveFileId);
+        driveKeepLatestRevisionForever(r.driveFileId);
+      }
+      done++;
+    }catch(e){ failed++; }
+  }
+  recBulkBusy = false;
+  recBulkMode = false;
+  recBulkSelected.clear();
+  $('#recBulkBar').style.display = 'none';
+  $('#recBulkModeBtn').textContent = '✨ Enhance several…';
+  toast('Enhanced '+done+' recording'+(done===1?'':'s')+(failed?' — '+failed+' failed (still original, untouched)':''));
+  renderRecordingsList();
+});
 let recStream = null, recRecorder = null, recChunks = [], recTimerHandle = null, recStartMs = 0, recDurationSec = 0, recBlob = null;
 /* ---------- recording-time tanpura background mix ---------- */
 let recMixDest = null;          // MediaStreamAudioDestinationNode — recorder captures from here
@@ -8461,6 +8518,7 @@ function renderRecordingsList(){
     const isPlaying = recPlayingId === r.id;
     const tags = recordingTagsLine(r);
     row.innerHTML =
+      (recBulkMode ? '<input type="checkbox" class="rec-bulk-check" style="margin-right:8px" '+(recBulkSelected.has(r.id)?'checked':'')+'>' : '')+
       '<button type="button" class="rec-play-btn" aria-label="'+(isPlaying?'Pause':'Play')+'">'+(isPlaying?'&#10074;&#10074;':'&#9658;')+'</button>'+
       '<div class="rec-row-body"><div class="rec-row-title">'+esc(r.title||'(untitled)')+'</div>'+
       (tags ? '<div class="rec-row-sub">'+esc(tags)+'</div>' : '')+
@@ -8468,8 +8526,15 @@ function renderRecordingsList(){
       '<div class="rec-row-sub">'+fmtDuration(r.durationSec)+' · '+fmtRecDate(r.createdAt)+'</div>'+
       '<div class="rec-waveform-wrap'+(isPlaying?' on':'')+'" data-recid="'+r.id+'"><canvas></canvas><div class="rec-waveform-progress"></div></div>'+
       '</div>';
+    if(recBulkMode){
+      row.querySelector('.rec-bulk-check').addEventListener('click', e=>{
+        e.stopPropagation();
+        if(e.target.checked) recBulkSelected.add(r.id); else recBulkSelected.delete(r.id);
+        recUpdateBulkBar();
+      });
+    }
     row.querySelector('.rec-play-btn').addEventListener('click', e=>{ e.stopPropagation(); toggleRecordingPlayback(r.id); });
-    row.addEventListener('click', ()=>openRecordingView(r.id));
+    row.addEventListener('click', ()=>{ if(recBulkMode) return; openRecordingView(r.id); }); // in select mode, tapping the row shouldn't jump into the editor
     const wfWrap = row.querySelector('.rec-waveform-wrap');
     wfWrap.addEventListener('click', e=>{
       e.stopPropagation();
@@ -8616,9 +8681,9 @@ async function convertBlobToMp3(blob, kbps){
    that's a much harder DSP problem than fits here. The gate below only quiets genuinely low-level
    sound in the gaps between phrases; it was never sold as more than that. */
 const ENHANCE_PRESETS = {
-  natural: { name:'Natural', highpassHz:70,  presenceHz:3000, presenceDb:1.5, warmthHz:220, warmthDb:0,  gateDb:-52, compThreshold:-24, compRatio:2   },
-  clear:   { name:'Clear',   highpassHz:90,  presenceHz:3500, presenceDb:4,   warmthHz:220, warmthDb:0,  gateDb:-46, compThreshold:-20, compRatio:3   },
-  warm:    { name:'Warm',    highpassHz:70,  presenceHz:3000, presenceDb:2,   warmthHz:250, warmthDb:3,  gateDb:-52, compThreshold:-22, compRatio:2.5 },
+  natural: { name:'Natural', highpassHz:70,  presenceHz:3000, presenceDb:2.5, warmthHz:220, warmthDb:0,  gateDb:-52, compThreshold:-24, compRatio:2.2 },
+  clear:   { name:'Clear',   highpassHz:90,  presenceHz:3500, presenceDb:6,   warmthHz:220, warmthDb:0,  gateDb:-46, compThreshold:-20, compRatio:3.5 },
+  warm:    { name:'Warm',    highpassHz:70,  presenceHz:3000, presenceDb:3,   warmthHz:250, warmthDb:5,  gateDb:-52, compThreshold:-22, compRatio:3   },
 };
 // A gentle, soft-knee noise gate — attenuates proportionally as the signal approaches the
 // threshold rather than snapping fully silent, so it quiets room hiss/fan noise between phrases
@@ -8652,6 +8717,28 @@ function sliceAudioBufferStart(audioBuffer, maxSeconds){
   }
   return out;
 }
+// A compressor reduces peaks above its threshold but doesn't automatically get louder afterward —
+// so without this, the compressor/EQ could genuinely be doing something and still be inaudible,
+// because the result isn't any louder than the original. This is what actually makes "enhanced"
+// sound perceptibly fuller: scan the finished render for its true peak, then apply makeup gain to
+// bring that peak up near full scale. The limiter already ran before this, so there's no risk of
+// this reintroducing clipping — normalizing after it just uses the headroom the limiter left.
+function normalizePeakGain(audioBuffer, targetPeak){
+  let peak = 0;
+  for(let ch=0; ch<audioBuffer.numberOfChannels; ch++){
+    const data = audioBuffer.getChannelData(ch);
+    for(let i=0;i<data.length;i++){ const a=Math.abs(data[i]); if(a>peak) peak=a; }
+  }
+  if(peak<=0) return; // silence — nothing to normalize
+  // Capped at 6x (~15.5dB) so a near-silent take doesn't get amplified into something noisy —
+  // this is makeup gain for a properly-recorded but under-processed take, not a rescue tool.
+  const gain = Math.min(6, targetPeak/peak);
+  if(gain<=1.01) return; // already loud enough — leave it alone rather than nudge it pointlessly
+  for(let ch=0; ch<audioBuffer.numberOfChannels; ch++){
+    const data = audioBuffer.getChannelData(ch);
+    for(let i=0;i<data.length;i++) data[i]*=gain;
+  }
+}
 // The filter/compressor/limiter pass — real Web Audio nodes, rendered offline (faster than
 // realtime, no audible playback) rather than live, so this can never introduce the kind of
 // live-processing artifact echo cancellation does elsewhere in this app.
@@ -8675,7 +8762,9 @@ async function renderEnhancedBuffer(audioBuffer, presetKey){
   limiter.threshold.value = -1; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.05; limiter.knee.value = 0;
   src.connect(highpass).connect(presenceEQ).connect(warmthEQ).connect(compressor).connect(limiter).connect(offlineCtx.destination);
   src.start();
-  return await offlineCtx.startRendering();
+  const rendered = await offlineCtx.startRendering();
+  normalizePeakGain(rendered, 0.95); // ~-0.45dBFS peak — the actual "sounds punchier" lever, more than the EQ moves themselves
+  return rendered;
 }
 // Top-level entry point step 2's UI will call. Pass opts.previewSeconds for a fast preview render
 // (only the first few seconds, processed and encoded); omit it for the full recording. Always
@@ -9398,7 +9487,7 @@ $('#recEnhancePanel').addEventListener('click', async (e)=>{
       if(!media){ $('#recEnhanceStatus').textContent = 'Recording not available on this device — sign in to Drive to fetch it.'; recEnhanceBusy=false; return; }
       recEnhanceOriginalBlob = media.blob; // cached so confirming afterward doesn't re-fetch what we already have
     }
-    const previewBlob = await enhanceRecordingBlob(recEnhanceOriginalBlob, presetKey, {previewSeconds:8});
+    const previewBlob = await enhanceRecordingBlob(recEnhanceOriginalBlob, presetKey, {previewSeconds:30});
     if(recEnhancePreviewUrl) URL.revokeObjectURL(recEnhancePreviewUrl);
     recEnhancePreviewUrl = URL.createObjectURL(previewBlob);
     const audioEl = $('#recEnhancePreviewAudio');
@@ -9408,7 +9497,7 @@ $('#recEnhancePanel').addEventListener('click', async (e)=>{
     recEnhanceLastPreset = presetKey;
     $('#recEnhanceConfirmBtn').style.display = '';
     $('#recEnhanceConfirmBtn').textContent = 'Use '+preset.name+' (replaces the saved recording)';
-    $('#recEnhanceStatus').textContent = preset.name+' preview (first 8s) — your saved recording is still the original, untouched.';
+    $('#recEnhanceStatus').textContent = preset.name+' preview (first 30s) — your saved recording is still the original, untouched.';
   }catch(e){
     $('#recEnhanceStatus').textContent = 'Could not render this preview ('+(e && e.message || e)+')';
   }
