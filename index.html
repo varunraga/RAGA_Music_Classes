@@ -419,7 +419,7 @@
   .tp-controls .field label{display:block;font-size:.74rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   .tp-controls select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
   .tp-controls input[type=range]{width:100%}
-  .tp-playrow{padding:14px 4px 4px;text-align:center}
+  .tp-playrow{padding:14px 4px 20px;text-align:center}
   .tala-loop-field{display:inline-flex;align-items:center;gap:6px;margin:0 8px;font-size:.82rem;color:var(--muted);font-weight:600;vertical-align:middle}
   .tala-loop-field input{width:56px;padding:7px 6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;text-align:center}
   .tala-loop-field select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-weight:600}
@@ -469,7 +469,7 @@
   .tala-tempo-row{display:flex;align-items:center;gap:8px}
   .tala-tempo-row input[type=range]{flex:1}
   .tala-tempo-row .btn.tiny{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:700;flex-shrink:0}
-  .tala-saved-row{display:flex;flex-wrap:wrap;gap:8px;padding:4px 20px 20px}
+  .tala-saved-row{display:flex;flex-wrap:wrap;gap:8px;padding:18px 20px 20px;margin-top:6px;border-top:1px solid var(--line-soft)}
   .tala-saved-chip{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 8px 6px 14px;font-size:.8rem;cursor:pointer}
   .tala-saved-chip:hover{border-color:var(--gold)}
   .tala-saved-chip button{border:0;background:rgba(0,0,0,.06);color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:.78rem;line-height:1;display:flex;align-items:center;justify-content:center}
@@ -1670,6 +1670,7 @@
     <div class="sub" id="recCapSub">Tap the mic to start — your phone will ask for microphone access the first time.</div>
     <div class="rec-tanpura-mix" style="display:flex;flex-direction:column;gap:8px;padding:10px 0;border-bottom:1px solid var(--line,#eee);margin-bottom:10px">
       <label class="check"><input type="checkbox" id="recTanpuraToggle" checked> Tanpura drone in background</label>
+      <label class="check" id="recHeadphonesField"><input type="checkbox" id="recHeadphonesToggle"> Recording with wired headphones/earphones</label>
       <div class="field"><label for="recTpScale">Tanpura scale</label>
         <select id="recTpScale">
           <option value="A#">A#</option><option value="B">B</option><option value="C" selected>C</option>
@@ -1684,12 +1685,20 @@
           <option value="ma">Ma</option>
         </select>
       </div>
-      <div class="field" id="recTanpuraVolField"><label for="recTanpuraVol">Drone volume</label>
+      <div class="field" id="recTanpuraVolField"><label for="recTanpuraVol">Mix volume (what's recorded)</label>
         <div style="display:flex;align-items:center;gap:8px">
-          <button type="button" class="btn small" id="recTanpuraVolDown" aria-label="Decrease drone volume" style="width:32px;padding:0;flex:0 0 auto">−</button>
+          <button type="button" class="btn small" id="recTanpuraVolDown" aria-label="Decrease mix volume" style="width:32px;padding:0;flex:0 0 auto">−</button>
           <input type="range" id="recTanpuraVol" min="0" max="100" value="18" step="1" style="flex:1 1 auto">
-          <button type="button" class="btn small" id="recTanpuraVolUp" aria-label="Increase drone volume" style="width:32px;padding:0;flex:0 0 auto">+</button>
+          <button type="button" class="btn small" id="recTanpuraVolUp" aria-label="Increase mix volume" style="width:32px;padding:0;flex:0 0 auto">+</button>
         </div>
+      </div>
+      <div class="field" id="recMonitorVolField"><label for="recMonitorVol">Monitor volume (what you hear now)</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button type="button" class="btn small" id="recMonitorVolDown" aria-label="Decrease monitor volume" style="width:32px;padding:0;flex:0 0 auto">−</button>
+          <input type="range" id="recMonitorVol" min="0" max="100" value="8" step="1" style="flex:1 1 auto">
+          <button type="button" class="btn small" id="recMonitorVolUp" aria-label="Increase monitor volume" style="width:32px;padding:0;flex:0 0 auto">+</button>
+        </div>
+        <div class="tiny" style="color:var(--muted);margin-top:4px">Kept low by default — quieter through the speaker means less for the phone to fight when cancelling that echo. The recording itself always gets the fuller Mix volume above, unaffected by this.</div>
       </div>
       <div class="hint" id="recTanpuraSrcHint"></div>
     </div>
@@ -2635,6 +2644,7 @@ const titles = {dashboard:'Dashboard', students:'Students', student:'Student pro
 const TOPBAR_SEARCH_VIEWS = ['dashboard','students','calendar','student'];
 const TOPBAR_ACTIONS_VIEWS = ['dashboard','students','calendar'];
 function go(view, fromPop){
+  if(renderAllDeferredPending) renderAll(true);
   const navView = view==='student' ? 'students' : view;
   $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
   $$('.nav-btn,.bnav').forEach(b=>b.classList.toggle('active', b.dataset.view===navView));
@@ -6998,7 +7008,17 @@ async function tpStartStudioLoop(){
   // continuous drone. So the standby starts silent and is faded in — equal-power, matching the
   // curve already used for the recording's own head/tail blend — while the outgoing one fades
   // out over the same window. That overlap-with-fade is what actually makes it disappear.
-  const SWAP_LEAD = 0.3; // seconds before the active clip ends, begin crossfading to the standby one
+  //
+  // Below, the fade is committed as a SINGLE scheduled ramp on the GainNodes' own automation
+  // clock the moment the crossfade begins, rather than nudged tick-by-tick from this JS timer.
+  // That matters: this app does real background work while the tanpura plays — saving to
+  // localStorage, re-rendering other tabs, merging changes synced from another device — and any
+  // of that can briefly stall the main thread. A tick-by-tick fade would visibly (audibly) jump
+  // when a tick gets delayed; a fade already handed to the audio hardware keeps playing out
+  // smoothly and exactly on schedule no matter what the JS thread is doing meanwhile. The lead
+  // time below is also deliberately generous — not for the fade itself, but to give this timer
+  // plenty of chances to notice it's time to start even if a stall delays it.
+  const SWAP_LEAD = 2.0; // seconds before the active clip ends, begin crossfading to the standby one
   tpBgSwapTimer = setInterval(()=>{
     const active = tpBgActiveIsA ? tpBgAudioA : tpBgAudioB;
     const standby = tpBgActiveIsA ? tpBgAudioB : tpBgAudioA;
@@ -7009,14 +7029,29 @@ async function tpStartStudioLoop(){
     if(!tpBgSwapping && timeLeft <= SWAP_LEAD){
       tpBgSwapping = true;
       standby.currentTime = 0;
-      tpBgSetVol(standby, standbyGain, 0);
       standby.play().catch(()=>{});
+      const rampDur = Math.max(0.05, timeLeft); // ramp over whatever time is actually left, in case this tick fired a bit late
+      if(activeGain && standbyGain && tpCtx){
+        const now = tpCtx.currentTime;
+        activeGain.gain.cancelScheduledValues(now);
+        activeGain.gain.setValueAtTime(activeGain.gain.value, now);
+        activeGain.gain.linearRampToValueAtTime(0, now + rampDur);
+        standbyGain.gain.cancelScheduledValues(now);
+        standbyGain.gain.setValueAtTime(0, now);
+        standbyGain.gain.linearRampToValueAtTime(tpBgTargetVol, now + rampDur);
+      } else {
+        // No GainNode routing available (rare fallback) — <audio>.volume has no scheduling API
+        // of its own, so this path still steps it manually below, tick by tick.
+        tpBgSetVol(standby, standbyGain, 0);
+      }
     }
     if(tpBgSwapping){
-      const progress = Math.min(1, Math.max(0, 1 - (timeLeft/SWAP_LEAD)));
-      tpBgSetVol(standby, standbyGain, tpBgTargetVol * Math.sin(progress*Math.PI/2));
-      tpBgSetVol(active, activeGain, tpBgTargetVol * Math.cos(progress*Math.PI/2));
-      if(progress >= 1 || timeLeft <= 0){
+      if(!activeGain || !standbyGain){
+        const progress = Math.min(1, Math.max(0, 1 - (timeLeft/SWAP_LEAD)));
+        tpBgSetVol(standby, standbyGain, tpBgTargetVol * Math.sin(progress*Math.PI/2));
+        tpBgSetVol(active, activeGain, tpBgTargetVol * Math.cos(progress*Math.PI/2));
+      }
+      if(timeLeft <= 0){
         active.pause();
         tpBgSetVol(active, activeGain, tpBgTargetVol); // restored so it's ready, at correct volume, for its next turn
         tpBgSetVol(standby, standbyGain, tpBgTargetVol);
@@ -7244,6 +7279,7 @@ function tpStop(){
   if(tpStudioSrcNode){ try{ tpStudioSrcNode.stop(); }catch(e){} tpStudioSrcNode=null; tpStudioGainNode=null; }
   if($('#tpPlay')) $('#tpPlay').innerHTML = '&#9658; Play';
   updateTpFloatBar();
+  flushDeferredRenderIfIdle();
 }
 function updateTpFloatBar(){
   const bar = $('#tpFloatBar'); if(!bar) return;
@@ -8294,6 +8330,7 @@ let recStream = null, recRecorder = null, recChunks = [], recTimerHandle = null,
 let recMixDest = null;          // MediaStreamAudioDestinationNode — recorder captures from here
 let recMixMicSrc = null;        // wraps the mic stream so it can be routed alongside the tanpura
 let recMixBus = null;           // routing/fan-out node (speaker + recorder), gain always 1 — the quick on/off mute point
+let recMonitorGain = null;      // independent speaker-only volume, sits between recMixBus and the speaker — recMixDest (what's recorded) is untouched by this
 let recMixStudioGain = null;    // volume control when the studio recording is the source
 let recMixStudioSrc = null;     // looped AudioBufferSourceNode, when using the studio recording
 let recMixSynthState = null, recMixSynthTimer = null; // independent scheduler state, when using the synthesized engine
@@ -8656,6 +8693,8 @@ function recSyncTanpuraControls(){
   recUpdateTanpuraHint();
   const on = $('#recTanpuraToggle') ? $('#recTanpuraToggle').checked : true;
   if($('#recTanpuraVolField')) $('#recTanpuraVolField').style.display = on ? '' : 'none';
+  if($('#recMonitorVolField')) $('#recMonitorVolField').style.display = on ? '' : 'none';
+  if($('#recHeadphonesField')) $('#recHeadphonesField').style.display = on ? '' : 'none'; // only matters when Tanpura is actually going to play out loud
 }
 async function recStartTanpuraMix(){
   if(!tpCtx){
@@ -8677,8 +8716,11 @@ async function recStartTanpuraMix(){
   recMixDest = tpCtx.createMediaStreamDestination();
   recMixBus = tpCtx.createGain();
   recMixBus.gain.value = 1; // pure routing/fan-out node — this is the quick mute point for the on/off switch
-  recMixBus.connect(tpCtx.destination); // audible while recording, as a pitch reference
-  recMixBus.connect(recMixDest);        // and captured into the take
+  recMonitorGain = tpCtx.createGain();
+  recMonitorGain.gain.value = (+$('#recMonitorVol').value)/100 * 0.88; // independent, speaker-only — doesn't touch what's recorded
+  recMixBus.connect(recMonitorGain);
+  recMonitorGain.connect(tpCtx.destination); // audible while recording, as a pitch reference — at the (usually quieter) monitor level
+  recMixBus.connect(recMixDest);             // captured into the take at the full Mix level, regardless of monitor volume
 
   if(recTanpuraShouldUseStudio()){
     const pitch = $('#recTpScale').value;
@@ -8720,6 +8762,7 @@ function recStopTanpuraMix(){
   if(recMixSynthTimer){ clearInterval(recMixSynthTimer); recMixSynthTimer=null; }
   if(recMixStudioSrc){ try{ recMixStudioSrc.stop(); }catch(e){} recMixStudioSrc=null; }
   recMixStudioGain = null;
+  if(recMonitorGain){ try{ recMonitorGain.disconnect(); }catch(e){} recMonitorGain=null; }
   if(recMixBus){ try{ recMixBus.disconnect(); }catch(e){} recMixBus=null; }
   recMixSynthState = null;
 }
@@ -8729,6 +8772,16 @@ async function startRecording(){
   }
   // decided before requesting the mic, since it changes what we ask for
   const wantTanpura = $('#recTanpuraToggle') ? $('#recTanpuraToggle').checked : false;
+  // Wired headphones/earphones mean there's no speaker-to-mic bleed path for Tanpura to leak
+  // through in the first place — nothing for echo cancellation to catch, so it's skipped
+  // entirely and the mic captures exactly as untouched as a Tanpura-free recording. Bluetooth
+  // is deliberately NOT covered by this: most phones only allow simultaneous mic+playback over
+  // Bluetooth in its lower-quality bidirectional mode, and echoCancellation being on is what
+  // gets that mode negotiated at all — turning it off there risks breaking playback/recording
+  // together, not just losing noise cancellation. The checkbox is worded "wired" specifically
+  // so a Bluetooth user leaves it unchecked and keeps the existing (still-necessary) behavior.
+  const usingWiredHeadphones = $('#recHeadphonesToggle') ? $('#recHeadphonesToggle').checked : false;
+  const needsEchoCancellation = wantTanpura && !usingWiredHeadphones;
   try{
     const audioConstraints = {
       // echoCancellation is now ONLY switched on when the Tanpura mix is actually going to
@@ -8737,14 +8790,15 @@ async function startRecording(){
       // you can hear the drone while recording — but it also runs an adaptive filter that
       // can duck/fade your voice while it works out what's drone and what's you. With no
       // Tanpura playing there's nothing to cancel, so a plain voice recording now skips this
-      // entirely and stays fully untouched — no fading, no suppression.
+      // entirely and stays fully untouched — no fading, no suppression. Same when Tanpura IS
+      // playing but wired headphones mean it can't reach the mic anyway.
       // autoGainControl and noiseSuppression stay OFF either way — autoGainControl was the
       // cause of the original "voice fading" issue, before echoCancellation was even a factor.
-      echoCancellation: wantTanpura,
+      echoCancellation: needsEchoCancellation,
       noiseSuppression: false,
       autoGainControl: false
     };
-    if(wantTanpura){
+    if(needsEchoCancellation){
       // Best-effort hint, harmless on browsers/devices that don't recognise it (getUserMedia
       // silently ignores unsupported non-"exact" constraints rather than failing): ask for the
       // device/OS's own hardware echo canceller — the one built for real phone calls — instead
@@ -8834,6 +8888,8 @@ $('#recCaptureCancelBtn').addEventListener('click', ()=>{ stopMicStream(); recSt
 $('#recTanpuraToggle').addEventListener('change', ()=>{
   const on = $('#recTanpuraToggle').checked;
   if($('#recTanpuraVolField')) $('#recTanpuraVolField').style.display = on ? '' : 'none';
+  if($('#recMonitorVolField')) $('#recMonitorVolField').style.display = on ? '' : 'none';
+  if($('#recHeadphonesField')) $('#recHeadphonesField').style.display = on ? '' : 'none';
   // quick off-switch: if a recording is already in progress and the mix engine is running, mute/unmute it live
   if(recRecorder && recRecorder.state==='recording' && recMixBus) recMixBus.gain.value = on ? 1 : 0;
 });
@@ -8849,6 +8905,16 @@ function recAdjustTanpuraVol(delta){
 }
 $('#recTanpuraVolDown').addEventListener('click', ()=> recAdjustTanpuraVol(-5));
 $('#recTanpuraVolUp').addEventListener('click', ()=> recAdjustTanpuraVol(5));
+$('#recMonitorVol').addEventListener('input', ()=>{
+  if(recMonitorGain) recMonitorGain.gain.value = (+$('#recMonitorVol').value)/100 * 0.88;
+});
+function recAdjustMonitorVol(delta){
+  const el = $('#recMonitorVol');
+  el.value = Math.min(100, Math.max(0, (+el.value)+delta));
+  el.dispatchEvent(new Event('input'));
+}
+$('#recMonitorVolDown').addEventListener('click', ()=> recAdjustMonitorVol(-5));
+$('#recMonitorVolUp').addEventListener('click', ()=> recAdjustMonitorVol(5));
 $('#recKeepBtn').addEventListener('click', async ()=>{
   if(!recBlob){ toast('Nothing recorded yet'); return; }
   const title = $('#recTitleInput').value.trim() || 'Untitled recording';
@@ -9868,6 +9934,7 @@ function talaStop(){
   $$('.tala-highlight').forEach(f=>f.classList.remove('active'));
   talaSetShowPalm(false);
   updateTalaFloatBar();
+  flushDeferredRenderIfIdle();
 }
 function updateTalaFloatBar(){
   const bar = $('#talaFloatBar'); if(!bar) return;
@@ -9898,7 +9965,9 @@ $('#talaSaveConfirm').addEventListener('click',()=>{
 function renderTalaSavedRow(){
   const wrap = $('#talaSavedRow'); if(!wrap) return;
   wrap.innerHTML = '';
-  (S.talaPatterns||[]).slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).forEach(p=>{
+  const patterns = (S.talaPatterns||[]).slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  wrap.style.display = patterns.length ? '' : 'none';
+  patterns.forEach(p=>{
     const chip = document.createElement('div');
     chip.className = 'tala-saved-chip';
     chip.innerHTML = '<span>'+esc(p.name)+'</span><button type="button" aria-label="Delete">&times;</button>';
@@ -10320,7 +10389,28 @@ $('#talaExportShareBtn').addEventListener('click', async ()=>{
   }
 });
 
-function renderAll(){
+let renderAllDeferredPending = false;
+function renderAll(force){
+  if((tpPlaying || talaPlaying) && !force){
+    // Live playback is timing-sensitive in a way almost nothing else in this app is. A full
+    // render here means persist() (a JSON.stringify of the entire app state, straight into
+    // localStorage) plus 20+ functions that each rebuild a chunk of DOM — Calendar, Billing,
+    // Reports, Notation/Recording lists, all of it — regardless of which tab is even visible.
+    // On a mid-range phone that's easily long enough to stall the main thread for a noticeable
+    // moment, and this can fire completely unprompted — a background Drive sync pulling in a
+    // change made on another device is exactly such a moment. The tanpura crossfade below is now
+    // scheduled directly on the audio hardware, so a brief stall like that no longer causes an
+    // audible glitch on its own — but it's still wasted work for tabs nobody's looking at right
+    // now, so skip it outright while listening: keep data safe with a debounced save, keep the
+    // small live-updating bits (sync/reminder badges) current, and do the full catch-up the
+    // moment playback actually stops or the person navigates somewhere else.
+    persistLazy();
+    renderNavBadge();
+    renderBackupStatus();
+    renderAllDeferredPending = true;
+    return;
+  }
+  renderAllDeferredPending = false;
   persist();
   renderStats(); renderTimeline(); renderUpcoming(); renderRecent(); renderPending();
   renderStudents(); renderCalendar(); renderBilling(); renderPersonalCards(); renderPayments(); renderRaga(); renderMyLessons(); renderReports(); renderInsights(); renderWeekCheck(); renderNavBadge(); renderBackupStatus();
@@ -10328,6 +10418,9 @@ function renderAll(){
   scheduleSync();
   const pv=document.getElementById('view-student');
   if(pv && pv.classList.contains('active') && profileId) renderProfile();
+}
+function flushDeferredRenderIfIdle(){
+  if(renderAllDeferredPending && !tpPlaying && !talaPlaying) renderAll();
 }
 $('#bannerImg').src = BANNER;
 if($('#studioBannerImg')) $('#studioBannerImg').src = STUDIO_BANNER;
