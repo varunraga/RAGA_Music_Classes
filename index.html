@@ -1702,12 +1702,12 @@
         </div>
       </div>
       <div class="field" id="recMonitorVolField"><label for="recMonitorVol">Monitor volume (what you hear now)</label>
-        <label class="check" id="recMuteSpeakerCheck" style="font-weight:400;margin:2px 0 6px"><input type="checkbox" id="recMuteSpeakerToggle"> Mute Tanpura from speaker entirely (zero bleed into the mic)</label>
         <div id="recMonitorVolSliderRow" style="display:flex;align-items:center;gap:8px">
           <button type="button" class="btn small" id="recMonitorVolDown" aria-label="Decrease monitor volume" style="width:32px;padding:0;flex:0 0 auto">−</button>
           <input type="range" id="recMonitorVol" min="0" max="100" value="8" step="1" style="flex:1 1 auto">
           <button type="button" class="btn small" id="recMonitorVolUp" aria-label="Increase monitor volume" style="width:32px;padding:0;flex:0 0 auto">+</button>
         </div>
+        <label class="check" id="recMuteSpeakerCheck" style="font-weight:400;margin:8px 0 0;white-space:normal"><input type="checkbox" id="recMuteSpeakerToggle"> Mute Tanpura from speaker entirely (zero bleed into the mic)</label>
         <div class="tiny" id="recMonitorVolNote" style="color:var(--muted);margin-top:4px">Kept low by default — quieter through the speaker means less for the phone to fight when cancelling that echo. The recording itself always gets the fuller Mix volume above, unaffected by this.</div>
       </div>
       <div class="hint" id="recTanpuraSrcHint"></div>
