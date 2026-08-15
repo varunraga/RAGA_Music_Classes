@@ -435,10 +435,6 @@
   .tala-builder .field{margin-bottom:14px}
   .tala-fields-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-flow:column;grid-template-rows:repeat(3,auto);gap:6px 20px}
   @media (max-width:760px){ .tala-fields-grid{grid-template-columns:1fr;grid-auto-flow:row;grid-template-rows:none} }
-  .tala-half-pair{display:flex;gap:10px}
-  .tala-half{flex:1 1 50%;min-width:0}
-  .tala-half label{display:block}
-  .tala-half select{width:100%}
   .tala-builder select,.tala-builder .btn{height:40px;box-sizing:border-box;padding:0 12px;font-size:.86rem}
   .tala-add-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
   .tala-sequence{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;min-height:20px}
@@ -1262,19 +1258,6 @@
                 </select>
               </div>
               <div class="field tala-suladi-field">
-                <label for="talaSuladiPreset">Suladi Sapta Tala preset</label>
-                <select id="talaSuladiPreset">
-                  <option value="" selected>— build your own below —</option>
-                  <option value="dhruva">Dhruva Tala (| O | |)</option>
-                  <option value="matya">Matya Tala (| O |)</option>
-                  <option value="rupaka">Rupaka Tala (O |)</option>
-                  <option value="jhampa">Jhampa Tala (| U O)</option>
-                  <option value="triputa">Triputa Tala (| O O)</option>
-                  <option value="ata">Ata Tala (| | O O)</option>
-                  <option value="eka">Eka Tala (|)</option>
-                </select>
-              </div>
-              <div class="field tala-suladi-field">
                 <label for="talaJaati">Jaati (applies to every Laghu)</label>
                 <select id="talaJaati">
                   <option value="tishra">Tishra (3 counts)</option>
@@ -1300,23 +1283,21 @@
                   <option value="mishra">Mishra Nadai</option>
                 </select>
               </div>
-              <div class="field tala-suladi-field tala-half-pair">
-                <div class="tala-nadai-hideable tala-half">
-                  <label for="talaDwiNadaiBtn">Dwi Nadai</label>
-                  <select id="talaDwiNadaiBtn">
-                    <option value="no" selected>No</option>
-                    <option value="yes">Yes</option>
-                  </select>
-                </div>
-                <div class="tala-half">
-                  <label for="talaMukhi">Mukhi Talas</label>
-                  <select id="talaMukhi">
-                    <option value="off" selected>Off</option>
-                    <option value="trimukhi">Trimukhi</option>
-                    <option value="panchamukhi">Panchamukhi</option>
-                    <option value="saptamukhi">Saptamukhi</option>
-                  </select>
-                </div>
+              <div class="field tala-suladi-field tala-nadai-hideable">
+                <label for="talaDwiNadaiBtn">Dwi Nadai (mix Nadais per Anga)</label>
+                <select id="talaDwiNadaiBtn">
+                  <option value="no" selected>No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </div>
+              <div class="field tala-suladi-field">
+                <label for="talaMukhi">Mukhi Talas</label>
+                <select id="talaMukhi">
+                  <option value="off" selected>Off</option>
+                  <option value="trimukhi">Trimukhi</option>
+                  <option value="panchamukhi">Panchamukhi</option>
+                  <option value="saptamukhi">Saptamukhi</option>
+                </select>
               </div>
               <div class="field tala-chapu-field" style="display:none">
                 <label for="talaChapuPreset">Chapu tala</label>
@@ -1329,9 +1310,9 @@
             </div>
             <div id="talaSuladiExtras">
               <div class="tala-add-row">
-                <button type="button" class="btn" id="talaAddLaghu">+ Laghu (|)</button>
-                <button type="button" class="btn" id="talaAddDhruta">+ Dhruta (O)</button>
-                <button type="button" class="btn" id="talaAddAnudhruta">+ Anudhruta (U)</button>
+                <button type="button" class="btn" id="talaAddLaghu">+ Laghu</button>
+                <button type="button" class="btn" id="talaAddDhruta">+ Dhruta</button>
+                <button type="button" class="btn" id="talaAddAnudhruta">+ Anudhruta</button>
                 <button type="button" class="btn" id="talaClearAll" style="margin-left:auto;color:var(--red)">Clear all</button>
               </div>
               <div class="tala-sequence" id="talaSequence"></div>
@@ -9771,17 +9752,6 @@ async function confirmSharePick(itemId){
    TALA VISUALIZER
    ===================================================== */
 const TALA_JAATI_COUNTS = {tishra:3, chatushra:4, khanda:5, mishra:7, sankeerna:9};
-const TALA_ANGA_SYMBOL = {laghu:'|', dhruta:'O', anudhruta:'U'}; // the traditional shorthand — shown alongside the anga name wherever it appears
-const SULADI_TALA_PRESETS = {
-  dhruva:  {name:'Dhruva Tala',  angas:['laghu','dhruta','laghu','laghu']},
-  matya:   {name:'Matya Tala',   angas:['laghu','dhruta','laghu']},
-  rupaka:  {name:'Rupaka Tala',  angas:['dhruta','laghu']},
-  jhampa:  {name:'Jhampa Tala',  angas:['laghu','anudhruta','dhruta']},
-  triputa: {name:'Triputa Tala', angas:['laghu','dhruta','dhruta']},
-  ata:     {name:'Ata Tala',     angas:['laghu','laghu','dhruta','dhruta']},
-  eka:     {name:'Eka Tala',     angas:['laghu']},
-};
-function talaAngaSymbolString(angaTypes){ return angaTypes.map(t=>TALA_ANGA_SYMBOL[t]).join(' '); }
 const TALA_FINGER_CYCLE = ['little','ring','middle','index','thumb'];
 function talaLaghuBeats(jaati){
   const n = TALA_JAATI_COUNTS[jaati];
@@ -9792,15 +9762,8 @@ function talaLaghuBeats(jaati){
 function talaFullBeatSequence(angas, jaati){
   const beats = [];
   const TALA_MUKHI_NADAI = { trimukhi:'tishra', panchamukhi:'khanda', saptamukhi:'mishra' };
-  // Tishra/Khanda/Mishra Nadai now split each beat into equal-weight aksharas — 3/5/7 respectively,
-  // matching the classical akshara-count values (same numbers as TALA_JAATI_COUNTS). Every entry is
-  // "1" deliberately: this app's own design principle is that one akshara takes the same real time
-  // no matter which Nadai is selected (see the shared TALA_SPEEDUP_MULTIPLIER below) — uneven weights
-  // would silently contradict that. 'normal' is untouched: a single strike held for the beat's full
-  // duration, same as it's always been — Chatushra Nadai's classical akshara value (4) still shows
-  // correctly in the total below, since that's computed from durationFrac, not from strike count.
-  const splitsTableMatched = { normal:[4], tishra:[1,1,1], khanda:[1,1,1,1,1], mishra:[1,1,1,1,1,1,1] };
-  const splitsTableCompressed = { tishra:[1,1,1], khanda:[1,1,1,1,1], mishra:[1,1,1,1,1,1,1] }; // no 'normal' entry — stays unsplit
+  const splitsTableMatched = { normal:[4], tishra:[2,4], khanda:[4,2,4], mishra:[2,4,4,4] };
+  const splitsTableCompressed = { tishra:[2,4], khanda:[4,2,4], mishra:[2,4,4,4] }; // no 'normal' entry — stays unsplit
   angas.forEach((angaObj, angaIdx)=>{
     const anga = angaObj.type;
     const angaKalai = angaObj.kalai || 1;
@@ -9889,15 +9852,11 @@ function talaCurrentBeats(){
 
 let talaAngas = [], talaJaati = 'chatushra', talaKalai = 1, talaNadai = 'normal', talaDwiNadai = false, talaMukhi = 'off', talaType = 'suladi', talaChapuPreset = 'khanda', talaPlaying = false, talaTimer = null, talaBeatIdx = 0, talaCtx = null;
 
-// Per-anga and total akshara counts are both derived directly from the real playback sequence
-// (talaCurrentBeats()) — summing durationFrac, not counting entries — the same pattern already
-// used for Chapu tala below. This is deliberate: an earlier version computed the displayed total
-// with its own separate formula, which quietly drifted out of sync with what actually played.
-// Deriving both from one shared source means they can't drift apart again.
-function talaAngaAksharaCounts(beats){
-  const counts = {};
-  beats.forEach(b=>{ counts[b.angaIdx] = (counts[b.angaIdx]||0) + b.durationFrac; });
-  return counts;
+const TALA_NADAI_STRIKE_COUNT = { normal:1, tishra:2, khanda:3, mishra:4 };
+function talaAngaCount(angaObj){
+  const type = angaObj.type, kalai = angaObj.kalai||1, nadai = angaObj.nadai||'normal';
+  const base = type==='laghu' ? TALA_JAATI_COUNTS[talaJaati] : (type==='dhruta' ? 2 : 1);
+  return base * (kalai===2?2:1) * (TALA_NADAI_STRIKE_COUNT[nadai]||1);
 }
 function renderTalaSequence(){
   const wrap = $('#talaSequence'); if(!wrap) return;
@@ -9909,8 +9868,6 @@ function renderTalaSequence(){
     return;
   }
   wrap.innerHTML = '';
-  const beats = talaCurrentBeats();
-  const angaCounts = talaAngaAksharaCounts(beats);
   if(!talaAngas.length){
     wrap.innerHTML = '<div class="tiny" style="color:var(--muted)">Nothing added yet — tap Laghu, Dhruta, or Anudhruta above to start building.</div>';
   } else {
@@ -9918,7 +9875,7 @@ function renderTalaSequence(){
       const chip = document.createElement('div');
       chip.className = 'tala-anga-chip'+(talaDwiNadai?' has-dwi-controls':'');
       const label = angaObj.type.charAt(0).toUpperCase()+angaObj.type.slice(1);
-      let inner = '<span><b>'+TALA_ANGA_SYMBOL[angaObj.type]+'</b> '+label+' · '+(angaCounts[i]||0)+'</span>';
+      let inner = '<span>'+label+' · '+talaAngaCount(angaObj)+'</span>';
       if(talaDwiNadai){
         inner += '<select class="anga-kalai-select" data-idx="'+i+'">'+
           '<option value="1"'+(angaObj.kalai===1?' selected':'')+'>Ekakalai</option>'+
@@ -9941,23 +9898,13 @@ function renderTalaSequence(){
       wrap.appendChild(chip);
     });
   }
-  const total = beats.reduce((sum,b)=>sum+b.durationFrac,0);
-  $('#talaTotal').textContent = talaAngas.length ? ('Total: '+total+' aksharas per cycle · '+talaAngaSymbolString(talaAngas.map(a=>a.type))) : '';
+  const total = talaMukhi!=='off' ? talaCurrentBeats().length : talaAngas.reduce((sum,a)=>sum+talaAngaCount(a),0);
+  $('#talaTotal').textContent = talaAngas.length ? ('Total: '+total+' beats per cycle') : '';
 }
-$('#talaSuladiPreset').addEventListener('change', ()=>{
-  const key = $('#talaSuladiPreset').value;
-  $('#talaSuladiPreset').value = ''; // a quick-fill action, not a persistent state — stays blank so it never looks "selected" once you go on to edit the pattern by hand
-  if(!key) return;
-  const preset = SULADI_TALA_PRESETS[key];
-  if(talaAngas.length && !confirm('Replace your current pattern with '+preset.name+' ('+talaAngaSymbolString(preset.angas)+')?')) return;
-  talaStop();
-  talaAngas = preset.angas.map(t=>({type:t, kalai:talaKalai, nadai:talaNadai}));
-  renderTalaSequence();
-});
-$('#talaAddLaghu').addEventListener('click',()=>{ talaAngas.push({type:'laghu', kalai:talaKalai, nadai:talaNadai}); $('#talaSuladiPreset').value=''; renderTalaSequence(); });
-$('#talaAddDhruta').addEventListener('click',()=>{ talaAngas.push({type:'dhruta', kalai:talaKalai, nadai:talaNadai}); $('#talaSuladiPreset').value=''; renderTalaSequence(); });
-$('#talaAddAnudhruta').addEventListener('click',()=>{ talaAngas.push({type:'anudhruta', kalai:talaKalai, nadai:talaNadai}); $('#talaSuladiPreset').value=''; renderTalaSequence(); });
-$('#talaClearAll').addEventListener('click',()=>{ talaStop(); talaAngas=[]; $('#talaSuladiPreset').value=''; renderTalaSequence(); });
+$('#talaAddLaghu').addEventListener('click',()=>{ talaAngas.push({type:'laghu', kalai:talaKalai, nadai:talaNadai}); renderTalaSequence(); });
+$('#talaAddDhruta').addEventListener('click',()=>{ talaAngas.push({type:'dhruta', kalai:talaKalai, nadai:talaNadai}); renderTalaSequence(); });
+$('#talaAddAnudhruta').addEventListener('click',()=>{ talaAngas.push({type:'anudhruta', kalai:talaKalai, nadai:talaNadai}); renderTalaSequence(); });
+$('#talaClearAll').addEventListener('click',()=>{ talaStop(); talaAngas=[]; renderTalaSequence(); });
 $('#talaJaati').addEventListener('change',()=>{ talaJaati = $('#talaJaati').value; renderTalaSequence(); });
 $('#talaKalai').addEventListener('change',()=>{
   talaKalai = parseInt($('#talaKalai').value,10);
@@ -9980,14 +9927,6 @@ $('#talaDwiNadaiBtn').addEventListener('change',()=>{
 });
 $('#talaMukhi').addEventListener('change',()=>{
   talaMukhi = $('#talaMukhi').value;
-  if(talaMukhi!=='off' && talaDwiNadai){
-    // Mukhi Talas and Dwi Nadai are mutually exclusive — same cleanup as turning Dwi Nadai off
-    // directly, so switching straight from Dwi Nadai into Mukhi doesn't leave the per-anga
-    // Nadai/Kalai dropdowns showing in the anga chips after the Dwi Nadai field itself is hidden.
-    talaDwiNadai = false;
-    $('#talaDwiNadaiBtn').value = 'no';
-    talaAngas.forEach(a=>{ a.kalai = talaKalai; a.nadai = talaNadai; });
-  }
   talaUpdateTypeVisibility();
   talaStop(); renderTalaSequence();
 });
@@ -10008,9 +9947,6 @@ function talaUpdateTypeVisibility(){
   // regardless of which caller (tala-type switch, pattern load, Mukhi change) triggered this
   if(talaType!=='chapu'){
     $$('.tala-nadai-hideable').forEach(el=>{ el.style.display = talaMukhi==='off' ? '' : 'none'; });
-    // Dwi Nadai and Mukhi Talas share one grid slot, half-width each — when Dwi Nadai hides
-    // (Mukhi active), let Mukhi's half take the freed space instead of leaving it empty.
-    const mukhiField = $('#talaMukhi'); if(mukhiField) mukhiField.closest('.tala-half').style.flexBasis = talaMukhi==='off' ? '50%' : '100%';
   }
 }
 $('#talaType').addEventListener('change',()=>{
@@ -10184,7 +10120,7 @@ function talaTick(){
   const count = talaBeatIdx + 1;
   talaClickSound(beat.gesture);
   talaApplyGesture(beat, count);
-  $('#talaBeatLabel').textContent = 'Akshara '+count+' of '+beats.length+' — '+beat.anga.charAt(0).toUpperCase()+beat.anga.slice(1);
+  $('#talaBeatLabel').textContent = 'Beat '+count+' of '+beats.length+' — '+beat.anga.charAt(0).toUpperCase()+beat.anga.slice(1);
   talaBeatIdx = (talaBeatIdx+1)%beats.length;
 }
 
@@ -10211,7 +10147,7 @@ function talaScheduler(){
       if(!talaPlaying) return; // guard: playback may have stopped while this was pending
       talaClickSound(beat.gesture);
       talaApplyGesture(beat, count);
-      $('#talaBeatLabel').textContent = 'Akshara '+count+' of '+total+' — '+beat.anga.charAt(0).toUpperCase()+beat.anga.slice(1);
+      $('#talaBeatLabel').textContent = 'Beat '+count+' of '+total+' — '+beat.anga.charAt(0).toUpperCase()+beat.anga.slice(1);
     }, delayMs);
     talaBeatIdx = (talaBeatIdx+1)%beats.length;
     talaNextBeatTime += beatSec * (beat.durationFrac||1);
@@ -10321,7 +10257,6 @@ function renderTalaSavedRow(){
       if(e.target.tagName==='BUTTON') return;
       talaStop();
       talaJaati = p.jaati; talaKalai = p.kalai || 1; talaNadai = p.nadai || 'normal'; talaDwiNadai = p.dwiNadai || false; talaMukhi = p.mukhi || 'off';
-      if(talaMukhi!=='off') talaDwiNadai = false; // same mutual-exclusivity rule as the live toggle — guards against an old/inconsistent saved pattern reproducing the same bug
       // backward compatibility: old saved patterns stored angas as plain strings (e.g. 'laghu'); convert
       // to the new per-anga object format using this pattern's own saved kalai/nadai as the defaults
       talaAngas = (p.angas||[]).map(a => typeof a==='string' ? {type:a, kalai:talaKalai, nadai:talaNadai} : {...a});
