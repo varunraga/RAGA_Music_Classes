@@ -1284,7 +1284,7 @@
                   <option value="sankeerna">Sankeerna (9 counts)</option>
                 </select>
               </div>
-              <div class="field tala-suladi-field">
+              <div class="field tala-suladi-field tala-dwi-hideable">
                 <label for="talaKalai">Kalai (repeats every beat)</label>
                 <select id="talaKalai">
                   <option value="1" selected>1 — Ekakalai (single speed)</option>
@@ -1301,7 +1301,7 @@
                 </select>
               </div>
               <div class="field tala-suladi-field tala-half-pair">
-                <div class="tala-nadai-hideable tala-half">
+                <div class="tala-mukhi-hideable tala-half">
                   <label for="talaDwiNadaiBtn">Dwi Nadai</label>
                   <select id="talaDwiNadaiBtn">
                     <option value="no" selected>No</option>
@@ -9882,11 +9882,16 @@ function talaCurrentBeats(){
 
 let talaAngas = [], talaJaati = 'chatushra', talaKalai = 1, talaNadai = 'normal', talaDwiNadai = false, talaMukhi = 'off', talaType = 'suladi', talaChapuPreset = 'khanda', talaPlaying = false, talaTimer = null, talaBeatIdx = 0, talaCtx = null;
 
-const TALA_NADAI_STRIKE_COUNT = { normal:1, tishra:2, khanda:3, mishra:4 };
+const TALA_NADAI_AKSHARA_COUNT = { normal:4, tishra:3, khanda:5, mishra:7 }; // classical akshara (time-value) count per beat, for the displayed total only — matches TALA_JAATI_COUNTS' same values. Does not feed into actual playback/hand-animation timing in any way — that stays driven entirely by talaFullBeatSequence/splitsTable, unchanged.
 function talaAngaCount(angaObj){
   const type = angaObj.type, kalai = angaObj.kalai||1, nadai = angaObj.nadai||'normal';
   const base = type==='laghu' ? TALA_JAATI_COUNTS[talaJaati] : (type==='dhruta' ? 2 : 1);
-  return base * (kalai===2?2:1) * (TALA_NADAI_STRIKE_COUNT[nadai]||1);
+  // 'normal' Nadai mirrors its real playback behavior exactly: unsplit (no extra multiplier)
+  // unless Dwi Nadai's matched-pace system is active, same distinction splitsTable already makes.
+  // Tishra/Khanda/Mishra don't need this — their real behavior is identical whether Dwi Nadai is
+  // on or off, so the classical akshara count always applies for those.
+  const nadaiMult = nadai==='normal' ? (talaDwiNadai ? 4 : 1) : (TALA_NADAI_AKSHARA_COUNT[nadai]||1);
+  return base * (kalai===2?2:1) * nadaiMult;
 }
 function renderTalaSequence(){
   const wrap = $('#talaSequence'); if(!wrap) return;
@@ -9929,7 +9934,7 @@ function renderTalaSequence(){
     });
   }
   const total = talaMukhi!=='off' ? talaCurrentBeats().length : talaAngas.reduce((sum,a)=>sum+talaAngaCount(a),0);
-  $('#talaTotal').textContent = talaAngas.length ? ('Total: '+total+' beats per cycle · '+talaAngaSymbolString(talaAngas.map(a=>a.type))) : '';
+  $('#talaTotal').textContent = talaAngas.length ? ('Total: '+total+' aksharas per cycle · '+talaAngaSymbolString(talaAngas.map(a=>a.type))) : '';
 }
 $('#talaSuladiPreset').addEventListener('change', ()=>{
   const key = $('#talaSuladiPreset').value;
@@ -9969,6 +9974,7 @@ $('#talaDwiNadaiBtn').addEventListener('change',()=>{
     // always behaves uniformly regardless of what per-anga customization happened while it was on
     talaAngas.forEach(a=>{ a.kalai = talaKalai; a.nadai = talaNadai; });
   }
+  talaUpdateTypeVisibility();
   talaStop(); renderTalaSequence();
 });
 $('#talaMukhi').addEventListener('change',()=>{
@@ -10000,7 +10006,14 @@ function talaUpdateTypeVisibility(){
   // applied last so it always takes final precedence over the suladi-field visibility above,
   // regardless of which caller (tala-type switch, pattern load, Mukhi change) triggered this
   if(talaType!=='chapu'){
-    $$('.tala-nadai-hideable').forEach(el=>{ el.style.display = talaMukhi==='off' ? '' : 'none'; });
+    // The Dwi Nadai control itself only ever hides for Mukhi (mutually exclusive with it) — it
+    // must never hide itself just because it's switched on, or there'd be no way to turn it off.
+    $$('.tala-mukhi-hideable').forEach(el=>{ el.style.display = talaMukhi==='off' ? '' : 'none'; });
+    // Nadai hides for either Mukhi OR Dwi Nadai — both replace it with a per-anga/per-gesture
+    // choice. Kalai only hides for Dwi Nadai — Mukhi Talas has no per-anga way to set Kalai, so
+    // it needs to stay available even while Mukhi is active.
+    $$('.tala-nadai-hideable').forEach(el=>{ el.style.display = (talaMukhi==='off' && !talaDwiNadai) ? '' : 'none'; });
+    $$('.tala-dwi-hideable').forEach(el=>{ el.style.display = talaDwiNadai ? 'none' : ''; });
     // Dwi Nadai and Mukhi Talas share one grid slot, half-width each — when Dwi Nadai hides
     // (Mukhi active), let Mukhi's half take the freed space instead of leaving it empty.
     const mukhiField = $('#talaMukhi'); if(mukhiField) mukhiField.closest('.tala-half').style.flexBasis = talaMukhi==='off' ? '50%' : '100%';
