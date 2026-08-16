@@ -9882,15 +9882,14 @@ function talaCurrentBeats(){
 
 let talaAngas = [], talaJaati = 'chatushra', talaKalai = 1, talaNadai = 'normal', talaDwiNadai = false, talaMukhi = 'off', talaType = 'suladi', talaChapuPreset = 'khanda', talaPlaying = false, talaTimer = null, talaBeatIdx = 0, talaCtx = null;
 
-const TALA_NADAI_AKSHARA_COUNT = { normal:4, tishra:3, khanda:5, mishra:7 }; // classical akshara (time-value) count per beat, for the displayed total only — matches TALA_JAATI_COUNTS' same values. Does not feed into actual playback/hand-animation timing in any way — that stays driven entirely by talaFullBeatSequence/splitsTable, unchanged.
+const TALA_NADAI_AKSHARA_COUNT = { tishra:3, khanda:5, mishra:7 }; // classical akshara (time-value) count per beat, for the displayed total only — matches TALA_JAATI_COUNTS' same values. 'normal' isn't listed here since it's a flat 2 regardless of Nadai/Dwi Nadai (handled directly below). Does not feed into actual playback/hand-animation timing in any way — that stays driven entirely by talaFullBeatSequence/splitsTable, unchanged.
 function talaAngaCount(angaObj){
   const type = angaObj.type, kalai = angaObj.kalai||1, nadai = angaObj.nadai||'normal';
   const base = type==='laghu' ? TALA_JAATI_COUNTS[talaJaati] : (type==='dhruta' ? 2 : 1);
-  // 'normal' Nadai mirrors its real playback behavior exactly: unsplit (no extra multiplier)
-  // unless Dwi Nadai's matched-pace system is active, same distinction splitsTable already makes.
-  // Tishra/Khanda/Mishra don't need this — their real behavior is identical whether Dwi Nadai is
-  // on or off, so the classical akshara count always applies for those.
-  const nadaiMult = nadai==='normal' ? (talaDwiNadai ? 4 : 1) : (TALA_NADAI_AKSHARA_COUNT[nadai]||1);
+  // 'normal' Nadai (Chatushra) is always 2 aksharas per beat — confirmed with the user this stays
+  // true whether Dwi Nadai is on or off (never 1, never 4). This is a display-only figure; it has
+  // no bearing on the real playback timing below, which stays exactly as it's always been.
+  const nadaiMult = nadai==='normal' ? 2 : (TALA_NADAI_AKSHARA_COUNT[nadai]||1);
   return base * (kalai===2?2:1) * nadaiMult;
 }
 function renderTalaSequence(){
