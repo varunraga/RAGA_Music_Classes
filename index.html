@@ -1546,7 +1546,7 @@
         <button class="btn" id="notRecordBtn">Record student singing this</button>
         <button class="btn" id="notAnnotateBtn" style="display:none">Annotate</button>
         <button class="btn" id="notVersionsBtn" style="display:none">Version history</button>
-        <button class="btn gold" id="notPracticeSheetBtn">Print practice sheet</button>
+        <button class="btn gold" id="notPracticeSheetBtn">Download practice sheet</button>
         <button class="btn gold" id="notStyledSheetBtn" style="display:none">Download styled practice sheet</button>
       </div>
       <div class="right" style="display:flex;gap:8px">
@@ -8122,12 +8122,25 @@ $('#recVersionsBtn').addEventListener('click', openRecordingVersions);
 $('#notPracticeSheetBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
   if(!n.hasPdf){
-    // No PDF attached — exactly as before, nothing changes here.
-    printCtx = practiceSheetHTML(n);
-    $('#invTitle').textContent = 'Practice sheet — '+(n.title||'(untitled)');
-    $('#invBody').innerHTML = '<div class="docwrap" style="max-height:55vh;overflow:auto">'+printCtx+'</div>';
-    closeModal('m-notation-view');
-    openModal('m-invoice');
+    // No notation PDF attached — this used to fall back to the browser's own print dialog on a
+    // scrollable on-screen preview, which on mobile browsers was unreliable in exactly the ways
+    // reported: only the currently-scrolled page actually printing, and the banner/letterhead
+    // getting dropped. Building a real PDF directly with the same reliable pdf-lib generator the
+    // "combined with notation" path already uses (just without a notation PDF to merge in) means
+    // there's no print dialog involved at all, and it's the same proven multi-page-safe code path.
+    if(!window.PDFLib){ toast('Still loading the PDF engine — try again in a second'); return; }
+    toast('Building practice sheet…');
+    try{
+      const bytes = await buildPracticeSheetCoverPdfBytes(n);
+      const blob = new Blob([bytes], {type:'application/pdf'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = (n.title||'practice-sheet').replace(/[^\w\-]+/g,'_')+'.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      toast('Downloaded — lyrics and meaning, with letterhead');
+    }catch(e){
+      toast('Could not build the practice sheet ('+((e&&e.message)||e)+')');
+    }
     return;
   }
   if(!window.PDFLib){ toast('Still loading the PDF engine — try again in a second'); return; }
