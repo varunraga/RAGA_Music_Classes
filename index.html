@@ -2876,6 +2876,13 @@ async function fileViewerRenderPagesAtZoom(myToken){
   const doc = fileViewerPdfDoc; if(!doc) return;
   const pages = $('#fileViewerPdfPages');
   pages.innerHTML = '';
+  // Centered content that overflows its scroll container only lets you scroll into the
+  // "positive" side (right) — the left half of the overflow sits in space the browser won't
+  // scroll to at all, which is exactly the "zoom in, can't scroll left, edge gets cut off" bug.
+  // Left-aligning instead once zoomed keeps the page's own left edge anchored at the container's
+  // natural scroll origin, so the overflow only ever extends rightward — reachable by scrolling,
+  // both directions. At 100% (nothing overflows) it stays centered, unchanged from before.
+  pages.style.alignItems = fileViewerZoom<=1 ? 'center' : 'flex-start';
   const bodyWidth = Math.max(200, $('#fileViewerBody').clientWidth - 20);
   const dpr = window.devicePixelRatio || 1;
   const MAX_CANVAS_DIM = 3500; // stays well under browsers' practical canvas size ceilings even at max zoom on a high-DPI phone
@@ -2891,6 +2898,8 @@ async function fileViewerRenderPagesAtZoom(myToken){
     canvas.width = viewport.width; canvas.height = viewport.height;
     canvas.style.width = (viewport.width/dpr)+'px';
     canvas.style.maxWidth = fileViewerZoom<=1 ? '100%' : 'none'; // zoomed-in pages are meant to overflow and scroll, not squash back down
+    canvas.style.marginLeft = fileViewerZoom<=1 ? '' : 'auto'; // horizontally centers the page within the scrollable width when it's narrower than the container even while zoomed (e.g. a portrait page in a wide viewer)
+    canvas.style.marginRight = fileViewerZoom<=1 ? '' : 'auto';
     canvas.style.background = '#fff';
     canvas.style.boxShadow = '0 1px 6px rgba(0,0,0,.4)';
     pages.appendChild(canvas);
