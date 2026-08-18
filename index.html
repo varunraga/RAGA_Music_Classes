@@ -1630,6 +1630,9 @@
     <div class="data-backup-row"><a href="#" class="foot-link" id="lnkRecentlyDeleted">Recently deleted</a><div class="tiny" style="color:var(--muted)">Restore a recording, composition, or tala video deleted in the last 30 days.</div></div>
     <div class="data-backup-row"><a href="#" class="foot-link" id="lnkSnapshots">Snapshots</a><div class="tiny" style="color:var(--muted)">Automatic daily save points in Google Drive — roll back to an earlier day if needed.</div></div>
 
+    <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">TOOLS</div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkDetectSeries">Group recurring classes</a><div class="tiny" style="color:var(--muted)">One-time scan for weekly classes scheduled before series grouping existed, so they can be bulk-edited too.</div></div>
+
     <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">ADVANCED</div>
     <div class="data-backup-row" style="border-bottom:none"><a href="#" class="foot-link" id="lnkChangeClientId">Change Client ID</a><div class="tiny" style="color:var(--muted)">Only needed if you're running your own copy of this app with your own Google Cloud project.</div></div>
 
@@ -3401,6 +3404,50 @@ $('#cStu2').addEventListener('change', updateTzComputedLines);
 // target rather than blindly overwritten, so a student already marked something other than
 // "Scheduled" on a given date keeps that, new students default to "Scheduled", and dropped
 // students' entries are removed rather than left stale.
+// One-time retroactive scan for classes scheduled before series-grouping existed. Only considers
+// classes that are (a) upcoming — date >= TODAY, matching what the bulk-edit checkbox actually
+// acts on anyway, and (b) don't already have a seriesId. Groups by same kind + same
+// student(s)/guru + same time + same mode, then within each group only chains together classes
+// spaced an exact multiple of 7 days apart (so day-of-week always stays consistent) — a gap of
+// several weeks (e.g. a skipped/cancelled week) still chains correctly, but two classes that just
+// happen to share a time slot on unrelated dates never get grouped as if they were a series.
+function detectClassSeries(){
+  const candidates = S.classes.filter(c=>!c.seriesId && c.date>=TODAY);
+  const groups = {};
+  candidates.forEach(c=>{
+    const key = c.kind==='own-lesson'
+      ? ['own-lesson', c.withWhom||'', c.time, c.mode].join('|')
+      : ['teaching', c.studentIds.slice().sort().join(','), c.time, c.mode].join('|');
+    (groups[key] ||= []).push(c);
+  });
+  const chains = [];
+  Object.values(groups).forEach(list=>{
+    list.sort((a,b)=> a.date<b.date?-1:(a.date>b.date?1:0));
+    let chain = [list[0]];
+    for(let i=1;i<list.length;i++){
+      const diffDays = Math.round((parseD(list[i].date)-parseD(chain[chain.length-1].date))/86400000);
+      if(diffDays>0 && diffDays%7===0){ chain.push(list[i]); }
+      else { if(chain.length>=2) chains.push(chain); chain=[list[i]]; }
+    }
+    if(chain.length>=2) chains.push(chain);
+  });
+  return chains;
+}
+$('#lnkDetectSeries').addEventListener('click', e=>{
+  e.preventDefault();
+  const chains = detectClassSeries();
+  if(!chains.length){ toast('No recurring weekly classes found that need grouping'); return; }
+  const totalClasses = chains.reduce((t,ch)=>t+ch.length,0);
+  const preview = chains.slice(0,6).map(ch=>'· '+sessionNames(ch[0])+' — '+dayLabel(parseD(ch[0].date).getDay())+' '+fmtTime12(ch[0].time)+' ('+ch.length+' classes)').join('\n');
+  const more = chains.length>6 ? '\n…and '+(chains.length-6)+' more' : '';
+  if(!confirm('Found '+chains.length+' recurring series, covering '+totalClasses+' upcoming classes:\n\n'+preview+more+'\n\nGroup them so each series can be bulk-edited going forward? This only tags them — nothing about the classes themselves changes.')) return;
+  chains.forEach(chain=>{
+    const seriesId = 'SR'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+chains.indexOf(chain);
+    chain.forEach(c=>{ c.seriesId = seriesId; });
+  });
+  renderAll();
+  toast('Grouped '+totalClasses+' classes into '+chains.length+' series');
+});
 function applyToFutureSeries(c, fields){
   if(!c.seriesId) return 0;
   const targets = S.classes.filter(x=>x.seriesId===c.seriesId && x.cid!==c.cid && x.date>=TODAY);
