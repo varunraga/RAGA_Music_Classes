@@ -1977,6 +1977,9 @@
         <div class="field span2"><label for="cHw" id="cHwLabel">Homework</label><input id="cHw" placeholder="e.g. Practice at both speeds daily"></div>
       </div>
     </div>
+    <div id="cSeriesBlock" style="margin-top:14px;display:none">
+      <label class="check" style="font-weight:400;white-space:normal"><input type="checkbox" id="cApplySeries"> <span id="cApplySeriesLabel"></span></label>
+    </div>
     <div class="modal-foot">
       <button class="btn danger" id="clsDelete" style="display:none">Delete class</button>
       <div class="right">
@@ -3390,6 +3393,29 @@ $('#cDate').addEventListener('change', updateTzComputedLines);
 $('#cTime').addEventListener('change', updateTzComputedLines);
 $('#cStu1').addEventListener('change', updateTzComputedLines);
 $('#cStu2').addEventListener('change', updateTzComputedLines);
+// Applied only to the SAME kind of session (teaching stays with teaching, own-lesson with
+// own-lesson — seriesId is never shared across the two), and only to classes still in the
+// future — a series can span past-completed and upcoming classes together, and completed ones
+// keep whatever actually happened, same principle already used for fee changes.
+// studentIds gets special handling: att/mat/inr are re-keyed to the new student set for each
+// target rather than blindly overwritten, so a student already marked something other than
+// "Scheduled" on a given date keeps that, new students default to "Scheduled", and dropped
+// students' entries are removed rather than left stale.
+function applyToFutureSeries(c, fields){
+  if(!c.seriesId) return 0;
+  const targets = S.classes.filter(x=>x.seriesId===c.seriesId && x.cid!==c.cid && x.date>=TODAY);
+  targets.forEach(t=>{
+    Object.assign(t, fields);
+    if(fields.studentIds){
+      const newAtt = {}; fields.studentIds.forEach(sid=>{ newAtt[sid] = (t.att && t.att[sid]) || 'Scheduled'; });
+      t.att = newAtt;
+      if(t.mat){ const newMat = {}; fields.studentIds.forEach(sid=>{ if(t.mat[sid]) newMat[sid]=t.mat[sid]; }); t.mat = newMat; }
+      if(t.inr){ const newInr = {}; fields.studentIds.forEach(sid=>{ if(t.inr[sid]!=null) newInr[sid]=t.inr[sid]; }); t.inr = newInr; }
+    }
+    t.updatedAt = Date.now();
+  });
+  return targets.length;
+}
 function openClassModal(cid, presetDate, presetStu){
   editingClassId = cid || null;
   const c = cid ? S.classes.find(x=>x.cid===cid) : null;
@@ -3433,6 +3459,17 @@ function openClassModal(cid, presetDate, presetStu){
   if(!c && presetStu){ $('#cStu1').value = presetStu; }
   if(!c) autofillFromPrimary();
   updateTzComputedLines();
+  // Only meaningful when editing an existing class that's actually part of a recurring series,
+  // and only future classes ever get touched — past/completed ones in the series keep whatever
+  // actually happened, same principle as fee changes never touching already-completed classes.
+  if(c && c.seriesId){
+    const futureCount = S.classes.filter(x=>x.seriesId===c.seriesId && x.cid!==c.cid && x.date>=TODAY).length;
+    $('#cSeriesBlock').style.display = futureCount ? '' : 'none';
+    $('#cApplySeries').checked = false;
+    $('#cApplySeriesLabel').textContent = 'Apply this change to '+futureCount+' other upcoming class'+(futureCount===1?'':'es')+' in this series';
+  } else {
+    $('#cSeriesBlock').style.display = 'none';
+  }
   openModal('m-class');
 }
 function renderAttRows(c){
@@ -3566,7 +3603,11 @@ $('#clsSave').addEventListener('click', async ()=>{
       }
       Object.assign(c, patch);
       pendingOwnFeeReceiptFile = null; ownFeeReceiptRemoved = false;
-      toast('Lesson updated — with '+withWhom);
+      let seriesCount = 0;
+      if($('#cApplySeries').checked && c.seriesId){
+        seriesCount = applyToFutureSeries(c, {withWhom, time, dur, mode, link});
+      }
+      toast('Lesson updated — with '+withWhom+(seriesCount?' · applied to '+seriesCount+' more upcoming lesson'+(seriesCount===1?'':'s'):''));
       closeModal('m-class'); renderAll(); return;
     }
     let dates=[date];
@@ -3588,10 +3629,14 @@ $('#clsSave').addEventListener('click', async ()=>{
       const list = clashes.slice(0,4).map(x=>fmtD(x.d)+' — clashes with '+x.w).join('\n');
       if(!confirm('Time clash detected:\n\n'+list+(clashes.length>4?'\n…and '+(clashes.length-4)+' more':'')+'\n\nSchedule anyway?')) return;
     }
+    // Shared across every class in this batch — lets "apply to the whole series" later find them
+    // all again. Only generated for an actual repeating batch; a one-off lesson doesn't need one.
+    const ownLessonSeriesId = dates.length>1 ? 'SR'+Date.now().toString(36)+Math.random().toString(36).slice(2,6) : null;
     dates.forEach(d=>{
       S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'own-lesson', withWhom, studentIds:[], att:{},
         ownStatus: d < TODAY ? 'Completed' : 'Scheduled', feeAmount:null, feeMode:null, feeRef:'',
         feeReceiptFileId:null, feeReceiptExt:null, feeReceiptMime:null, feeReceiptName:null,
+        seriesId: dates.length>1 ? ownLessonSeriesId : null,
         date:d, time, dur, mode, link, topic:'', hw:'', updatedAt:Date.now()});
       S.seq.cls++;
     });
@@ -3639,7 +3684,11 @@ $('#clsSave').addEventListener('click', async ()=>{
     });
     Object.assign(c,{kind:'teaching', studentIds:ids, att:newAtt, inr:newInr, mat:newMat, date, time, dur, mode, link,
       topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()});
-    toast('Class updated — '+sessionNames(c));
+    let seriesCount = 0;
+    if($('#cApplySeries').checked && c.seriesId){
+      seriesCount = applyToFutureSeries(c, {studentIds:ids.slice(), time, dur, mode, link});
+    }
+    toast('Class updated — '+sessionNames(c)+(seriesCount?' · applied to '+seriesCount+' more upcoming class'+(seriesCount===1?'':'es'):''));
     closeModal('m-class'); renderAll(); return;
   }
 
@@ -3664,11 +3713,14 @@ $('#clsSave').addEventListener('click', async ()=>{
     const list = clashes.slice(0,4).map(x=>fmtD(x.d)+' — clashes with '+x.w).join('\n');
     if(!confirm('Time clash detected:\n\n'+list+(clashes.length>4?'\n…and '+(clashes.length-4)+' more':'')+'\n\nSchedule anyway?')) return;
   }
+  // Shared across every class in this batch — lets "apply to the whole series" later find them
+  // all again. Only generated for an actual repeating batch; a one-off class doesn't need one.
+  const teachingSeriesId = dates.length>1 ? 'SR'+Date.now().toString(36)+Math.random().toString(36).slice(2,6) : null;
   dates.forEach(d=>{
     const att={}; ids.forEach(sid=>att[sid]= d < TODAY ? 'Completed' : 'Scheduled');
     const inr0={}; ids.forEach(sid=>{ const st=sById(sid); if(st && !isUSD(st) && att[sid]==='Completed') inr0[sid]=unitFee(st,mode); });
     S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'teaching', studentIds:ids, att, date:d, time, dur, mode,
-      link, inr:inr0, mat:{}, topic:'', hw:'', updatedAt:Date.now()});
+      link, inr:inr0, mat:{}, topic:'', hw:'', seriesId:teachingSeriesId, updatedAt:Date.now()});
     S.seq.cls++;
   });
   toast(dates.length>1 ? dates.length+' weekly classes scheduled — '+ids.map(firstName).join(' & ')
