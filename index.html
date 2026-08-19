@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-07-20 -->
+<!-- Build: 2026-08-19 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -627,9 +627,9 @@
   .bnav[data-view="studio"].active{background:var(--rose-bg)}
   .bnav[data-view="studio"].active svg{color:var(--rose-ink)}
   @media (max-width:760px){
-    #personalCards,#ragaCards,#insCards,#insMyPracticeCards,.stat-row{grid-template-columns:1fr!important}
-    #personalCards .stat,#ragaCards .stat,#insCards .stat,#insMyPracticeCards .stat,.stat-row .stat{min-width:0;padding:13px 14px}
-    #personalCards .value,#ragaCards .value,#insCards .value,#insMyPracticeCards .value{font-size:1.2rem!important;overflow-wrap:break-word}
+    #personalCards,#ragaCards,#myLessonsCards,#insCards,#insMyPracticeCards,.stat-row{grid-template-columns:1fr!important}
+    #personalCards .stat,#ragaCards .stat,#myLessonsCards .stat,#insCards .stat,#insMyPracticeCards .stat,.stat-row .stat{min-width:0;padding:13px 14px}
+    #personalCards .value,#ragaCards .value,#myLessonsCards .value,#insCards .value,#insMyPracticeCards .value{font-size:1.2rem!important;overflow-wrap:break-word}
     .top-actions{flex-direction:column;align-items:stretch;width:100%;gap:8px}
     .top-actions .gsearch input{width:100%!important}
     .top-actions #themeToggle{align-self:flex-start;width:44px}
@@ -974,6 +974,16 @@
         <div class="panel-head"><h3>Withdrawal register</h3><span class="hint" id="wdTotalHint"></span></div>
         <div class="tscroll"><table id="wdTable"><thead><tr><th>Date</th><th>Mode</th><th>Remarks</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead><tbody></tbody></table></div>
         <div class="empty" id="wdEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No withdrawals recorded yet — your first one starts the rolling 31-day cycle.</div>
+        <div class="panel-body" style="padding-top:0;border-top:1px solid var(--line);margin-top:10px">
+          <div class="form-grid">
+            <div class="field"><label for="ragaNextDateOverride">Next eligible date (from ragashiksha.com)</label><input id="ragaNextDateOverride" type="date"></div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn small" id="ragaNextDateSave">Save date</button>
+            <button class="btn small" id="ragaNextDateReset" style="display:none">Reset to auto (31-day)</button>
+            <span class="hint" id="ragaNextDateHint"></span>
+          </div>
+        </div>
       </div>
       <div class="panel">
         <div class="panel-head"><h3 id="wdFormTitle">Record a withdrawal</h3><span class="hint">money moved from the RAGA website to your account</span></div>
@@ -2683,7 +2693,11 @@ const ragaAccruedAll = () => ragaStudents().reduce((t,s)=> t + sumCompleted(s,nu
 const ragaWithdrawnAll = () => S.withdrawals.reduce((t,w)=>t+w.amount,0);
 const ragaEligible = () => ragaAccruedAll() - ragaWithdrawnAll();
 function lastWithdrawal(){ return S.withdrawals.length ? S.withdrawals.reduce((a,b)=> a.date>b.date?a:b) : null; }
-function nextWithdrawDate(){ const lw=lastWithdrawal(); return lw ? addDaysS(lw.date,31) : null; }
+// Normally the next-eligible date is auto-calculated as last withdrawal + 31 days. RAGA
+// Shiksha's own site sometimes shows a slightly different date (their exact cycle logic isn't
+// public), so a manual override lets the user type in whatever date the RAGA site is showing
+// and have the app match it, until the next withdrawal resets the cycle.
+function nextWithdrawDate(){ if(S.meta.ragaNextWithdrawOverride) return S.meta.ragaNextWithdrawOverride; const lw=lastWithdrawal(); return lw ? addDaysS(lw.date,31) : null; }
 function withdrawOpen(){ const nd=nextWithdrawDate(); return !nd || TODAY>=nd; }
 function daysUntil(s){ return Math.round((parseD(s)-parseD(TODAY))/86400000); }
 
@@ -4525,6 +4539,18 @@ $('#wdReceiptFile').addEventListener('change', (e)=>{
     $('#wdReceiptFile').value=''; $('#wdReceiptChip').style.display='none';
   });
 });
+$('#ragaNextDateSave').addEventListener('click', ()=>{
+  const v = $('#ragaNextDateOverride').value;
+  if(!v){ toast('Pick a date first'); return; }
+  S.meta.ragaNextWithdrawOverride = v;
+  toast('Next eligible date updated');
+  renderAll();
+});
+$('#ragaNextDateReset').addEventListener('click', ()=>{
+  delete S.meta.ragaNextWithdrawOverride;
+  toast('Back to auto-calculated date');
+  renderAll();
+});
 $('#wdAdd').addEventListener('click', async ()=>{
   const amt=parseInt($('#wdAmount').value,10);
   if(isNaN(amt)||amt<=0){ toast('Enter an amount greater than zero'); $('#wdAmount').focus(); return; }
@@ -4536,6 +4562,7 @@ $('#wdAdd').addEventListener('click', async ()=>{
     const nd=nextWithdrawDate();
     if(nd && date<nd && !confirm('The rolling 31-day window opens on '+fmtDFull(nd)+' ('+daysUntil(nd)+' days from today).\n\nRecord this withdrawal anyway?')) return;
   }
+  if(!editingWithdrawalId) delete S.meta.ragaNextWithdrawOverride; // fresh withdrawal starts a new auto-calculated cycle
   const btn = $('#wdAdd');
   const rec={date, amount:amt, mode:$('#wdMode').value, ref:$('#wdRef').value.trim(), remarks:$('#wdRemarks').value.trim(), updatedAt:Date.now()};
   const wid = editingWithdrawalId || ('W'+pad(S.seq.wd).padStart(4,'0'));
@@ -4625,6 +4652,9 @@ function renderRaga(){
       '<button class="btn tiny danger" data-wdel="'+w.wid+'">Delete</button></div></td></tr>');
   });
   $('#wdTotalHint').textContent='Total withdrawn: '+RUPEE.format(wdn);
+  if(document.activeElement!==$('#ragaNextDateOverride')) $('#ragaNextDateOverride').value = nd || '';
+  $('#ragaNextDateReset').style.display = S.meta.ragaNextWithdrawOverride ? '' : 'none';
+  $('#ragaNextDateHint').textContent = S.meta.ragaNextWithdrawOverride ? 'manually set' : 'auto-calculated (last withdrawal + 31 days)';
   tb.querySelectorAll('[data-wedit]').forEach(b=>b.addEventListener('click',()=>startWdEdit(b.dataset.wedit)));
   tb.querySelectorAll('[data-wdel]').forEach(b=>b.addEventListener('click',()=>deleteWithdrawal(b.dataset.wdel)));
   tb.querySelectorAll('[data-wreceipt]').forEach(b=>b.addEventListener('click',(e)=>{
