@@ -96,8 +96,8 @@
     background-position:-160% 0,0 0;
     -webkit-background-clip:text;background-clip:text;
     filter:drop-shadow(0 -1px 0 rgba(255,224,130,.45)) drop-shadow(0 0 8px rgba(95,203,156,.45)) drop-shadow(0 0 2px rgba(189,240,214,.35))}
-  .brand h1 .brand-rule{display:flex;align-items:center;gap:6px;color:var(--gold);font-size:.5rem;line-height:1;margin:1px 0 5px}
-  .brand h1 .brand-rule i{flex:0 0 16px;height:1px;background:linear-gradient(90deg,transparent,#B8892E)}
+  .brand h1 .brand-rule{display:flex;align-items:center;gap:6px;color:var(--gold);font-size:.5rem;line-height:1;margin:1px 0 5px;width:52px}
+  .brand h1 .brand-rule i{flex:1 1 0;min-width:0;height:1px;background:linear-gradient(90deg,transparent,#B8892E)}
   .brand h1 .brand-rule i:last-child{background:linear-gradient(90deg,#B8892E,transparent)}
   .brand h1 .brand-sub{display:flex;align-items:center;gap:8px;font-size:.82rem;font-weight:700;letter-spacing:.2em;color:#6E2F14;white-space:nowrap;text-shadow:0 0 1px rgba(201,162,39,.28)}
   [data-theme="dark"] .brand h1 .brand-sub{color:#C98B6B}
@@ -10924,6 +10924,32 @@ function renderAll(force){
 function flushDeferredRenderIfIdle(){
   if(renderAllDeferredPending && !tpPlaying && !talaPlaying) renderAll();
 }
+// The brand-rule (dot-line under RAGA) and the swave decoration (under Music Classes) are meant
+// to exactly span the text above them. Both wrapping spans stretch to the full sidebar width
+// (block-level), so their own offsetWidth doesn't reflect the actual rendered glyph width — we
+// measure the text node directly via Range, which accounts for the real font, letter-spacing,
+// and uppercase transform as rendered on this device.
+function textRenderedWidth(el){
+  if(!el) return 0;
+  try{
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getBoundingClientRect().width;
+  }catch(e){ return 0; }
+}
+function syncBrandDecor(){
+  const ragaEl = document.querySelector('.brand-raga');
+  const subEl = document.querySelector('.brand-sub');
+  const ruleEl = document.querySelector('.brand-rule');
+  const swaveEl = document.querySelector('.brand .swave');
+  if(!ragaEl || !subEl || !ruleEl || !swaveEl) return;
+  const ragaW = textRenderedWidth(ragaEl);
+  const subW = textRenderedWidth(subEl);
+  if(ragaW > 4) ruleEl.style.width = ragaW+'px';
+  if(subW > 4) swaveEl.style.width = subW+'px';
+}
+window.addEventListener('resize', () => { clearTimeout(window._brandDecorT); window._brandDecorT = setTimeout(syncBrandDecor, 150); });
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(syncBrandDecor).catch(()=>{});
 $('#bannerImg').src = BANNER;
 if($('#studioBannerImg')) $('#studioBannerImg').src = STUDIO_BANNER;
 if($('#notationBannerImg')) $('#notationBannerImg').src = NOTATION_BANNER;
@@ -10932,7 +10958,7 @@ if($('#talaBannerImg')) $('#talaBannerImg').src = TALA_BANNER;
 if($('#talaHandImgBack')) $('#talaHandImgBack').src = TALA_HAND_BACK;
 if($('#talaHandImgPalm')) $('#talaHandImgPalm').src = TALA_HAND_PALM;
 renderAll();
-// On desktop browsers where navigator.share doesn't exist, share buttons always fall through
+syncBrandDecor();
 // to download — relabel them so the UI isn't misleading.
 if(!navigator.share){
   if($('#recShareBtn')) $('#recShareBtn').textContent = 'Download audio';
