@@ -5591,6 +5591,7 @@ function renderRecentlyDeletedList(){
   (S.recordings||[]).forEach(r=>{ if(r.deletedAt) items.push({kind:'recording', label:'Recording', obj:r}); });
   (S.notations||[]).forEach(n=>{ if(n.deletedAt) items.push({kind:'notation', label:'Composition', obj:n}); });
   (S.talaExports||[]).forEach(v=>{ if(v.deletedAt) items.push({kind:'talaVideo', label:'Tala video', obj:v}); });
+  (S.talaPatterns||[]).forEach(p=>{ if(p.deletedAt) items.push({kind:'talaPattern', label:'Tala pattern', obj:{...p, title:p.name}}); });
   items.sort((a,b)=>b.obj.deletedAt-a.obj.deletedAt);
   if(!items.length){
     el.innerHTML = '<div class="empty" style="padding:20px 0">Nothing in Recently Deleted right now.</div>';
@@ -5627,6 +5628,8 @@ function restoreDeletedItem(kind, id){
     const n = S.notations.find(x=>x.id===id); if(n){ delete n.deletedAt; persist(); renderNotationFilters(); renderNotationList(); toast('Restored'); }
   } else if(kind==='talaVideo'){
     const v = S.talaExports.find(x=>x.id===id); if(v){ delete v.deletedAt; persist(); renderTalaVideoList(); toast('Restored'); }
+  } else if(kind==='talaPattern'){
+    const p = S.talaPatterns.find(x=>x.id===id); if(p){ delete p.deletedAt; p.updatedAt = Date.now(); persist(); renderTalaSavedRow(); toast('Restored'); }
   }
 }
 async function purgeDeletedItem(kind, id){
@@ -5645,6 +5648,8 @@ async function purgeDeletedItem(kind, id){
     try{ await mediaDelete('tala-video:'+id); }catch(e){}
     if(v.driveFileId) driveDeleteFile(v.driveFileId);
     S.talaExports = S.talaExports.filter(x=>x.id!==id);
+  } else if(kind==='talaPattern'){
+    S.talaPatterns = S.talaPatterns.filter(x=>x.id!==id);
   }
   persist();
 }
@@ -5657,8 +5662,9 @@ async function purgeOldDeletedItems(){
   (S.recordings||[]).forEach(r=>{ if(r.deletedAt && r.deletedAt<cutoff) toPurge.push(['recording', r.id]); });
   (S.notations||[]).forEach(n=>{ if(n.deletedAt && n.deletedAt<cutoff) toPurge.push(['notation', n.id]); });
   (S.talaExports||[]).forEach(v=>{ if(v.deletedAt && v.deletedAt<cutoff) toPurge.push(['talaVideo', v.id]); });
+  (S.talaPatterns||[]).forEach(p=>{ if(p.deletedAt && p.deletedAt<cutoff) toPurge.push(['talaPattern', p.id]); });
   for(const [kind,id] of toPurge){ await purgeDeletedItem(kind, id); }
-  if(toPurge.length){ renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); }
+  if(toPurge.length){ renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); renderTalaSavedRow(); }
 }
 $('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); closeModal('m-data-backup'); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
 
@@ -5676,6 +5682,7 @@ async function computeStorageStats(){
     lines.push('Recordings: '+(S.recordings||[]).length+' (deleted: '+(S.recordings||[]).filter(r=>r.deletedAt).length+')');
     lines.push('Notations: '+(S.notations||[]).length+' (deleted: '+(S.notations||[]).filter(n=>n.deletedAt).length+')');
     lines.push('Tala videos: '+(S.talaExports||[]).length+' (deleted: '+(S.talaExports||[]).filter(v=>v.deletedAt).length+')');
+    lines.push('Tala patterns: '+(S.talaPatterns||[]).length+' (deleted: '+(S.talaPatterns||[]).filter(p=>p.deletedAt).length+')');
     lines.push('Schema version: '+(S._schemaVersion||0));
   }catch(e){ lines.push('Could not measure: '+e.message); }
   lines.push('');
@@ -10513,7 +10520,7 @@ $('#talaSaveConfirm').addEventListener('click',()=>{
 function renderTalaSavedRow(){
   const wrap = $('#talaSavedRow'); if(!wrap) return;
   wrap.innerHTML = '';
-  const patterns = (S.talaPatterns||[]).slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const patterns = (S.talaPatterns||[]).filter(p=>!p.deletedAt).slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   wrap.style.display = patterns.length ? '' : 'none';
   patterns.forEach(p=>{
     const chip = document.createElement('div');
@@ -10541,7 +10548,14 @@ function renderTalaSavedRow(){
     chip.querySelector('button').addEventListener('click',(e)=>{
       e.stopPropagation();
       if(!confirm('Delete "'+p.name+'"?')) return;
-      S.talaPatterns = S.talaPatterns.filter(x=>x.id!==p.id);
+      // Soft-delete rather than splice out of the array: a hard delete disappears from Drive's
+      // merge view entirely, so the next sync (pulling in an older snapshot that still has this
+      // pattern, from before the delete or from another device) sees "record I don't have locally"
+      // and adds it straight back. Setting deletedAt — same approach as recordings/notations/tala
+      // videos — lets the deletion itself travel with sync instead of getting undone by it. It
+      // lives in Recently Deleted for 30 days, then the nightly purge removes it for good.
+      p.deletedAt = Date.now();
+      p.updatedAt = Date.now();
       renderAll();
     });
     wrap.appendChild(chip);
