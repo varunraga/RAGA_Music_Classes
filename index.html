@@ -447,6 +447,12 @@
   .tala-anga-chip select{font-size:.76rem;padding:3px 5px;border-radius:6px;border:1px solid var(--gold);background:var(--card);color:var(--gold-ink);font:inherit}
   .tala-anga-chip button{border:0;background:rgba(0,0,0,.08);color:inherit;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:.85rem;line-height:1;display:flex;align-items:center;justify-content:center}
   .tala-total{margin-top:10px;font-size:.8rem;color:var(--muted);font-weight:600}
+  .tala-timeline-wrap{width:100%;max-width:380px;overflow-x:auto;padding:2px 2px 6px}
+  .tala-timeline{display:flex;align-items:center;justify-content:center;gap:14px;min-width:min-content}
+  .tala-timeline-group{display:flex;gap:5px;align-items:center;padding:5px 6px;border-radius:9px;background:var(--paper);border:1px solid var(--line-soft)}
+  .tala-timeline-beat{width:13px;height:13px;border-radius:4px;background:var(--card);border:1.5px solid var(--line);flex-shrink:0;transition:background .1s ease,transform .1s ease,border-color .1s ease}
+  .tala-timeline-beat.active{background:var(--gold);border-color:var(--gold);transform:scale(1.3)}
+  .tala-timeline-empty{font-size:.78rem;color:var(--muted);text-align:center}
   .tala-stage{display:flex;flex-direction:column;align-items:center;padding:20px 10px 10px;gap:12px}
   .tala-hand-photo{position:relative;width:210px;aspect-ratio:2/3;perspective:1200px;filter:drop-shadow(0 8px 14px rgba(40,20,5,.22));--tala-beat-dur:.3s}
   .tala-hand-photo.clap{animation:talaClap var(--tala-beat-dur,.3s) ease-out}
@@ -1350,6 +1356,7 @@
           </div>
 
           <div class="tala-stage">
+            <div class="tala-timeline-wrap"><div class="tala-timeline" id="talaTimeline"></div></div>
             <div id="talaHandPhoto" class="tala-hand-photo">
               <div class="tala-flip-inner" id="talaFlipInner">
                 <div class="tala-flip-face tala-front">
@@ -1441,7 +1448,7 @@
 </div>
 
 <div id="talaFloatBar" style="display:none">
-  <span class="tp-float-label">&#127928; Tala playing</span>
+  <span class="tp-float-label">&#129345; Tala playing</span>
   <button type="button" class="btn tiny gold" id="talaFloatStop">Stop</button>
 </div>
 
@@ -10043,6 +10050,39 @@ function talaAngaCount(angaObj){
   const nadaiMult = nadai==='normal' ? 2 : (TALA_NADAI_AKSHARA_COUNT[nadai]||1);
   return base * (kalai===2?2:1) * nadaiMult;
 }
+function renderTalaTimeline(){
+  const wrap = $('#talaTimeline'); if(!wrap) return;
+  const beats = talaCurrentBeats();
+  wrap.innerHTML = '';
+  if(!beats.length){
+    wrap.innerHTML = '<div class="tala-timeline-empty">Build a pattern to see the cycle</div>';
+    return;
+  }
+  // Group consecutive beats by their source anga (angaIdx) so Laghu/Dhruta/Anudhruta blocks
+  // get a visually distinct cluster with a thicker gap between clusters. Chapu beats have no
+  // angaIdx, so they all share one group key and render as a single unbroken cluster.
+  let groups = [], curKey = null, curGroupEl = null;
+  beats.forEach((b,i)=>{
+    const key = (b.angaIdx!==undefined) ? b.angaIdx : 'chapu';
+    if(key !== curKey){
+      curGroupEl = document.createElement('div');
+      curGroupEl.className = 'tala-timeline-group';
+      curGroupEl.dataset.anga = b.anga;
+      wrap.appendChild(curGroupEl);
+      curKey = key;
+    }
+    const box = document.createElement('div');
+    box.className = 'tala-timeline-beat';
+    box.dataset.index = i;
+    box.title = 'Beat '+(i+1)+' of '+beats.length+' — '+b.anga.charAt(0).toUpperCase()+b.anga.slice(1);
+    curGroupEl.appendChild(box);
+  });
+}
+function talaSetTimelineActive(idx){
+  $$('.tala-timeline-beat').forEach(el=>{
+    el.classList.toggle('active', parseInt(el.dataset.index,10)===idx);
+  });
+}
 function renderTalaSequence(){
   const wrap = $('#talaSequence'); if(!wrap) return;
   if(talaType==='chapu'){
@@ -10050,6 +10090,7 @@ function renderTalaSequence(){
     const beats = talaCurrentBeats();
     const totalAksharas = beats.reduce((sum,b)=>sum+b.durationFrac,0);
     $('#talaTotal').textContent = 'Total: '+totalAksharas+' aksharas · '+beats.length+' strikes per cycle';
+    renderTalaTimeline();
     return;
   }
   wrap.innerHTML = '';
@@ -10085,6 +10126,7 @@ function renderTalaSequence(){
   }
   const total = talaMukhi!=='off' ? talaCurrentBeats().length : talaAngas.reduce((sum,a)=>sum+talaAngaCount(a),0);
   $('#talaTotal').textContent = talaAngas.length ? ('Total: '+total+' aksharas per cycle · '+talaAngaSymbolString(talaAngas.map(a=>a.type))) : '';
+  renderTalaTimeline();
 }
 $('#talaSuladiPreset').addEventListener('change', ()=>{
   const key = $('#talaSuladiPreset').value;
@@ -10341,6 +10383,7 @@ function talaTick(){
   talaClickSound(beat.gesture);
   talaApplyGesture(beat, count);
   $('#talaBeatLabel').textContent = 'Beat '+count+' of '+beats.length+' — '+beat.anga.charAt(0).toUpperCase()+beat.anga.slice(1);
+  talaSetTimelineActive(talaBeatIdx);
   talaBeatIdx = (talaBeatIdx+1)%beats.length;
 }
 
@@ -10363,11 +10406,13 @@ function talaScheduler(){
     const total = beats.length;
     const when = talaNextBeatTime;
     const delayMs = Math.max(0, (when - talaCtx.currentTime)*1000);
+    const beatIdxForTimeline = talaBeatIdx;
     setTimeout(()=>{
       if(!talaPlaying) return; // guard: playback may have stopped while this was pending
       talaClickSound(beat.gesture);
       talaApplyGesture(beat, count);
       $('#talaBeatLabel').textContent = 'Beat '+count+' of '+total+' — '+beat.anga.charAt(0).toUpperCase()+beat.anga.slice(1);
+      talaSetTimelineActive(beatIdxForTimeline);
     }, delayMs);
     talaBeatIdx = (talaBeatIdx+1)%beats.length;
     talaNextBeatTime += beatSec * (beat.durationFrac||1);
@@ -10434,6 +10479,7 @@ function talaStop(){
   if($('#talaPlay')) $('#talaPlay').innerHTML = '&#9658; Play';
   if($('#talaBeatLabel')) $('#talaBeatLabel').textContent = 'Tap Play to begin';
   $$('.tala-highlight').forEach(f=>f.classList.remove('active'));
+  talaSetTimelineActive(-1);
   talaSetShowPalm(false);
   updateTalaFloatBar();
   flushDeferredRenderIfIdle();
