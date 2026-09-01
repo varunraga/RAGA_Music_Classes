@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-08-22 -->
+<!-- Build: 2026-08-23 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -3190,10 +3190,13 @@ function deleteStudent(id){
       c.updatedAt=Date.now();
       return true;
     }
+    tombstone(c.cid);
     return false;
   });
+  S.payments.forEach(p=>{ if(p.studentId===id) tombstone(p.pid); });
   S.payments = S.payments.filter(p=>p.studentId!==id);
   S.students.forEach(s=>{ if(s.partnerId===id){ s.partnerId=null; s.updatedAt=Date.now(); } });
+  tombstone(id);
   S.students = S.students.filter(s=>s.id!==id);
   if(profileId===id) profileId=null;
   undoToast('Deleted '+st.name+' permanently', ()=>{ S=snapshot; });
@@ -3809,7 +3812,8 @@ $('#clsDelete').addEventListener('click',()=>{
   if(!confirm('Delete this class record?\n\n'+sessionNames(c)+' · '+fmtD(c.date)+' '+fmtTime12(c.time)+'\n\nThis removes it permanently, including any completed attendance used for billing.')) return;
   const removed = c;
   S.classes = S.classes.filter(x=>x.cid!==editingClassId);
-  undoToast('Class deleted', ()=>{ S.classes.push(removed); });
+  tombstone(removed.cid);
+  undoToast('Class deleted', ()=>{ untombstone(removed.cid); removed.updatedAt=Date.now(); S.classes.push(removed); });
   closeModal('m-class'); renderAll();
 });
 
@@ -4501,8 +4505,9 @@ function deletePayment(pid){
   if(!confirm('Delete this payment?\n\n'+RUPEE.format(p.amount)+' from '+(st?st.name:'?')+' ('+monthLabel(p.month)+')\n\nBilling balances will be recalculated.')) return;
   const removed = p;
   S.payments = S.payments.filter(x=>x.pid!==pid);
+  tombstone(removed.pid);
   if(editingPaymentId===pid) cancelPayEdit();
-  undoToast('Payment deleted', ()=>{ S.payments.unshift(removed); });
+  undoToast('Payment deleted', ()=>{ untombstone(removed.pid); removed.updatedAt=Date.now(); S.payments.unshift(removed); });
   renderAll();
 }
 function refreshPayFilter(){
@@ -4653,8 +4658,9 @@ function deleteWithdrawal(wid){
   if(!confirm('Delete this withdrawal?\n\n'+RUPEE.format(w.amount)+' on '+fmtDFull(w.date)+'\n\nThe eligible amount and 31-day window will be recalculated.')) return;
   const removed=w;
   S.withdrawals = S.withdrawals.filter(x=>x.wid!==wid);
+  tombstone(removed.wid);
   if(editingWithdrawalId===wid) cancelWdEdit();
-  undoToast('Withdrawal deleted', ()=>{ S.withdrawals.unshift(removed); });
+  undoToast('Withdrawal deleted', ()=>{ untombstone(removed.wid); removed.updatedAt=Date.now(); S.withdrawals.unshift(removed); });
   renderAll();
 }
 function renderRaga(){
@@ -5661,18 +5667,22 @@ async function purgeDeletedItem(kind, id){
     try{ await mediaDelete('recording-audio:'+id); }catch(e){}
     if(r.driveFileId) driveDeleteFile(r.driveFileId);
     S.recordings = S.recordings.filter(x=>x.id!==id);
+    tombstone(id);
   } else if(kind==='notation'){
     const n = S.notations.find(x=>x.id===id); if(!n) return;
     if(n.hasPdf){ try{ await mediaDelete('notation-pdf:'+id); }catch(e){} }
     if(n.driveFileId) driveDeleteFile(n.driveFileId);
     S.notations = S.notations.filter(x=>x.id!==id);
+    tombstone(id);
   } else if(kind==='talaVideo'){
     const v = S.talaExports.find(x=>x.id===id); if(!v) return;
     try{ await mediaDelete('tala-video:'+id); }catch(e){}
     if(v.driveFileId) driveDeleteFile(v.driveFileId);
     S.talaExports = S.talaExports.filter(x=>x.id!==id);
+    tombstone(id);
   } else if(kind==='talaPattern'){
     S.talaPatterns = S.talaPatterns.filter(x=>x.id!==id);
+    tombstone(id);
   }
   persist();
 }
@@ -5833,14 +5843,40 @@ function normalizeData(d){
 }
 function mergeData(inc){
   const stats={added:0,updated:0,unchanged:0};
+  // Union the two sides' delete tombstones first, so both halves of mergeArr below (skipping a
+  // resurrection from incoming, and sweeping a local record the other device deleted) see the
+  // full picture regardless of which side ran first.
+  S.meta ||= {};
+  S.meta.deletedIds ||= {};
+  const tomb = S.meta.deletedIds;
+  const incMeta = inc.meta || {};
+  Object.entries(incMeta.deletedIds||{}).forEach(([id,at])=>{
+    if(!(id in tomb) || at>tomb[id]) tomb[id]=at;
+  });
   const mergeArr=(local, incoming, key)=>{
     const map=new Map(local.map(r=>[r[key],r]));
     (incoming||[]).forEach(r=>{
+      const delAt = tomb[r[key]];
+      // Deleted on some device and not touched since -> the deletion wins, don't bring it back.
+      if(delAt!==undefined && delAt>=(r.updatedAt||0)){ stats.unchanged++; return; }
+      // Edited (elsewhere) after the deletion timestamp -> treat that edit as a deliberate
+      // revival and stop suppressing this id in future merges.
+      if(delAt!==undefined) delete tomb[r[key]];
       const cur=map.get(r[key]);
       if(!cur){ local.push(r); stats.added++; }
       else if((r.updatedAt||0) > (cur.updatedAt||0)){ Object.assign(cur, r); stats.updated++; }
       else stats.unchanged++;
     });
+    // A record can be deleted on one device and still sit untouched in another device's local
+    // array (it was never in `incoming` at all, since the deleting device's own array no longer
+    // has it) — mergeArr above only ever walks `incoming`, so without this sweep that local copy
+    // would survive every merge forever. Remove anything now tombstoned that wasn't revived above.
+    for(let i=local.length-1;i>=0;i--){
+      const r=local[i], delAt=tomb[r[key]];
+      if(delAt===undefined) continue;
+      if(delAt>=(r.updatedAt||0)) local.splice(i,1);
+      else delete tomb[r[key]];
+    }
   };
   mergeArr(S.students, inc.students, 'id');
   mergeArr(S.classes, inc.classes, 'cid');
@@ -5851,17 +5887,40 @@ function mergeData(inc){
   mergeArr(S.talaPatterns, inc.talaPatterns, 'id');
   mergeArr(S.talaExports, inc.talaExports, 'id');
   ['stu','cls','pay','wd','not','rec','tala','talaExport'].forEach(k=>{ S.seq[k]=Math.max(S.seq[k]||1,(inc.seq&&inc.seq[k])||1); });
-  // The record-array merge above never touched S.meta, so anything living only in meta — the
-  // "This week's scheduling" skip list chief among them — was silently dropped whenever a sync
-  // conflict was resolved with "Merge": this device's meta stayed exactly as it was, and whatever
-  // the other device had skipped never came across. Union-merge those meta dictionaries instead of
-  // ignoring them, so a skip made on either device survives a merge on the other.
-  S.meta ||= {};
-  const incMeta = inc.meta || {};
+  // The record-array merge above never touched the rest of S.meta, so anything living only in
+  // meta — the "This week's scheduling" skip list chief among them — was silently dropped whenever
+  // a sync conflict was resolved with "Merge": this device's meta stayed exactly as it was, and
+  // whatever the other device had skipped never came across. Union-merge those meta dictionaries
+  // instead of ignoring them, so a skip made on either device survives a merge on the other.
   S.meta.weekSkip = mergeIdSetDict(S.meta.weekSkip, incMeta.weekSkip);
   S.meta.tanpuraStudioLoops = mergeTimestampedDict(S.meta.tanpuraStudioLoops, incMeta.tanpuraStudioLoops, 'addedAt');
   resyncPartners();
   return stats;
+}
+// Records a deletion so it survives sync instead of getting silently re-added the next time a
+// merge sees an older snapshot (from Drive, or another device) that still has this record. See
+// mergeData() for how this is consulted.
+function tombstone(id){
+  S.meta ||= {}; S.meta.deletedIds ||= {};
+  S.meta.deletedIds[id] = Date.now();
+}
+// Reverses tombstone() — used by the Undo action on a delete, so the just-restored record isn't
+// immediately swept away again by the next merge.
+function untombstone(id){
+  if(S.meta && S.meta.deletedIds) delete S.meta.deletedIds[id];
+}
+// Startup hygiene: once a tombstone is old enough that every device has almost certainly synced
+// past it, keeping it around is just unbounded growth with no remaining purpose. A wide margin
+// (well over a year) keeps this safe even for a device that's been offline a long while.
+const TOMBSTONE_MAX_AGE_DAYS = 400;
+async function pruneOldTombstones(){
+  if(!S.meta || !S.meta.deletedIds) return;
+  const cutoff = Date.now() - TOMBSTONE_MAX_AGE_DAYS*86400000;
+  let pruned=false;
+  Object.keys(S.meta.deletedIds).forEach(id=>{
+    if(S.meta.deletedIds[id]<cutoff){ delete S.meta.deletedIds[id]; pruned=true; }
+  });
+  if(pruned) persist();
 }
 // Union-merges two "key -> array of ids" dictionaries (used for S.meta.weekSkip: week key ->
 // list of skipped student ids). Neither side has per-entry timestamps, so the only conflict-safe
@@ -11063,6 +11122,7 @@ if(!storageOK) toast('Heads up: this browser is blocking storage, so data will n
 // and Drive. See the cleanOrphanedEntries function for the full logic.
 runCleanupSerially(cleanOrphanedEntries, 'Orphan cleanup');
 runCleanupSerially(purgeOldDeletedItems, 'Recently-deleted purge');
+runCleanupSerially(pruneOldTombstones, 'Tombstone pruning');
 // The three top notification bars (day-rollover, offline, PWA update) can all be visible at
 // once — without this, they'd sit at the exact same fixed position and silently hide each
 // other, since they share position:fixed;top:0. This stacks them in DOM order whenever any of
