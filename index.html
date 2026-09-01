@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-08-21 -->
+<!-- Build: 2026-08-22 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -996,7 +996,9 @@
         <div class="panel-body">
           <div class="form-grid">
             <div class="field"><label for="wdDate">Withdrawal date</label><input id="wdDate" type="date"></div>
-            <div class="field"><label for="wdReceivedDate">Received in bank on</label><input id="wdReceivedDate" type="date"></div>
+            <div class="field"><label for="wdReceivedDate">Received in bank on</label><input id="wdReceivedDate" type="date">
+              <label class="check" style="margin-top:6px;font-weight:400"><input type="checkbox" id="wdPending"> Not yet received in my bank</label>
+            </div>
             <div class="field"><label for="wdAmount">Amount (₹)</label><input id="wdAmount" type="number" min="1" placeholder="e.g. 4500"></div>
             <div class="field"><label for="wdMode">Mode</label><select id="wdMode"><option>Bank Transfer</option><option>UPI</option><option>Cash</option><option>Cheque</option></select></div>
             <div class="field"><label for="wdRef">Reference no.</label><input id="wdRef" placeholder="UTR / txn ref"></div>
@@ -1007,7 +1009,7 @@
               <div id="wdReceiptChip" class="receipt-chip" style="display:none"></div>
             </div>
           </div>
-          <div class="note">Withdrawal date starts your rolling 31-day RAGA cycle. Received date is when it actually landed in your bank — that's what counts toward "Income this month" and your income reports, so it can differ if the transfer takes a day or two.</div>
+          <div class="note">Withdrawal date starts your rolling 31-day RAGA cycle. Received date is when it actually landed in your bank — that's what counts toward "Income this month" and your income reports. If it hasn't arrived yet, tick "Not yet received" instead of guessing a date — it'll show as receivable until you come back and fill in the actual date.</div>
           <div style="display:flex;gap:10px;margin-top:16px">
             <button class="btn gold" id="wdAdd">Save withdrawal</button>
             <button class="btn" id="wdCancelEdit" style="display:none">Cancel editing</button>
@@ -2701,6 +2703,9 @@ const ragaCompletedAll = st => S.classes.filter(c=>c.att[st.id]==='Completed').l
 const ragaAccruedAll = () => ragaStudents().reduce((t,s)=> t + sumCompleted(s,null), 0);
 const ragaWithdrawnAll = () => S.withdrawals.reduce((t,w)=>t+w.amount,0);
 const ragaEligible = () => ragaAccruedAll() - ragaWithdrawnAll();
+// Money that's left the RAGA balance (withdrawn) but hasn't landed in the bank yet — still
+// receivable, just not counted as "income received" until it's confirmed.
+const ragaBankPending = () => S.withdrawals.filter(w=>w.pending).reduce((t,w)=>t+w.amount,0);
 function lastWithdrawal(){ return S.withdrawals.length ? S.withdrawals.reduce((a,b)=> a.date>b.date?a:b) : null; }
 // Normally the next-eligible date is auto-calculated as last withdrawal + 31 days. RAGA
 // Shiksha's own site sometimes shows a slightly different date (their exact cycle logic isn't
@@ -3817,7 +3822,7 @@ function renderStats(){
   $('#statPersonal').textContent = act.filter(s=>s.cat==='Personal').length;
   $('#statRaga').textContent = act.filter(s=>s.cat==='RAGA').length;
   const pInc = S.payments.filter(p=>monthKey(p.date)===CURM).reduce((t,p)=>t+p.amount,0);
-  const rInc = S.withdrawals.filter(w=>monthKey(w.receivedDate||w.date)===CURM).reduce((t,w)=>t+w.amount,0);
+  const rInc = S.withdrawals.filter(w=>!w.pending && monthKey(w.receivedDate||w.date)===CURM).reduce((t,w)=>t+w.amount,0);
   $('#statIncome').textContent = RUPEE.format(pInc+rInc);
   const spark=(function(){
     const ms=monthsBack(6).map(m=>incomeOf(m).p+incomeOf(m).r);
@@ -3840,8 +3845,9 @@ function renderStats(){
     : 'no RAGA students yet';
   const pendD = ragaStudents().reduce((t,s)=>t+pendingINR(s,null),0);
   if(pendD) $('#statRagaEligSub').innerHTML += ' · <b>'+pendD+'</b> ₹ pending';
-  $('#statReceivable').textContent = RUPEE.format(outT + relig);
-  $('#statReceivableSub').innerHTML = '<b>'+RUPEE.format(outT)+'</b> Personal + <b>'+RUPEE.format(relig)+'</b> RAGA';
+  const bankPending = ragaBankPending();
+  $('#statReceivable').textContent = RUPEE.format(outT + relig + bankPending);
+  $('#statReceivableSub').innerHTML = '<b>'+RUPEE.format(outT)+'</b> Personal + <b>'+RUPEE.format(relig)+'</b> RAGA'+(bankPending?' + <b>'+RUPEE.format(bankPending)+'</b> in transit':'');
 }
 function renderTimeline(){
   const el=$('#timeline'); el.innerHTML='';
@@ -4564,8 +4570,9 @@ $('#wdAdd').addEventListener('click', async ()=>{
   const amt=parseInt($('#wdAmount').value,10);
   if(isNaN(amt)||amt<=0){ toast('Enter an amount greater than zero'); $('#wdAmount').focus(); return; }
   const date=$('#wdDate').value||TODAY;
-  const receivedDate=$('#wdReceivedDate').value||date;
-  if(receivedDate<date && !confirm('The received date ('+fmtDFull(receivedDate)+') is before the withdrawal date ('+fmtDFull(date)+') — that\'s unusual.\n\nSave it anyway?')) return;
+  const pending=$('#wdPending').checked;
+  const receivedDate = pending ? null : ($('#wdReceivedDate').value||date);
+  if(!pending && receivedDate<date && !confirm('The received date ('+fmtDFull(receivedDate)+') is before the withdrawal date ('+fmtDFull(date)+') — that\'s unusual.\n\nSave it anyway?')) return;
   let eligNow=ragaEligible();
   if(editingWithdrawalId){ const cur=S.withdrawals.find(w=>w.wid===editingWithdrawalId); if(cur) eligNow+=cur.amount; }
   if(amt>eligNow && !confirm('This withdrawal ('+RUPEE.format(amt)+') exceeds the amount currently eligible ('+RUPEE.format(Math.max(eligNow,0))+').\n\nRecord it anyway?')) return;
@@ -4575,7 +4582,7 @@ $('#wdAdd').addEventListener('click', async ()=>{
   }
   if(!editingWithdrawalId) delete S.meta.ragaNextWithdrawOverride; // fresh withdrawal starts a new auto-calculated cycle
   const btn = $('#wdAdd');
-  const rec={date, receivedDate, amount:amt, mode:$('#wdMode').value, ref:$('#wdRef').value.trim(), remarks:$('#wdRemarks').value.trim(), updatedAt:Date.now()};
+  const rec={date, receivedDate, pending, amount:amt, mode:$('#wdMode').value, ref:$('#wdRef').value.trim(), remarks:$('#wdRemarks').value.trim(), updatedAt:Date.now()};
   const wid = editingWithdrawalId || ('W'+pad(S.seq.wd).padStart(4,'0'));
   if(pendingWdReceiptFile){
     btn.disabled=true; btn.textContent='Uploading receipt…';
@@ -4596,16 +4603,25 @@ $('#wdAdd').addEventListener('click', async ()=>{
     S.seq.wd++;
     toast('Withdrawal recorded — '+RUPEE.format(amt)+'. Next window: '+fmtD(addDaysS(date,30)));
     btn.textContent = 'Save withdrawal';
+    $('#wdPending').checked = false; syncWdPendingUI();
   }
   pendingWdReceiptFile = null; wdReceiptRemoved = false;
   $('#wdReceiptFile').value=''; $('#wdReceiptChip').style.display='none';
   $('#wdAmount').value=''; $('#wdRef').value=''; $('#wdRemarks').value='';
   renderAll();
 });
+function syncWdPendingUI(){
+  const pending = $('#wdPending').checked;
+  const rd = $('#wdReceivedDate');
+  rd.disabled = pending;
+  if(pending) rd.value = '';
+}
+$('#wdPending').addEventListener('change', syncWdPendingUI);
 function startWdEdit(wid){
   const w=S.withdrawals.find(x=>x.wid===wid); if(!w) return;
   editingWithdrawalId=wid;
   $('#wdDate').value=w.date; $('#wdReceivedDate').value=w.receivedDate||w.date; $('#wdAmount').value=w.amount;
+  $('#wdPending').checked = !!w.pending; syncWdPendingUI();
   $('#wdMode').value=w.mode; $('#wdRef').value=w.ref||''; $('#wdRemarks').value=w.remarks||'';
   pendingWdReceiptFile = null; wdReceiptRemoved = false;
   $('#wdReceiptFile').value='';
@@ -4629,6 +4645,7 @@ function cancelWdEdit(){
   $('#wdAdd').textContent='Save withdrawal';
   $('#wdCancelEdit').style.display='none';
   $('#wdAmount').value=''; $('#wdRef').value=''; $('#wdRemarks').value='';
+  $('#wdPending').checked = false; syncWdPendingUI();
 }
 $('#wdCancelEdit').addEventListener('click',cancelWdEdit);
 function deleteWithdrawal(wid){
@@ -4643,21 +4660,21 @@ function deleteWithdrawal(wid){
 function renderRaga(){
   const elig=ragaEligible(), nd=nextWithdrawDate(), open=withdrawOpen(), lw=lastWithdrawal();
   const pendAllR = ragaStudents().reduce((t,s)=>t+pendingINR(s,null),0);
-  const accr=ragaAccruedAll(), wdn=ragaWithdrawnAll();
+  const accr=ragaAccruedAll(), wdn=ragaWithdrawnAll(), bankPending=ragaBankPending();
   const totalDone=ragaStudents().reduce((t,s)=>t+ragaCompletedAll(s),0);
   $('#ragaCards').innerHTML =
     '<div class="stat '+(elig<0?'alert':'money')+'"><div class="label">Eligible to withdraw</div><div class="value num">'+RUPEE.format(elig)+'</div><div class="sub">'+(open?'<a href="https://ragashiksha.com/" target="_blank" rel="noopener" class="raga-link"><b>window open</b></a> — withdraw on ragashiksha.com':'window opens '+fmtD(nd))+(pendAllR?' · <b style="color:var(--gold-ink)">'+pendAllR+'</b> class'+(pendAllR===1?'':'es')+' awaiting ₹ entry':'')+'</div></div>'+
     '<div class="stat"><div class="label">Total income (all time)</div><div class="value num">'+RUPEE.format(accr)+'</div><div class="sub">from <b>'+totalDone+'</b> completed RAGA classes</div></div>'+
-    '<div class="stat"><div class="label">Total withdrawn</div><div class="value num">'+RUPEE.format(wdn)+'</div><div class="sub"><b>'+S.withdrawals.length+'</b> withdrawal'+(S.withdrawals.length===1?'':'s')+'</div></div>'+
+    '<div class="stat"><div class="label">Total withdrawn</div><div class="value num">'+RUPEE.format(wdn)+'</div><div class="sub"><b>'+S.withdrawals.length+'</b> withdrawal'+(S.withdrawals.length===1?'':'s')+(bankPending?' · <b style="color:var(--gold-ink)">'+RUPEE.format(bankPending)+'</b> in transit':'')+'</div></div>'+
     '<div class="stat"><div class="label">Next withdrawal</div><div class="value" style="font-size:1.3rem">'+(open?'Available now':fmtD(nd))+'</div><div class="sub">'+(open?(lw?'rolling 31 days from last ('+fmtD(lw.date)+')':'no withdrawals yet — anytime'):'in <b>'+daysUntil(nd)+'</b> days')+'</div></div>';
   if(!$('#wdDate').value) $('#wdDate').value=TODAY;
-  if(!$('#wdReceivedDate').value) $('#wdReceivedDate').value=TODAY;
+  if(!$('#wdReceivedDate').value && !$('#wdPending').checked) $('#wdReceivedDate').value=TODAY;
   const tb=$('#wdTable tbody'); tb.innerHTML='';
   $('#wdEmpty').style.display = S.withdrawals.length?'none':'';
   $('#wdTable').style.display = S.withdrawals.length?'':'none';
   [...S.withdrawals].sort((a,b)=> a.date<b.date?1:-1).forEach(w=>{
     tb.insertAdjacentHTML('beforeend','<tr><td class="muted">'+fmtD(w.date)+'</td>'+
-      '<td class="muted">'+fmtD(w.receivedDate||w.date)+'</td>'+
+      '<td class="muted">'+(w.pending ? '<span class="badge hold">Pending</span>' : fmtD(w.receivedDate||w.date))+'</td>'+
       '<td>'+w.mode+(w.ref?' <span class="muted">· '+esc(w.ref)+'</span>':'')+'</td>'+
       '<td class="muted">'+esc(w.remarks||'—')+'</td>'+
       '<td class="r num amount-ok">'+RUPEE.format(w.amount)+(w.receiptName ? '<button class="receipt-icon-btn" data-wreceipt="'+w.wid+'" title="View receipt: '+esc(w.receiptName)+'"><svg viewBox="0 0 24 24"><path d="M21.4 11.5l-8.5 8.5a4.95 4.95 0 01-7-7l8.5-8.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3l7.8-7.8"/></svg></button>' : '')+'</td>'+
@@ -4817,7 +4834,7 @@ function repFYSummary(){
     const yy=Math.floor(abs/12), mm=((abs%12)+12)%12;
     const mk=yy+'-'+pad(mm+1);
     const inc = { p: S.payments.filter(x=>monthKey(x.date)===mk).reduce((t,x)=>t+x.amount,0),
-                  r: S.withdrawals.filter(x=>monthKey(x.receivedDate||x.date)===mk).reduce((t,x)=>t+x.amount,0) };
+                  r: S.withdrawals.filter(x=>!x.pending && monthKey(x.receivedDate||x.date)===mk).reduce((t,x)=>t+x.amount,0) };
     let pc=0, rc=0;
     S.classes.forEach(cl=>{
       if(monthKey(cl.date)!==mk) return;
@@ -5014,7 +5031,7 @@ function repRaga(){
   e.push(['Total','','',e.slice(1).reduce((t,r)=>t+(r[3]||0),0),'']);
   const wdr=[['Withdrawn','Received','Amount','Mode','Reference','Remarks']];
   S.withdrawals.filter(w=>rAll||monthKey(w.date)===m).sort((a,b)=>a.date<b.date?-1:1)
-    .forEach(w=>wdr.push([fmtDMY(w.date),fmtDMY(w.receivedDate||w.date),w.amount,w.mode,w.ref||'',w.remarks||'']));
+    .forEach(w=>wdr.push([fmtDMY(w.date),w.pending?'Pending':fmtDMY(w.receivedDate||w.date),w.amount,w.mode,w.ref||'',w.remarks||'']));
   wdr.push(['Total','',wdr.slice(1).reduce((t,r)=>t+r[2],0),'','','']);
   return {name:'raga-earnings-'+(rAll?'all':m), title:'RAGA Earnings — '+mLbl(m),
     sheets:[{name:'Earnings', aoa:e, money:[2,4], title:'RAGA Earnings — '+mLbl(m)},
@@ -5076,7 +5093,7 @@ function monthsBack(n){
 }
 const incomeOf = m => ({
   p: S.payments.filter(x=>monthKey(x.date)===m).reduce((t,x)=>t+x.amount,0),
-  r: S.withdrawals.filter(x=>monthKey(x.receivedDate||x.date)===m).reduce((t,x)=>t+x.amount,0)
+  r: S.withdrawals.filter(x=>!x.pending && monthKey(x.receivedDate||x.date)===m).reduce((t,x)=>t+x.amount,0)
 });
 const earnedOf = m => S.students.reduce((t,s)=>t+sumCompleted(s,m),0);
 function shortM(m){ return new Intl.DateTimeFormat('en-GB',{month:'short'}).format(new Date(m+'-01')); }
