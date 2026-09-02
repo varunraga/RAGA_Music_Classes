@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-08-23 -->
+<!-- Build: 2026-08-24 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -1766,6 +1766,9 @@
         <div class="rec-state-label">Recording… tap to stop</div>
       </div>
       <div id="recReviewBlock" class="rec-review" style="display:none">
+        <div id="recProcessingProgress" style="display:none;margin:6px 0 12px">
+          <div class="tala-export-progress-track"><div class="tala-export-progress-fill" id="recProcessingFill"></div></div>
+        </div>
         <audio id="recPreviewAudio" controls></audio>
         <div class="field"><label for="recTitleInput">Title</label><input id="recTitleInput" placeholder="e.g. Varnam demo for Ananya"></div>
         <div id="recUploadProgress" style="display:none;margin:6px 0">
@@ -8896,7 +8899,7 @@ function floatChannelToInt16(audioBuffer, ch){
   }
   return out;
 }
-function pcmToMp3Blob(audioBuffer, kbps){
+async function pcmToMp3Blob(audioBuffer, kbps, onProgress){
   if(typeof lamejs==='undefined') throw new Error('MP3 encoder did not load — check your connection and try again');
   kbps = kbps || 128;
   const numChannels = Math.min(audioBuffer.numberOfChannels, 2); // lamejs only does mono/stereo
@@ -8906,14 +8909,29 @@ function pcmToMp3Blob(audioBuffer, kbps){
   const right = numChannels>1 ? floatChannelToInt16(audioBuffer, 1) : null;
   const blockSize = 1152; // lamejs requirement — must feed samples in chunks of this size
   const chunks = [];
+  // Encoding is pure-JS, CPU-bound work with no native fast path — for anything longer than a
+  // few seconds of audio this can take several real seconds. Without yielding, that entire
+  // stretch used to run as one uninterrupted synchronous block: the browser couldn't paint,
+  // respond to taps, or even show a "Processing…" label that had just been set moments before —
+  // the page looked completely frozen even though it was actively working. Handing control back
+  // to the event loop every YIELD_EVERY blocks keeps the UI responsive and lets a progress
+  // callback actually reach the screen.
+  const YIELD_EVERY = 60; // roughly every 1.5s of audio at 44.1kHz — frequent enough to feel alive
+  let blockIdx = 0;
   for(let i=0; i<left.length; i+=blockSize){
     const leftChunk = left.subarray(i, i+blockSize);
     const rightChunk = right ? right.subarray(i, i+blockSize) : undefined;
     const mp3buf = right ? encoder.encodeBuffer(leftChunk, rightChunk) : encoder.encodeBuffer(leftChunk);
     if(mp3buf.length>0) chunks.push(mp3buf);
+    blockIdx++;
+    if(blockIdx % YIELD_EVERY === 0){
+      if(onProgress) onProgress(Math.min(0.98, i/left.length));
+      await new Promise(r=>requestAnimationFrame(r));
+    }
   }
   const last = encoder.flush();
   if(last.length>0) chunks.push(last);
+  if(onProgress) onProgress(1);
   return new Blob(chunks, {type:'audio/mpeg'});
 }
 // Decodes whatever format a blob is in (WebM/Opus, MP4/AAC, etc.) and re-encodes it as WAV.
@@ -8932,11 +8950,11 @@ async function convertBlobToWav(blob){
 // Same idea as convertBlobToWav, but the output is MP3 instead — this is the one the "Fix
 // playback" button actually uses now, since it gets the same universal compatibility at a
 // fraction of the storage cost.
-async function convertBlobToMp3(blob, kbps){
+async function convertBlobToMp3(blob, kbps, onProgress){
   if(!recWaveCtx) recWaveCtx = new (window.AudioContext||window.webkitAudioContext)();
   const arrayBuf = await blob.arrayBuffer();
   const audioBuf = await recWaveCtx.decodeAudioData(arrayBuf);
-  return pcmToMp3Blob(audioBuf, kbps);
+  return pcmToMp3Blob(audioBuf, kbps, onProgress);
 }
 
 /* ---------- Enhance: studio-style polish for a recording (Equalizer feature, step 1 of 3) ----------
@@ -9114,6 +9132,9 @@ function resetCaptureUI(){
   $('#recCapSub').textContent = "Tap the mic to start — your phone will ask for microphone access the first time.";
   $('#recTimer').textContent = '0:00';
   $('#recTitleInput').value = '';
+  $('#recProcessingProgress').style.display = 'none';
+  $('#recPreviewAudio').style.display = '';
+  $('#recTitleInput').closest('.field').style.display = '';
   if(recTimerHandle){ clearInterval(recTimerHandle); recTimerHandle = null; }
   recChunks = []; recBlob = null; recDurationSec = 0;
 }
@@ -9332,7 +9353,18 @@ async function onRecordingStopped(){
   const rawBlob = new Blob(recChunks, {type: mime});
   $('#recActiveBlock').style.display = 'none';
   $('#recReviewBlock').style.display = '';
-  $('#recCapSub').textContent = 'Processing…';
+  // Nothing here is actually usable until conversion finishes — hide the audio player and title
+  // field rather than show them empty/unresponsive, and show a real progress bar so it's obvious
+  // the app is working, not stuck.
+  $('#recPreviewAudio').style.display = 'none';
+  $('#recTitleInput').closest('.field').style.display = 'none';
+  $('#recProcessingProgress').style.display = '';
+  $('#recProcessingFill').style.width = '0%';
+  $('#recCapSub').textContent = 'Processing… 0%';
+  // Without this, the label above and the CPU-heavy encoding step below would land in the same
+  // synchronous stretch of work — the browser wouldn't get a chance to actually paint "Processing…"
+  // before the page appeared to freeze. Two animation-frame yields reliably wait for one real paint.
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
   // Convert on this same device — the one that just recorded, so it can always decode its own
   // output — into a universal MP3 file. This is what makes the recording actually play and
   // share correctly on every device later, iPad included, instead of only the device that made
@@ -9340,11 +9372,18 @@ async function onRecordingStopped(){
   // conversion fails for any reason, we fall back to the raw recording rather than block
   // saving altogether — imperfect cross-device playback beats losing the recording entirely.
   try{
-    recBlob = await convertBlobToMp3(rawBlob, 128);
+    recBlob = await convertBlobToMp3(rawBlob, 128, frac=>{
+      const pct = Math.round(frac*100);
+      $('#recCapSub').textContent = 'Processing… '+pct+'%';
+      $('#recProcessingFill').style.width = pct+'%';
+    });
   }catch(e){
     recBlob = rawBlob;
     toast('Could not convert this recording for universal playback — saved in its original format');
   }
+  $('#recProcessingProgress').style.display = 'none';
+  $('#recPreviewAudio').style.display = '';
+  $('#recTitleInput').closest('.field').style.display = '';
   $('#recCapSub').textContent = 'Listen back, then keep it or record again.';
   $('#recPreviewAudio').src = trackBlobUrl('recPreview', URL.createObjectURL(recBlob));
   const now = new Date();
@@ -9474,7 +9513,9 @@ $('#btnFixAllRecordings').addEventListener('click', async ()=>{
     if(!rec) continue;
     if(audioExtFromType(rec.blob.type)==='mp3') continue; // already fixed
     try{
-      const mp3Blob = await convertBlobToMp3(rec.blob, 128);
+      const mp3Blob = await convertBlobToMp3(rec.blob, 128, frac=>{
+        btn.textContent = 'Converting… ('+converted+' done, '+Math.round(frac*100)+'%)';
+      });
       await mediaPut('recording-audio:'+r.id, mp3Blob, {mimeType:mp3Blob.type, size:mp3Blob.size});
       if(gToken && r.driveFileId){
         try{
@@ -9529,7 +9570,7 @@ async function importOneRecording(file){
     const arrayBuf = await file.arrayBuffer();
     const audioBuf = await recWaveCtx.decodeAudioData(arrayBuf);
     durationSec = Math.round(audioBuf.duration);
-    mp3Blob = pcmToMp3Blob(audioBuf, 128);
+    mp3Blob = await pcmToMp3Blob(audioBuf, 128);
   }catch(e){
     converted = false;
     mp3Blob = file; // keep the original file rather than lose the upload
@@ -9879,12 +9920,12 @@ $('#recShareBtn').addEventListener('click', async ()=>{
 $('#recFixFormatBtn').addEventListener('click', async ()=>{
   const r = S.recordings.find(x=>x.id===viewingRecordingId); if(!r) return;
   $('#recFixFormatBtn').disabled = true;
-  $('#recFormatNote').textContent = 'Converting…';
+  $('#recFormatNote').textContent = 'Converting… 0%';
   try{
     const rec = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId);
     if(!rec) throw new Error('This recording is not available on this device or in Drive');
     let mp3Blob;
-    try{ mp3Blob = await convertBlobToMp3(rec.blob, 128); }
+    try{ mp3Blob = await convertBlobToMp3(rec.blob, 128, frac=>{ $('#recFormatNote').textContent = 'Converting… '+Math.round(frac*100)+'%'; }); }
     catch(e){ throw new Error('This device could not decode the original recording — try this fix from the device (or a laptop) it was recorded on instead'); }
     await mediaPut('recording-audio:'+r.id, mp3Blob, {mimeType:mp3Blob.type, size:mp3Blob.size});
     if(gToken && r.driveFileId){
