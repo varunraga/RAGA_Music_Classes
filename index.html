@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-08-24 -->
+<!-- Build: 2026-08-25 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -3567,6 +3567,8 @@ function renderAttRows(c){
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
       '<select data-att="'+sid+'" aria-label="Status for '+esc(st?st.name:sid)+'">'+opts+'</select>'+
       (usd ? '<input type="number" min="0" data-inr="'+sid+'" placeholder="₹ for this class" title="INR amount for this class (as credited/charged)" value="'+(cur==null?'':cur)+'" style="width:140px;font:inherit;font-size:.82rem;padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--ink);display:'+(c.att[sid]==='Completed'?'':'none')+'">' : '')+
+      (!usd ? '<span class="rate-adjust-toggle" data-rate-toggle="'+sid+'" title="Change the billed amount for just this one class — future classes keep using the normal rate" style="display:'+(c.att[sid]==='Completed'?'':'none')+';font-size:.78rem;color:var(--muted);text-decoration:underline dotted;cursor:pointer;white-space:nowrap">Adjust ₹ for this class</span>'+
+        '<input type="number" min="0" data-inr="'+sid+'" title="One-off override for this class only — the student\'s standard rate is unchanged" value="'+(cur==null?'':cur)+'" style="width:120px;font:inherit;font-size:.82rem;padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--ink);display:none"> ' : '')+
       '<div class="mat-group" data-matgroup="'+sid+'" data-selected="'+(mv||'')+'" style="display:'+(c.att[sid]==='Completed'?'flex':'none')+';gap:5px;align-items:center;flex-wrap:wrap">'+
         '<button type="button" class="mat-btn'+(mv==='sent'?' on':'')+'" data-matval="sent" title="Recording/notation sent">♪ Sent</button>'+
         '<button type="button" class="mat-btn'+(mv==='na'?' on':'')+'" data-matval="na" title="Nothing needed for this class">– Not required</button>'+
@@ -3576,7 +3578,25 @@ function renderAttRows(c){
       '</div>';
     box.appendChild(row);
     const sel=row.querySelector('select'), inp=row.querySelector('input[data-inr]'), matGroup=row.querySelector('.mat-group');
-    if(inp) sel.addEventListener('change',()=>{ inp.style.display = sel.value==='Completed' ? '' : 'none'; });
+    if(inp) sel.addEventListener('change',()=>{ if(usd) inp.style.display = sel.value==='Completed' ? '' : 'none'; });
+    if(!usd){
+      const rateToggle = row.querySelector('[data-rate-toggle]');
+      if(rateToggle && inp){
+        rateToggle.addEventListener('click', ()=>{
+          rateToggle.style.display='none';
+          inp.style.display='';
+          inp.focus(); inp.select();
+        });
+        sel.addEventListener('change',()=>{
+          if(sel.value==='Completed'){
+            if(inp.style.display==='none') rateToggle.style.display='';
+          } else {
+            rateToggle.style.display='none';
+            inp.style.display='none';
+          }
+        });
+      }
+    }
     if(matGroup) sel.addEventListener('change',()=>{ matGroup.style.display = sel.value==='Completed' ? 'flex' : 'none'; });
     if(matGroup) matGroup.querySelectorAll('.mat-btn[data-matval]').forEach(b=>b.addEventListener('click',()=>{
       const val=b.dataset.matval;
@@ -3742,7 +3762,18 @@ $('#clsSave').addEventListener('click', async ()=>{
       const st=sById(sid);
       if(!st) return;
       if(!isUSD(st)){
-        if(newAtt[sid]==='Completed'){ if(newInr[sid]==null) newInr[sid]=unitFee(st,mode); }
+        if(newAtt[sid]==='Completed'){
+          const inp = $('#attRows input[data-inr="'+sid+'"]');
+          const overrideOpen = inp && inp.style.display !== 'none';
+          if(overrideOpen){
+            const raw = inp.value.trim();
+            const v = raw==='' ? null : parseInt(raw,10);
+            newInr[sid] = (v!=null && !isNaN(v) && v>=0) ? v : (newInr[sid]!=null ? newInr[sid] : unitFee(st,mode));
+          } else if(newInr[sid]==null){
+            newInr[sid]=unitFee(st,mode);
+          }
+          // else: already billed and the override was never opened — leave the existing amount untouched
+        }
         else delete newInr[sid];
         return;
       }
