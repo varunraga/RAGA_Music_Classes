@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-08-25 -->
+<!-- Build: 2026-08-26 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -892,6 +892,7 @@
             <button class="btn small" id="calPrev" aria-label="Previous">‹</button>
             <button class="btn small" id="calToday">Today</button>
             <button class="btn small" id="calNext" aria-label="Next week">›</button>
+            <button class="btn small" id="btnRecentlyDeletedClasses">Recently deleted<span id="recentlyDeletedClassesBadge" class="badge hold" style="display:none;margin-left:5px"></span></button>
             <button class="btn gold small" id="btnSchedule">Schedule class</button>
           </div>
         </div>
@@ -1670,6 +1671,15 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="m-recently-deleted-classes">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recentlyDeletedClassesTitle" style="max-width:640px">
+    <h3 id="recentlyDeletedClassesTitle">Recently deleted classes</h3>
+    <div class="sub">A deleted class stays here for 30 days before being permanently removed — restore anything you deleted by mistake, any time, not just in the few seconds right after.</div>
+    <div id="recentlyDeletedClassesList" style="margin:12px 0;max-height:440px;overflow-y:auto"></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-recently-deleted-classes">Close</button></div></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="m-debug-panel">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="debugPanelTitle" style="max-width:640px">
     <h3 id="debugPanelTitle">Debug info</h3>
@@ -2276,6 +2286,7 @@ migrateSchema();
 S.students ||= []; S.classes ||= []; S.payments ||= []; S.seq ||= {stu:1,cls:1,pay:1};
 S.students.forEach(s=>{ s.country ||= ''; s.timezone ||= ''; });
 S.withdrawals ||= []; S.seq.wd ||= 1; S.meta ||= {};
+S.recentlyDeletedClasses ||= [];
 S.notations ||= []; S.seq.not ||= 1;
 S.talaExports ||= []; S.seq.talaExport ||= 1;
 S.notations.forEach(n=>{ n.hasPdf ||= false; n.pdfName ||= null; });
@@ -3843,11 +3854,19 @@ $('#clsSave').addEventListener('click', async ()=>{
 $('#clsDelete').addEventListener('click',()=>{
   const c = S.classes.find(x=>x.cid===editingClassId);
   if(!c) return;
-  if(!confirm('Delete this class record?\n\n'+sessionNames(c)+' · '+fmtD(c.date)+' '+fmtTime12(c.time)+'\n\nThis removes it permanently, including any completed attendance used for billing.')) return;
+  if(!confirm('Delete this class record?\n\n'+sessionNames(c)+' · '+fmtD(c.date)+' '+fmtTime12(c.time)+'\n\nIt moves to Recently Deleted (Calendar → Recently deleted) and is permanently removed after 30 days — restorable any time before that, including any completed attendance used for billing.')) return;
   const removed = c;
   S.classes = S.classes.filter(x=>x.cid!==editingClassId);
   tombstone(removed.cid);
-  undoToast('Class deleted', ()=>{ untombstone(removed.cid); removed.updatedAt=Date.now(); S.classes.push(removed); });
+  S.recentlyDeletedClasses.push({...removed, deletedAt:Date.now()});
+  renderRecentlyDeletedClassesBadge();
+  undoToast('Class deleted — also recoverable from Recently deleted for 30 days', ()=>{
+    untombstone(removed.cid);
+    removed.updatedAt = Date.now();
+    S.classes.push(removed);
+    S.recentlyDeletedClasses = S.recentlyDeletedClasses.filter(x=>x.cid!==removed.cid);
+    renderRecentlyDeletedClassesBadge();
+  });
   closeModal('m-class'); renderAll();
 });
 
@@ -5646,6 +5665,64 @@ $('#lnkFullBackup').addEventListener('click', async e=>{
 });
 $('#lnkFullRestore').addEventListener('click', e=>{ e.preventDefault(); $('#fullRestoreFile').click(); });
 $('#lnkDataBackup').addEventListener('click', e=>{ e.preventDefault(); openModal('m-data-backup'); });
+/* ---------- Recently deleted classes — longer-lived undo for accidental class deletion,
+   reachable from the Calendar view (the toast undo only lasts a few seconds). Kept as its own
+   local buffer rather than synced/merged like other data — a device shows only the classes it
+   itself deleted, which is enough for "I just deleted the wrong one" recovery. */
+function renderRecentlyDeletedClassesBadge(){
+  const b = $('#recentlyDeletedClassesBadge'); if(!b) return;
+  const n = (S.recentlyDeletedClasses||[]).length;
+  b.textContent = n; b.style.display = n>0 ? '' : 'none';
+}
+function renderRecentlyDeletedClassesList(){
+  const el = $('#recentlyDeletedClassesList'); if(!el) return;
+  const items = (S.recentlyDeletedClasses||[]).slice().sort((a,b)=>b.deletedAt-a.deletedAt);
+  if(!items.length){
+    el.innerHTML = '<div class="empty" style="padding:20px 0">No recently deleted classes.</div>';
+    return;
+  }
+  el.innerHTML = items.map(c=>{
+    const daysLeft = Math.max(0, RECENTLY_DELETED_DAYS - Math.floor((Date.now()-c.deletedAt)/86400000));
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
+      + '<div><div>'+esc(sessionNames(c))+'</div>'
+      + '<div class="tiny" style="color:var(--muted)">'+fmtD(c.date)+' '+fmtTime12(c.time)+' · deleted '+fmtRecDate(c.deletedAt)+' · auto-removed in '+daysLeft+' day'+(daysLeft===1?'':'s')+'</div></div>'
+      + '<div style="display:flex;gap:6px;flex:0 0 auto">'
+      + '<button class="btn tiny gold" data-restore-class="'+c.cid+'">Restore</button>'
+      + '<button class="btn tiny" style="color:var(--red)" data-purge-class="'+c.cid+'">Delete permanently</button>'
+      + '</div></div>';
+  }).join('');
+  el.querySelectorAll('[data-restore-class]').forEach(b=>{
+    b.addEventListener('click', ()=>{ restoreDeletedClass(b.dataset.restoreClass); renderRecentlyDeletedClassesList(); });
+  });
+  el.querySelectorAll('[data-purge-class]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(!confirm('Permanently delete this class? It cannot be recovered after this.')) return;
+      purgeDeletedClassPermanently(b.dataset.purgeClass);
+      renderRecentlyDeletedClassesList();
+    });
+  });
+}
+function restoreDeletedClass(cid){
+  const idx = (S.recentlyDeletedClasses||[]).findIndex(x=>x.cid===cid);
+  if(idx<0) return;
+  const [item] = S.recentlyDeletedClasses.splice(idx,1);
+  const cls = {...item}; delete cls.deletedAt;
+  cls.updatedAt = Date.now();
+  untombstone(cid);
+  S.classes.push(cls);
+  renderRecentlyDeletedClassesBadge();
+  persist(); renderAll();
+  toast('Class restored — '+sessionNames(cls));
+}
+function purgeDeletedClassPermanently(cid){
+  S.recentlyDeletedClasses = (S.recentlyDeletedClasses||[]).filter(x=>x.cid!==cid);
+  renderRecentlyDeletedClassesBadge();
+  persist();
+}
+$('#btnRecentlyDeletedClasses').addEventListener('click', ()=>{
+  renderRecentlyDeletedClassesList();
+  openModal('m-recently-deleted-classes');
+});
 /* ---------- Recently deleted — soft-delete recovery for recordings, notations, tala videos ---------- */
 const RECENTLY_DELETED_DAYS = 30;
 function renderRecentlyDeletedList(){
@@ -5732,6 +5809,12 @@ async function purgeOldDeletedItems(){
   (S.talaPatterns||[]).forEach(p=>{ if(p.deletedAt && p.deletedAt<cutoff) toPurge.push(['talaPattern', p.id]); });
   for(const [kind,id] of toPurge){ await purgeDeletedItem(kind, id); }
   if(toPurge.length){ renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); renderTalaSavedRow(); }
+  const oldClasses = (S.recentlyDeletedClasses||[]).filter(c=>c.deletedAt<cutoff);
+  if(oldClasses.length){
+    S.recentlyDeletedClasses = S.recentlyDeletedClasses.filter(c=>c.deletedAt>=cutoff);
+    renderRecentlyDeletedClassesBadge();
+    persist();
+  }
 }
 $('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); closeModal('m-data-backup'); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
 
@@ -11172,6 +11255,7 @@ if($('#talaBannerImg')) $('#talaBannerImg').src = TALA_BANNER;
 if($('#talaHandImgBack')) $('#talaHandImgBack').src = TALA_HAND_BACK;
 if($('#talaHandImgPalm')) $('#talaHandImgPalm').src = TALA_HAND_PALM;
 renderAll();
+renderRecentlyDeletedClassesBadge();
 syncBrandDecor();
 // to download — relabel them so the UI isn't misleading.
 if(!navigator.share){
