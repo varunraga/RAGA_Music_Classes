@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-08 -->
+<!-- Build: 2026-10-09 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -2017,6 +2017,7 @@
         <div class="field" id="repN" style="display:none"><label for="cWeeks">Occurrences (incl. first)</label><input id="cWeeks" type="number" min="2" max="52" value="4"></div>
         <div class="field" id="repUntil" style="display:none"><label for="cUntil">…or repeat until</label><input id="cUntil" type="date"></div>
       </div>
+      <div class="tiny" id="repEditHint" style="display:none;color:var(--muted);margin-top:6px">Choosing Weekly adds the following weeks as new classes after this one and links them as a series. This class keeps its own details.</div>
     </div>
     <div id="attBlock" style="margin-top:14px;display:none">
       <div class="field" style="margin-bottom:8px"><label>Attendance / status per student</label></div>
@@ -3580,7 +3581,10 @@ function openClassModal(cid, presetDate, presetStu){
   $('#cTopic').value = c ? (c.topic||'') : '';
   $('#cHw').value = c ? (c.hw||'') : '';
   $('#cRepeat').value='none'; $('#cWeeks').value='4'; $('#cUntil').value='';
-  $('#repeatBlock').style.display = c ? 'none' : '';
+  // New classes always get the Repeat controls. An existing class gets them too as long as it isn't
+  // already part of a series — that's how a one-off class is turned into a repeating one later.
+  $('#repeatBlock').style.display = (!c || !c.seriesId) ? '' : 'none';
+  $('#repEditHint').style.display = c ? '' : 'none';
   toggleRepeatFields();
   setClsKind(kind, !!c);
   $('#clsDelete').style.display = c ? '' : 'none';
@@ -3599,6 +3603,7 @@ function openClassModal(cid, presetDate, presetStu){
     $('#cApplySeriesLabel').textContent = 'Apply this change to '+futureCount+' other upcoming class'+(futureCount===1?'':'es')+' in this series';
   } else {
     $('#cSeriesBlock').style.display = 'none';
+    $('#cApplySeries').checked = false;
   }
   openModal('m-class');
 }
@@ -3722,6 +3727,59 @@ function overlapWarning(date,time,dur,excludeCid){
   });
   return clash ? sessionNames(clash)+' at '+fmtTime12(clash.time) : null;
 }
+// Weekly dates from the Repeat controls (first entry = the class's own date), or {error}.
+function weeklyDatesFromForm(date){
+  const until=$('#cUntil').value;
+  let dates=[];
+  if(until){
+    if(until<=date) return {error:'"Repeat until" must be after the first date'};
+    let d=date, guard=0;
+    while(d<=until && guard<53){ dates.push(d); d=addDaysS(d,7); guard++; }
+  }else{
+    let n=parseInt($('#cWeeks').value,10);
+    if(isNaN(n)||n<2) return {error:'Occurrences must be at least 2 (or choose "Does not repeat")'};
+    n=Math.min(n,52);
+    for(let i=0;i<n;i++) dates.push(addDaysS(date,7*i));
+  }
+  if(dates.length<2) return {error:'"Repeat until" must be at least a week after the class date'};
+  return {dates};
+}
+// Turns an already-saved one-off class into the first of a weekly series: gives it a seriesId and
+// adds fresh classes (nothing carried over from it — no attendance, fee, topic or homework) for
+// each of `dates`. Returns how many were added.
+function addWeeklyRepeats(c, dates){
+  const sid='SR'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  c.seriesId=sid; c.updatedAt=Date.now();
+  dates.forEach(d=>{
+    if(c.kind==='own-lesson'){
+      S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'own-lesson', withWhom:c.withWhom, studentIds:[], att:{},
+        ownStatus: d < TODAY ? 'Completed' : 'Scheduled', feeAmount:null, feeMode:null, feeRef:'',
+        feeReceiptFileId:null, feeReceiptExt:null, feeReceiptMime:null, feeReceiptName:null,
+        seriesId:sid, date:d, time:c.time, dur:c.dur, mode:c.mode, link:c.link||'', topic:'', hw:'', updatedAt:Date.now()});
+    }else{
+      const att={}; c.studentIds.forEach(x=>att[x]= d < TODAY ? 'Completed' : 'Scheduled');
+      const inr0={}; c.studentIds.forEach(x=>{ const st=sById(x); if(st && !isUSD(st) && att[x]==='Completed') inr0[x]=unitFee(st,c.mode); });
+      S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'teaching', studentIds:c.studentIds.slice(), att, date:d, time:c.time, dur:c.dur,
+        mode:c.mode, link:c.link||'', inr:inr0, mat:{}, topic:'', hw:'', seriesId:sid, updatedAt:Date.now()});
+    }
+    S.seq.cls++;
+  });
+  return dates.length;
+}
+// Validates a "make this existing class repeat" request before anything is saved. Returns the
+// extra dates to create (possibly empty), or null if the user should fix something / cancelled.
+function planRepeatsForExisting(c, date, time, dur){
+  if($('#cRepeat').value!=='weekly' || c.seriesId) return [];
+  const r=weeklyDatesFromForm(date);
+  if(r.error){ toast(r.error); return null; }
+  const extra=r.dates.slice(1);
+  const clashes=extra.map(d=>({d,w:overlapWarning(d,time,dur,c.cid)})).filter(x=>x.w);
+  if(clashes.length){
+    const list=clashes.slice(0,4).map(x=>fmtD(x.d)+' — clashes with '+x.w).join('\n');
+    if(!confirm('Time clash detected:\n\n'+list+(clashes.length>4?'\n…and '+(clashes.length-4)+' more':'')+'\n\nSchedule anyway?')) return null;
+  }
+  return extra;
+}
 $('#clsSave').addEventListener('click', async ()=>{
   const date=$('#cDate').value, time=$('#cTime').value;
   const dur=parseInt($('#cDur').value,10);
@@ -3734,6 +3792,8 @@ $('#clsSave').addEventListener('click', async ()=>{
     const withWhom = MY_GURUS.find(g=>g.id===guruId).name;
     if(editingClassId){
       const c = S.classes.find(x=>x.cid===editingClassId);
+      const repeatDates = planRepeatsForExisting(c, date, time, dur);
+      if(repeatDates===null) return;
       const feeRaw = $('#cOwnFee').value.trim();
       const feeAmount = feeRaw==='' ? null : Math.max(0, parseInt(feeRaw,10)||0);
       const patch = {withWhom, date, time, dur, mode, link,
@@ -3757,7 +3817,9 @@ $('#clsSave').addEventListener('click', async ()=>{
       if($('#cApplySeries').checked && c.seriesId){
         seriesCount = applyToFutureSeries(c, {withWhom, time, dur, mode, link});
       }
-      toast('Lesson updated — with '+withWhom+(seriesCount?' · applied to '+seriesCount+' more upcoming lesson'+(seriesCount===1?'':'s'):''));
+      let repeatCount = 0;
+      if(repeatDates.length) repeatCount = addWeeklyRepeats(c, repeatDates);
+      toast('Lesson updated — with '+withWhom+(seriesCount?' · applied to '+seriesCount+' more upcoming lesson'+(seriesCount===1?'':'s'):'')+(repeatCount?' · '+repeatCount+' weekly lesson'+(repeatCount===1?'':'s')+' added':''));
       closeModal('m-class'); renderAll(); return;
     }
     let dates=[date];
@@ -3801,6 +3863,8 @@ $('#clsSave').addEventListener('click', async ()=>{
 
   if(editingClassId){
     const c = S.classes.find(x=>x.cid===editingClassId);
+    const repeatDates = planRepeatsForExisting(c, date, time, dur);
+    if(repeatDates===null) return;
     const newAtt = {};
     ids.forEach(sid=>{
       const sel = $('#attRows select[data-att="'+sid+'"]');
@@ -3849,7 +3913,9 @@ $('#clsSave').addEventListener('click', async ()=>{
     if($('#cApplySeries').checked && c.seriesId){
       seriesCount = applyToFutureSeries(c, {studentIds:ids.slice(), time, dur, mode, link});
     }
-    toast('Class updated — '+sessionNames(c)+(seriesCount?' · applied to '+seriesCount+' more upcoming class'+(seriesCount===1?'':'es'):''));
+    let repeatCount = 0;
+    if(repeatDates.length) repeatCount = addWeeklyRepeats(c, repeatDates);
+    toast('Class updated — '+sessionNames(c)+(seriesCount?' · applied to '+seriesCount+' more upcoming class'+(seriesCount===1?'':'es'):'')+(repeatCount?' · '+repeatCount+' weekly class'+(repeatCount===1?'':'es')+' added':''));
     closeModal('m-class'); renderAll(); return;
   }
 
