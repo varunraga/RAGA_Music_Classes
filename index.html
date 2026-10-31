@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-10 -->
+<!-- Build: 2026-10-11 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -2137,11 +2137,15 @@
     </div>
     <div class="tscroll" style="max-height:50vh;overflow-y:auto">
       <table id="acTable">
-        <thead><tr><th>Date</th><th>Student</th><th>Topic</th><th class="r">Billed</th><th>Material</th><th class="r">Action</th></tr></thead>
+        <thead><tr><th style="width:30px"><input type="checkbox" id="acPickAll" aria-label="Select all classes shown"></th><th>Date</th><th>Student</th><th>Topic</th><th class="r">Billed</th><th>Material</th><th class="r">Action</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
     <div class="empty" id="acEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5.3"/></svg>No completed classes match these filters.</div>
+    <div id="acTotalBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)">
+      <div id="acTotalText" style="font-size:.88rem"></div>
+      <button type="button" class="btn tiny" id="acPickClear" style="display:none">Clear selection</button>
+    </div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-allcompleted">Close</button></div></div>
   </div>
 </div>
@@ -4151,6 +4155,7 @@ function renderRecent(){
 }
 let acSelectedMonths=new Set();
 let acAllTime=false;
+let acPicked=new Set(); // 'cid|studentId' of ticked rows — survives filter/search changes
 function acMonthsAvailable(){
   // every month that actually has a completed class, most recent first, grouped by year
   const set=new Set();
@@ -4168,6 +4173,7 @@ function openAllCompleted(prefilterMat){
   $('#acCat').value='';
   $('#acMat').value = prefilterMat || '';
   acAllTime = !!prefilterMat;
+  acPicked.clear();
   acSelectedMonths = prefilterMat ? new Set() : defaultLast6Months();
   buildMonthPanel();
   acUpdateButtonLabel();
@@ -4233,9 +4239,11 @@ function renderAllCompletedList(){
   const tb=$('#acTable tbody'); tb.innerHTML='';
   $('#acEmpty').style.display = items.length ? 'none' : '';
   $('#acTable').style.display = items.length ? '' : 'none';
+  if(!items.length){ acShown=[]; acUpdateTotals(); }
   items.forEach(({c,sid,st})=>{
     const rowId='ac'+c.cid+'-'+sid;
-    tb.insertAdjacentHTML('beforeend','<tr><td class="muted">'+fmtD(c.date)+'</td>'+
+    const pk=c.cid+'|'+sid;
+    tb.insertAdjacentHTML('beforeend','<tr><td><input type="checkbox" data-acpick="'+pk+'" aria-label="Select this class"'+(acPicked.has(pk)?' checked':'')+'></td><td class="muted">'+fmtD(c.date)+'</td>'+
       '<td>'+esc(st.name)+'</td><td class="muted">'+esc(c.topic||'—')+'</td>'+
       '<td class="r">'+(st.cat==='Personal'
         ? (isUSD(st)
@@ -4247,7 +4255,55 @@ function renderAllCompletedList(){
     wireMatQuick($('#'+rowId), c.cid, sid, renderAllCompletedList);
   });
   tb.querySelectorAll('[data-acm]').forEach(b=>b.addEventListener('click',()=>{ closeModal('m-allcompleted'); openClassModal(b.dataset.acm); }));
+  tb.querySelectorAll('[data-acpick]').forEach(chk=>chk.addEventListener('change',()=>{
+    if(chk.checked) acPicked.add(chk.dataset.acpick); else acPicked.delete(chk.dataset.acpick);
+    acUpdateTotals();
+  }));
+  acShown = items.map(({c,sid})=>c.cid+'|'+sid);
+  acUpdateTotals();
 }
+let acShown=[];
+// Total fee for the ticked classes. Uses the same per-class amount as billing (a fee override on a
+// class counts; a USD class whose ₹ hasn't been entered yet counts as nothing and is flagged).
+function acUpdateTotals(){
+  let n=0, total=0, personal=0, raga=0, usdPending=0, hidden=0;
+  [...acPicked].forEach(pk=>{
+    const [cid,sid]=pk.split('|');
+    const c=S.classes.find(x=>x.cid===cid), st=sById(sid);
+    if(!c || !st || c.att[sid]!=='Completed'){ acPicked.delete(pk); return; }   // no longer a completed class
+    n++;
+    if(!acShown.includes(pk)) hidden++;
+    if(isUSD(st) && classINR(c,sid)==null){ usdPending++; return; }
+    const amt=classAmount(st,c);
+    total+=amt; if(st.cat==='RAGA') raga+=amt; else personal+=amt;
+  });
+  const el=$('#acTotalText');
+  if(!n){ el.innerHTML='<span style="color:var(--muted)">Tick classes to see the total fees for just those.</span>'; }
+  else{
+    let h='<b>'+n+'</b> class'+(n===1?'':'es')+' selected · Total <b class="num">'+RUPEE.format(total)+'</b>';
+    const bits=[];
+    if(personal && raga){ bits.push('Personal '+RUPEE.format(personal)); bits.push('RAGA '+RUPEE.format(raga)); }
+    if(usdPending) bits.push(usdPending+' ₹ pending, not counted');
+    if(hidden) bits.push(hidden+' not shown by current filters');
+    if(bits.length) h+='<div class="tiny" style="color:var(--muted);margin-top:2px">'+bits.join(' · ')+'</div>';
+    el.innerHTML=h;
+  }
+  $('#acPickClear').style.display = n ? '' : 'none';
+  const all=$('#acPickAll');
+  const shownPicked=acShown.filter(k=>acPicked.has(k)).length;
+  all.checked = acShown.length>0 && shownPicked===acShown.length;
+  all.indeterminate = shownPicked>0 && shownPicked<acShown.length;
+}
+$('#acPickAll').addEventListener('change',e=>{
+  acShown.forEach(k=>{ if(e.target.checked) acPicked.add(k); else acPicked.delete(k); });
+  document.querySelectorAll('#acTable [data-acpick]').forEach(chk=>{ chk.checked = acPicked.has(chk.dataset.acpick); });
+  acUpdateTotals();
+});
+$('#acPickClear').addEventListener('click',()=>{
+  acPicked.clear();
+  document.querySelectorAll('#acTable [data-acpick]').forEach(chk=>{ chk.checked=false; });
+  acUpdateTotals();
+});
 $('#acSearch').addEventListener('input', renderAllCompletedList);
 $('#acCat').addEventListener('change', renderAllCompletedList);
 $('#acMat').addEventListener('change', renderAllCompletedList);
