@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-09 -->
+<!-- Build: 2026-10-10 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -3701,14 +3701,20 @@ function autofillFromPrimary(){
   if(st.time && st.time!=='Flexible') $('#cTime').value = st.time;
   else $('#cTime').value = '';
   toggleLinkField();
+  // A partner that was filled in automatically belongs to the *previous* primary student, so drop it
+  // and work it out again for the new one (otherwise switching from a paired to an unpaired student
+  // left the old partner stuck in the box). A partner the user picked by hand is left alone.
+  const wasAutoPartner = $('#cPartnerHint').style.display!=='none';
   $('#cPartnerHint').style.display='none';
+  if(wasAutoPartner) $('#cStu2').value='';
   if($('#cStu2').value===$('#cStu1').value) $('#cStu2').value=''; // primary changed to whoever was auto-filled as the partner
   if(!editingClassId && st.partnerId && !$('#cStu2').value && st.partnerId!==$('#cStu1').value){
+    // A paired student always comes along by default, whichever of the two is picked first. This used
+    // to be skipped when the partner already had a class (or was skipped) in the *current* week —
+    // but that check looked at this week, not the date being scheduled, and left the partner blank
+    // far too often. The hint below says it can be cleared to schedule solo.
     const p = sById(st.partnerId);
-    const mon=mondayOf(0);
-    const wk=weekKeyOf(mon);
-    const skip = S.meta.weekSkip[wk] || [];
-    if(p && !p.archived && !skip.includes(p.id) && !studentScheduledDay(p, mon)){
+    if(p && !p.archived){
       $('#cStu2').value = p.id;
       $('#cPartnerHint').style.display='';
     }
