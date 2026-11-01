@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-12 -->
+<!-- Build: 2026-10-13 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -2070,7 +2070,17 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="unupdTitle" style="max-width:640px">
     <h3 id="unupdTitle">Classes awaiting a status update</h3>
     <div class="sub">These classes have finished but are still marked Scheduled. Tap one to open it and set Completed, Cancelled, etc.</div>
-    <div id="unupdList" style="margin:12px 0;max-height:60vh;overflow-y:auto"></div>
+    <div id="unupdList" style="margin:12px 0;max-height:46vh;overflow-y:auto"></div>
+    <div id="unupdBulkBar" style="display:none;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="check" style="font-weight:600"><input type="checkbox" id="unupdSelAll"> <span id="unupdSelText">Select all</span></label>
+        <span style="flex:1 1 auto"></span>
+        <label for="unupdBulkStatus" class="tiny" style="color:var(--muted)">Mark as</label>
+        <select id="unupdBulkStatus" style="flex:0 0 auto"><option>Completed</option><option>Absent</option><option>Cancelled by Student</option><option>Cancelled by Teacher</option></select>
+        <button type="button" class="btn gold" id="unupdBulkApply" disabled>Apply</button>
+      </div>
+      <div class="tiny" id="unupdBulkNote" style="color:var(--muted);margin-top:6px"></div>
+    </div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-unupdated">Close</button></div></div>
   </div>
 </div>
@@ -5805,8 +5815,9 @@ function unupdatedNames(c){
   const names=open.map(firstName).join(' & ');
   return open.length<c.studentIds.length ? names+' <span class="muted">('+open.length+' of '+c.studentIds.length+' still open)</span>' : names;
 }
-function unupdatedItemHTML(c){
+function unupdatedItemHTML(c, withCheck){
   return '<div class="unupd-item" data-unupd="'+c.cid+'" role="button" tabindex="0">'+
+    (withCheck ? '<input type="checkbox" data-unupdchk="'+c.cid+'" aria-label="Select this class"'+(unupdPicked.has(c.cid)?' checked':'')+' style="flex:0 0 auto">' : '')+
     '<div class="when"><b>'+esc(fmtD(c.date))+'</b><span class="num">'+classTimeRange12(c)+'</span></div>'+
     '<div class="who"><b>'+unupdatedNames(c)+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</div>'+
     '<span class="badge '+(c.mode==='Online'?'online':'offline')+'">'+c.mode+'</span>'+
@@ -5816,14 +5827,92 @@ function unupdatedItemHTML(c){
 function wireUnupdatedItems(root){
   root.querySelectorAll('[data-unupd]').forEach(el=>{
     const go=()=>{ closeModal('m-unupdated'); closeModal('m-reminder'); openClassModal(el.dataset.unupd); };
-    el.addEventListener('click',go);
-    el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
+    el.addEventListener('click',e=>{ if(e.target.closest('[data-unupdchk]')) return; go(); });
+    el.addEventListener('keydown',e=>{ if(e.target.closest('[data-unupdchk]')) return; if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
   });
 }
+let unupdPicked=new Set(); // cids ticked in the list, for bulk status update
+function renderUnupdatedList(){
+  const un=unupdatedClasses();
+  const live=new Set(un.map(c=>c.cid));
+  [...unupdPicked].forEach(id=>{ if(!live.has(id)) unupdPicked.delete(id); });
+  $('#unupdList').innerHTML = un.length ? un.map(c=>unupdatedItemHTML(c,true)).join('') : '<div class="empty" style="padding:20px 0">All finished classes have a status. 🎉</div>';
+  wireUnupdatedItems($('#unupdList'));
+  $('#unupdList').querySelectorAll('[data-unupdchk]').forEach(chk=>chk.addEventListener('change',()=>{
+    if(chk.checked) unupdPicked.add(chk.dataset.unupdchk); else unupdPicked.delete(chk.dataset.unupdchk);
+    updateUnupdatedBar();
+  }));
+  $('#unupdBulkBar').style.display = un.length ? '' : 'none';
+  updateUnupdatedBar();
+}
+function updateUnupdatedBar(){
+  const un=unupdatedClasses(), n=unupdPicked.size;
+  const all=$('#unupdSelAll');
+  all.checked = un.length>0 && n===un.length;
+  all.indeterminate = n>0 && n<un.length;
+  $('#unupdSelText').textContent = n ? n+' of '+un.length+' selected' : 'Select all ('+un.length+')';
+  const b=$('#unupdBulkApply');
+  b.disabled = !n;
+  b.textContent = n ? 'Apply to '+n : 'Apply';
+  const status=$('#unupdBulkStatus').value;
+  const ownPicked=[...unupdPicked].some(id=>{ const c=S.classes.find(x=>x.cid===id); return c && c.kind==='own-lesson'; });
+  $('#unupdBulkNote').textContent = (ownPicked && status!=='Completed')
+    ? 'Your own lessons have no Absent option — they will be saved as Cancelled.'
+    : (status==='Completed' ? 'Completed classes are billed at each student\'s current rate.' : '');
+}
+// Applies one status to every still-open student of each class (students already marked are left
+// alone), with the same side effects as changing it in the class form: Completed bills the class at
+// the student's rate; any other status clears that class's fee. Returns what's needed to undo it.
+function applyBulkStatus(cids, status){
+  const before=[]; let changed=0, usdPending=0, ownMapped=0;
+  cids.forEach(cid=>{
+    const c=S.classes.find(x=>x.cid===cid);
+    if(!c || !sessionScheduled(c)) return;
+    before.push({c, att:Object.assign({},c.att||{}), inr:Object.assign({},c.inr||{}), ownStatus:c.ownStatus});
+    if(c.kind==='own-lesson'){
+      c.ownStatus = status==='Completed' ? 'Completed' : 'Cancelled';
+      if(status!=='Completed') ownMapped++;
+    }else{
+      c.inr = c.inr||{};
+      c.studentIds.forEach(sid=>{
+        if(c.att[sid]!=='Scheduled') return;
+        const st=sById(sid);
+        c.att[sid]=status;
+        if(status==='Completed'){
+          if(st && !isUSD(st)){ if(c.inr[sid]==null) c.inr[sid]=unitFee(st,c.mode); }
+          else if(c.inr[sid]==null) usdPending++;
+        }else delete c.inr[sid];
+      });
+    }
+    c.updatedAt=Date.now(); changed++;
+  });
+  return {changed, before, usdPending, ownMapped};
+}
+$('#unupdSelAll').addEventListener('change',e=>{
+  unupdPicked.clear();
+  if(e.target.checked) unupdatedClasses().forEach(c=>unupdPicked.add(c.cid));
+  $('#unupdList').querySelectorAll('[data-unupdchk]').forEach(chk=>{ chk.checked=unupdPicked.has(chk.dataset.unupdchk); });
+  updateUnupdatedBar();
+});
+$('#unupdBulkStatus').addEventListener('change',updateUnupdatedBar);
+$('#unupdBulkApply').addEventListener('click',()=>{
+  const status=$('#unupdBulkStatus').value, cids=[...unupdPicked];
+  if(!cids.length) return;
+  if(!confirm('Mark '+cids.length+' class'+(cids.length===1?'':'es')+' as "'+status+'"?')) return;
+  const r=applyBulkStatus(cids,status);
+  unupdPicked.clear();
+  renderAll();
+  renderUnupdatedList();
+  if(!r.changed) return;
+  const extra=(r.usdPending?' · '+r.usdPending+' USD class'+(r.usdPending===1?' still needs':'es still need')+' a ₹ amount':'')+(r.ownMapped?' · own lessons saved as Cancelled':'');
+  undoToast(r.changed+' class'+(r.changed===1?'':'es')+' marked '+status+extra, ()=>{
+    r.before.forEach(b=>{ b.c.att=b.att; b.c.inr=b.inr; if(b.ownStatus!==undefined) b.c.ownStatus=b.ownStatus; b.c.updatedAt=Date.now(); });
+    if($('#m-unupdated').classList.contains('open')) renderUnupdatedList();
+  });
+});
 function openUnupdatedList(){
   const un=unupdatedClasses();
-  $('#unupdList').innerHTML = un.length ? un.map(unupdatedItemHTML).join('') : '<div class="empty" style="padding:20px 0">All finished classes have a status. 🎉</div>';
-  wireUnupdatedItems($('#unupdList'));
+  renderUnupdatedList();
   unupdatedMarkSeen(un.map(c=>c.cid));
   closeModal('m-reminder');
   if(!$('#m-unupdated').classList.contains('open')) openModal('m-unupdated');
@@ -5881,8 +5970,8 @@ function maybeShowReminder(){
   if(un.length){
     const shown=un.slice(0,4);
     html += '<div class="field" style="margin-bottom:4px"><label style="color:var(--red)">&#9888; Status not updated · '+un.length+' class'+(un.length===1?'':'es')+'</label></div>'+
-      '<div class="rem-list" id="remUnupd">'+shown.map(unupdatedItemHTML).join('')+'</div>'+
-      (un.length>shown.length ? '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:12px">+ '+(un.length-shown.length)+' more — view all</button>' : '');
+      '<div class="rem-list" id="remUnupd">'+shown.map(c=>unupdatedItemHTML(c)).join('')+'</div>'+
+      '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:12px">'+(un.length>shown.length ? '+ '+(un.length-shown.length)+' more — view all &amp; ' : '')+'Update in bulk</button>';
   }
   if(bOver){
     const bd=backupDays();
