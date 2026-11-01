@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-11 -->
+<!-- Build: 2026-10-12 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -299,6 +299,16 @@
   .rem-list{margin:10px 0 4px}
   .rem-item{display:flex;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;background:var(--paper);font-size:.88rem}
   .rem-item .t{font-weight:700;min-width:62px}
+  .unupd-banner{display:flex;align-items:center;gap:12px;padding:11px 14px;margin:0 0 16px;border:1px solid var(--red);border-radius:11px;background:var(--card);cursor:pointer}
+  .unupd-banner .ico{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .unupd-banner .txt{flex:1 1 auto;min-width:0;font-size:.9rem}
+  .unupd-item{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:9px;margin-bottom:8px;background:var(--paper);cursor:pointer;font-size:.88rem}
+  .unupd-item:hover,.unupd-item:focus{border-color:var(--red);outline:none}
+  .unupd-item .when{flex:0 0 auto;min-width:120px;display:flex;flex-direction:column}
+  .unupd-item .when span{color:var(--muted);font-size:.8rem}
+  .unupd-item .who{flex:1 1 auto;min-width:0}
+  .unupd-item .go{flex:0 0 auto;color:var(--red);font-weight:700;font-size:.8rem;white-space:nowrap}
+  @media(max-width:560px){ .unupd-item{flex-wrap:wrap} .unupd-item .when{min-width:0;flex-direction:row;gap:8px;flex-wrap:wrap} }
   .rem-highlight{animation:remGlow 1.8s ease-out}
   @keyframes remGlow{0%{box-shadow:0 0 0 3px var(--gold);background:rgba(214,158,32,.10)}100%{box-shadow:0 0 0 0 transparent;background:transparent}}
   .daybar{position:fixed;top:0;left:0;right:0;z-index:80;background:var(--gold-bg);border-bottom:1px solid var(--gold);color:var(--gold-ink);font-size:.82rem;padding:8px 14px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
@@ -904,6 +914,7 @@
             <button class="btn gold small" id="btnSchedule">Schedule class</button>
           </div>
         </div>
+        <div class="unupd-banner" id="calUnupdated" style="display:none" role="button" tabindex="0" title="Show the classes still waiting for a status"></div>
         <div class="panel" id="weekCheckPanel" style="margin:0 0 16px">
           <div class="panel-head"><h3>This week\'s scheduling</h3><span class="hint" id="weekCheckHint"></span></div>
           <div class="wchk-body" id="weekCheckList"></div>
@@ -2052,6 +2063,15 @@
         <button class="btn gold" id="invPrint">Print / Save as PDF</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-unupdated">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="unupdTitle" style="max-width:640px">
+    <h3 id="unupdTitle">Classes awaiting a status update</h3>
+    <div class="sub">These classes have finished but are still marked Scheduled. Tap one to open it and set Completed, Cancelled, etc.</div>
+    <div id="unupdList" style="margin:12px 0;max-height:60vh;overflow-y:auto"></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-unupdated">Close</button></div></div>
   </div>
 </div>
 
@@ -5767,28 +5787,103 @@ function goAndHighlight(view, sel){
     setTimeout(()=>el.classList.remove('rem-highlight'), 1800);
   });
 }
+/* ---------- Classes whose time has passed but whose status was never updated ---------- */
+const classEndDate = c => { const [y,m,d]=c.date.split('-').map(Number); return new Date(y,m-1,d,0,toMin(c.time)+(c.dur||60)); };
+function unupdatedClasses(){
+  const nowMs=Date.now();
+  return S.classes.filter(c=>sessionScheduled(c) && classEndDate(c).getTime()<=nowMs)
+    .sort((a,b)=> a.date===b.date ? toMin(a.time)-toMin(b.time) : (a.date<b.date?-1:1));
+}
+function classTimeRange12(c){
+  const e=toMin(c.time)+(c.dur||60);
+  return fmtTime12(c.time)+' – '+fmtTime12(pad(Math.floor(e/60)%24)+':'+pad(e%60));
+}
+// Who still needs a status: for a batch where only some were marked, just those left open.
+function unupdatedNames(c){
+  if(c.kind==='own-lesson') return sessionNames(c);
+  const open=c.studentIds.filter(id=>c.att[id]==='Scheduled');
+  const names=open.map(firstName).join(' & ');
+  return open.length<c.studentIds.length ? names+' <span class="muted">('+open.length+' of '+c.studentIds.length+' still open)</span>' : names;
+}
+function unupdatedItemHTML(c){
+  return '<div class="unupd-item" data-unupd="'+c.cid+'" role="button" tabindex="0">'+
+    '<div class="when"><b>'+esc(fmtD(c.date))+'</b><span class="num">'+classTimeRange12(c)+'</span></div>'+
+    '<div class="who"><b>'+unupdatedNames(c)+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</div>'+
+    '<span class="badge '+(c.mode==='Online'?'online':'offline')+'">'+c.mode+'</span>'+
+    '<span class="go">Update ›</span></div>';
+}
+// One click on a row takes you straight to that class.
+function wireUnupdatedItems(root){
+  root.querySelectorAll('[data-unupd]').forEach(el=>{
+    const go=()=>{ closeModal('m-unupdated'); closeModal('m-reminder'); openClassModal(el.dataset.unupd); };
+    el.addEventListener('click',go);
+    el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } });
+  });
+}
+function openUnupdatedList(){
+  const un=unupdatedClasses();
+  $('#unupdList').innerHTML = un.length ? un.map(unupdatedItemHTML).join('') : '<div class="empty" style="padding:20px 0">All finished classes have a status. 🎉</div>';
+  wireUnupdatedItems($('#unupdList'));
+  unupdatedMarkSeen(un.map(c=>c.cid));
+  closeModal('m-reminder');
+  if(!$('#m-unupdated').classList.contains('open')) openModal('m-unupdated');
+}
+function renderUnupdatedBanner(){
+  const el=$('#calUnupdated'); if(!el) return;
+  const un=unupdatedClasses();
+  if(!un.length){ el.style.display='none'; el.innerHTML=''; return; }
+  const c=un[0];
+  el.style.display='';
+  el.innerHTML='<span class="ico">!</span><div class="txt"><b>'+un.length+' class'+(un.length===1?'':'es')+' not updated with a status</b>'+
+    '<div class="tiny" style="color:var(--muted);margin-top:2px">'+(un.length===1?'':'Oldest: ')+esc(fmtD(c.date))+' · '+classTimeRange12(c)+' · '+unupdatedNames(c)+'</div></div>'+
+    '<button type="button" class="btn tiny gold" style="flex:0 0 auto">Review</button>';
+}
+$('#calUnupdated').addEventListener('click',openUnupdatedList);
+$('#calUnupdated').addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openUnupdatedList(); } });
+const unupdatedSeen = () => { try{ return JSON.parse(sessionStorage.getItem(KEY+'.unupdSeen')||'[]'); }catch(e){ return []; } };
+function unupdatedMarkSeen(ids){ try{ sessionStorage.setItem(KEY+'.unupdSeen', JSON.stringify(ids)); }catch(e){} }
+// While the app stays open: when a class's time passes without a status, pop the list up once for
+// it (unless another dialog is open — then it waits for the next tick), and keep the badge fresh.
+function checkUnupdatedPopup(){
+  renderNavBadge();
+  const un=unupdatedClasses(); const seen=new Set(unupdatedSeen());
+  if(!un.some(c=>!seen.has(c.cid))) return;
+  if(modalOpenCount>0) return;
+  openUnupdatedList();
+}
+setInterval(checkUnupdatedPopup, 60000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkUnupdatedPopup(); });
 function renderNavBadge(){
-  const n = reminderList(TODAY).length + reminderList(TOMORROW).length;
+  const ids=new Set([...reminderList(TODAY),...reminderList(TOMORROW),...unupdatedClasses()].map(c=>c.cid));
+  const n=ids.size;
   const b=$('#calBadge');
   b.style.display = n? '':'none';
   b.textContent = n;
+  renderUnupdatedBanner();
 }
 function maybeShowReminder(){
   let dismissed=false;
   try{ dismissed = sessionStorage.getItem(KEY+'.reminded')==='1'; }catch(e){}
-  if(dismissed) return;
+  if(dismissed){ unupdatedMarkSeen(unupdatedClasses().map(c=>c.cid)); return; } // already told them this session
   const t=reminderList(TODAY), tm=reminderList(TOMORROW);
+  const un=unupdatedClasses();
   const bOver = backupOverdue();
   const dow = parseD(TODAY).getDay(); // 0 Sun .. 6 Sat
   const mon0 = mondayOf(0);
   const needCount = dow!==1 ? studentsNeedingSchedule(mon0).length : 0; // quiet Mon only; visible Tue through Sun
   const needUrgent = dow===5||dow===6||dow===0; // Fri, Sat, Sun
   const matP = materialPending();
-  if(!t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue) return;
+  if(!t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length) return;
   const item = c => '<div class="rem-item"><span class="t num">'+fmtTime12(c.time)+'</span>'+
     '<span><b>'+esc(sessionNames(c))+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</span>'+
     '<span class="badge '+(c.mode==='Online'?'online':'offline')+'" style="margin-left:auto">'+c.mode+'</span></div>';
   let html='';
+  if(un.length){
+    const shown=un.slice(0,4);
+    html += '<div class="field" style="margin-bottom:4px"><label style="color:var(--red)">&#9888; Status not updated · '+un.length+' class'+(un.length===1?'':'es')+'</label></div>'+
+      '<div class="rem-list" id="remUnupd">'+shown.map(unupdatedItemHTML).join('')+'</div>'+
+      (un.length>shown.length ? '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:12px">+ '+(un.length-shown.length)+' more — view all</button>' : '');
+  }
   if(bOver){
     const bd=backupDays();
     html += '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
@@ -5817,6 +5912,11 @@ function maybeShowReminder(){
   const gw=$('#remGoWeek'); if(gw) gw.addEventListener('click',()=>{ closeModal('m-reminder'); goAndHighlight('calendar','#weekCheckPanel'); });
   const gm=$('#remGoMat'); if(gm) gm.addEventListener('click',()=>{ closeModal('m-reminder'); openAllCompleted('pending'); });
   const gb=$('#remBackup'); if(gb) gb.addEventListener('click',()=>{ doExport(); closeModal('m-reminder'); });
+  if(un.length){
+    wireUnupdatedItems($('#remBody'));
+    const ga=$('#remUnupdAll'); if(ga) ga.addEventListener('click',openUnupdatedList);
+    unupdatedMarkSeen(un.map(c=>c.cid));
+  }
   openModal('m-reminder');
 }
 $('#remGotIt').addEventListener('click',()=>{
