@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-13 -->
+<!-- Build: 2026-10-14 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -309,6 +309,17 @@
   .unupd-item .who{flex:1 1 auto;min-width:0}
   .unupd-item .go{flex:0 0 auto;color:var(--red);font-weight:700;font-size:.8rem;white-space:nowrap}
   @media(max-width:560px){ .unupd-item{flex-wrap:wrap} .unupd-item .when{min-width:0;flex-direction:row;gap:8px;flex-wrap:wrap} }
+  .not-card,.rec-row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .lib-sel-check{width:20px;height:20px;flex:0 0 auto;accent-color:var(--gold-ink,#B8892E);cursor:pointer}
+  .not-card.lib-selectable{padding-left:44px}
+  .not-card .lib-sel-check{position:absolute;left:13px;top:50%;transform:translateY(-50%)}
+  .rec-row .lib-sel-check{margin-right:2px}
+  .lib-selected{border-color:var(--gold,#B8892E)!important;box-shadow:0 0 0 2px rgba(184,137,46,.25)}
+  .lib-sel-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;width:min(680px,94vw);z-index:50;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:10px 12px}
+  .lib-sel-bar .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .lib-sel-bar .row + .row{margin-top:8px}
+  body.lib-selecting .main{padding-bottom:170px!important}
+  @media(max-width:760px){ .lib-sel-bar{bottom:calc(68px + env(safe-area-inset-bottom)) } }
   .rem-highlight{animation:remGlow 1.8s ease-out}
   @keyframes remGlow{0%{box-shadow:0 0 0 3px var(--gold);background:rgba(214,158,32,.10)}100%{box-shadow:0 0 0 0 transparent;background:transparent}}
   .daybar{position:fixed;top:0;left:0;right:0;z-index:80;background:var(--gold-bg);border-bottom:1px solid var(--gold);color:var(--gold-ink);font-size:.82rem;padding:8px 14px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
@@ -1213,6 +1224,7 @@
           <div class="not-toolbar">
             <input id="notSearch" class="search-input" placeholder="Search title, raga, tala, composer, lyrics…" style="flex:1 1 220px;min-width:0">
             <button class="btn gold" id="btnAddNotation">+ Add composition</button>
+            <button class="btn" id="notSelectBtn" title="Tick several compositions — or press and hold any one">&#9745; Select</button>
           </div>
           <div class="not-toolbar" style="padding-top:8px">
             <button type="button" class="btn small gold" id="notSrcTeachingBtn" data-src="teaching">My Teaching</button>
@@ -1254,6 +1266,7 @@
             <input id="recUploadFile" type="file" accept="audio/*" multiple style="display:none">
             <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
             <button class="btn tiny" id="recBulkModeBtn">&#10024; Enhance several…</button>
+            <button class="btn tiny" id="recSelectBtn" title="Tick several recordings — or press and hold any one">&#9745; Select</button>
           </div>
           <div class="not-toolbar" id="recBulkBar" style="display:none;padding:10px 12px;background:var(--paper);border:1px solid var(--line);border-radius:8px;align-items:center;flex-wrap:wrap;gap:10px">
             <span class="tiny" id="recBulkCount" style="color:var(--muted)">0 selected</span>
@@ -1693,6 +1706,35 @@
     <div class="sub">Deleted recordings, compositions, and tala videos stay here for 30 days before being permanently removed — restore anything you didn't mean to delete.</div>
     <div id="recentlyDeletedList" style="margin:12px 0;max-height:440px;overflow-y:auto"></div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-recently-deleted">Close</button></div></div>
+  </div>
+</div>
+
+<div class="lib-sel-bar" id="libSelBar" style="display:none" role="region" aria-label="Selection actions">
+  <div class="row">
+    <b id="libSelCount">0 selected</b>
+    <span style="flex:1 1 auto"></span>
+    <button type="button" class="btn tiny" id="libSelAll">Select all</button>
+    <button type="button" class="btn tiny" id="libSelDone">Done</button>
+  </div>
+  <div class="row">
+    <button type="button" class="btn small gold" id="libActDownload" disabled>Download</button>
+    <button type="button" class="btn small" id="libActShare" disabled>Share</button>
+    <button type="button" class="btn small" id="libActDelete" disabled style="color:var(--red)">Delete</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-lib-download">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="libDlTitle" style="max-width:520px">
+    <h3 id="libDlTitle">Download selected</h3>
+    <div class="sub" id="libDlSub"></div>
+    <div style="margin:14px 0;display:flex;flex-direction:column;gap:10px">
+      <label class="check" style="white-space:normal"><input type="checkbox" id="ldPdf"> <span><b>Notation PDF</b> <span class="tiny" id="ldPdfNote" style="color:var(--muted)"></span></span></label>
+      <label class="check" style="white-space:normal"><input type="checkbox" id="ldPractice"> <span><b>Practice sheet</b> <span class="tiny" style="color:var(--muted)">— lyrics &amp; meaning with letterhead; the notation PDF is merged in when there is one</span></span></label>
+      <label class="check" style="white-space:normal"><input type="checkbox" id="ldStyled"> <span><b>Styled practice sheet</b> <span class="tiny" id="ldStyledNote" style="color:var(--muted)"></span></span></label>
+    </div>
+    <div class="tiny" style="color:var(--muted)">More than one file is bundled into a single ZIP.</div>
+    <div class="tiny" id="libDlStatus" style="margin-top:8px;min-height:1.2em"></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-lib-download" id="libDlCancel">Cancel</button><button class="btn gold" id="libDlGo">Download</button></div></div>
   </div>
 </div>
 
@@ -2808,6 +2850,7 @@ const titles = {dashboard:'Dashboard', students:'Students', student:'Student pro
 const TOPBAR_SEARCH_VIEWS = ['dashboard','students','calendar','student'];
 const TOPBAR_ACTIONS_VIEWS = ['dashboard','students','calendar'];
 function go(view, fromPop){
+  libExitAll();
   if(renderAllDeferredPending) renderAll(true);
   const navView = view==='student' ? 'students' : view;
   $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
@@ -6082,6 +6125,282 @@ $('#lnkFullBackup').addEventListener('click', async e=>{
 });
 $('#lnkFullRestore').addEventListener('click', e=>{ e.preventDefault(); $('#fullRestoreFile').click(); });
 $('#lnkDataBackup').addEventListener('click', e=>{ e.preventDefault(); openModal('m-data-backup'); });
+/* =====================================================
+   MULTI-SELECT for the Notation library and Recordings — tick several (or press and hold on touch)
+   and Download / Share / Delete them together. Notation Download also offers the practice sheet and
+   styled practice sheet for every selected composition in one go.
+   ===================================================== */
+var libSel = { notation:{on:false,set:new Set()}, recording:{on:false,set:new Set()} };
+var libBlobCache = new Map(), libPreparedShare = null, libLastLongPress = 0;
+const LIB = {
+  notation:  { one:'composition', many:'compositions', items:()=>S.notations||[], visible:()=>(S.notations||[]).filter(matchesNotationFilters),
+               render:()=>{ renderNotationFilters(); renderNotationList(); }, btn:'#notSelectBtn', mediaKey:n=>'notation-pdf:'+n.id, hasFile:n=>!!n.hasPdf },
+  recording: { one:'recording', many:'recordings', items:()=>S.recordings||[], visible:()=>(S.recordings||[]).filter(matchesRecordingFilter),
+               render:()=>{ renderRecordingsFilters(); renderRecordingsList(); }, btn:'#recSelectBtn', mediaKey:r=>'recording-audio:'+r.id, hasFile:()=>true }
+};
+const libActiveKind = () => libSel.notation.on ? 'notation' : (libSel.recording.on ? 'recording' : null);
+const libSafeName = t => (t||'untitled').replace(/[^\w\-]+/g,'_');
+function libItem(kind,id){ return LIB[kind].items().find(x=>x.id===id); }
+function libEnter(kind,id){
+  if(kind==='recording' && recBulkMode) $('#recBulkModeBtn').click();
+  const st=libSel[kind]; st.on=true;
+  if(id){ st.set.add(id); libPrefetch(kind,id); }
+  libRefresh(kind);
+}
+function libExit(kind){
+  libSel[kind].on=false; libSel[kind].set.clear(); libBlobCache.clear(); libPreparedShare=null;
+  libRefresh(kind);
+}
+function libExitAll(){ if(typeof libSel==='undefined' || !libSel) return; ['notation','recording'].forEach(k=>{ if(libSel[k].on) libExit(k); }); }
+function libRefresh(kind){ LIB[kind].render(); libUpdateBar(); }
+function libToggle(kind,id,on){
+  const st=libSel[kind];
+  if(on===undefined) on=!st.set.has(id);
+  if(on){ st.set.add(id); libPrefetch(kind,id); } else st.set.delete(id);
+  libPreparedShare=null;
+  libUpdateBar();
+}
+// Start fetching the file now, while the user is still ticking, so Share can hand it to the OS
+// instantly (a slow fetch after the tap makes the browser drop the share as "not user-initiated").
+function libPrefetch(kind,id){
+  const it=libItem(kind,id); if(!it || !LIB[kind].hasFile(it)) return;
+  const key=kind+':'+id; if(libBlobCache.has(key)) return;
+  libBlobCache.set(key, mediaGetWithDriveFallback(LIB[kind].mediaKey(it), it.driveFileId).then(rec=>rec?rec.blob:null).catch(()=>null));
+}
+function libGetBlob(kind,it){ libPrefetch(kind,it.id); return libBlobCache.get(kind+':'+it.id) || Promise.resolve(null); }
+function libUpdateBar(){
+  const kind=libActiveKind(), bar=$('#libSelBar');
+  Object.keys(LIB).forEach(k=>{ const b=$(LIB[k].btn); if(b) b.classList.toggle('gold', libSel[k].on); });
+  document.body.classList.toggle('lib-selecting', !!kind);
+  if(!kind){ bar.style.display='none'; return; }
+  bar.style.display='';
+  const n=libSel[kind].set.size, vis=LIB[kind].visible();
+  $('#libSelCount').textContent = n ? n+' selected' : 'Tap '+LIB[kind].many+' to select them';
+  const allOn = vis.length>0 && vis.every(x=>libSel[kind].set.has(x.id));
+  $('#libSelAll').textContent = allOn ? 'Clear all' : 'Select all';
+  ['libActDownload','libActShare','libActDelete'].forEach(id=>{ $('#'+id).disabled = !n; });
+  $('#libActDownload').textContent = kind==='notation' ? 'Download…' : 'Download';
+  $('#libActShare').textContent = libPreparedShare ? 'Ready — tap to share' : 'Share';
+}
+// Called for every card/row as the list renders: normal tap opens it; in select mode a tap toggles
+// it; pressing and holding (touch or mouse) starts select mode with that item ticked.
+function libAttachSelection(kind,id,el,openFn){
+  const st=libSel[kind];
+  if(st.on){
+    const chk=document.createElement('input'); chk.type='checkbox'; chk.className='lib-sel-check'; chk.setAttribute('aria-label','Select');
+    chk.checked=st.set.has(id); el.classList.add('lib-selectable'); el.classList.toggle('lib-selected', chk.checked);
+    el.insertBefore(chk, el.firstChild);
+    el.addEventListener('click', e=>{
+      if(Date.now()-libLastLongPress<700) return;          // the release of the press that started select mode
+      if(e.target.closest('.rec-play-btn,.rec-waveform-wrap')) return;
+      if(e.target!==chk) chk.checked=!chk.checked;
+      libToggle(kind,id,chk.checked);
+      el.classList.toggle('lib-selected', chk.checked);
+    });
+    return;
+  }
+  el.addEventListener('click', ()=>{ if(Date.now()-libLastLongPress<700) return; openFn(); });
+  let timer=null, sx=0, sy=0;
+  const cancel=()=>{ if(timer){ clearTimeout(timer); timer=null; } };
+  el.addEventListener('pointerdown', e=>{
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    sx=e.clientX; sy=e.clientY; cancel();
+    timer=setTimeout(()=>{ timer=null; libLastLongPress=Date.now(); try{ navigator.vibrate && navigator.vibrate(18); }catch(_){} libEnter(kind,id); }, 480);
+  });
+  el.addEventListener('pointermove', e=>{ if(timer && (Math.abs(e.clientX-sx)>10 || Math.abs(e.clientY-sy)>10)) cancel(); });
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,cancel));
+  el.addEventListener('contextmenu', e=>{ if(e.pointerType==='touch' || Date.now()-libLastLongPress<1500) e.preventDefault(); });
+}
+Object.keys(LIB).forEach(kind=>{
+  $(LIB[kind].btn).addEventListener('click', ()=>{ libSel[kind].on ? libExit(kind) : libEnter(kind); });
+});
+$('#libSelDone').addEventListener('click', ()=>{ const k=libActiveKind(); if(k) libExit(k); });
+$('#libSelAll').addEventListener('click', ()=>{
+  const kind=libActiveKind(); if(!kind) return;
+  const vis=LIB[kind].visible(), st=libSel[kind];
+  const allOn=vis.length>0 && vis.every(x=>st.set.has(x.id));
+  vis.forEach(x=>{ if(allOn) st.set.delete(x.id); else { st.set.add(x.id); libPrefetch(kind,x.id); } });
+  libPreparedShare=null;
+  LIB[kind].render(); libUpdateBar();
+});
+
+/* ----- files: ZIP bundling and downloads ----- */
+const CRC_TABLE=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_TABLE[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function blobToU8(blob){
+  if(blob.arrayBuffer) return blob.arrayBuffer().then(b=>new Uint8Array(b));
+  return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(new Uint8Array(fr.result)); fr.onerror=()=>rej(fr.error); fr.readAsArrayBuffer(blob); });
+}
+// Store-only ZIP (PDFs and audio are already compressed, so there is nothing to gain from deflating).
+async function buildZipBlob(files){
+  const enc=new TextEncoder(), parts=[], central=[]; let offset=0;
+  const now=new Date();
+  const dosTime=(now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1);
+  const dosDate=((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate();
+  for(const f of files){
+    const data=await blobToU8(f.blob), nameBytes=enc.encode(f.name), crc=crc32(data);
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,0,true);
+    lh.setUint16(10,dosTime,true); lh.setUint16(12,dosDate,true); lh.setUint32(14,crc,true);
+    lh.setUint32(18,data.length,true); lh.setUint32(22,data.length,true); lh.setUint16(26,nameBytes.length,true); lh.setUint16(28,0,true);
+    parts.push(lh.buffer,nameBytes,data);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,0,true);
+    ch.setUint16(12,dosTime,true); ch.setUint16(14,dosDate,true); ch.setUint32(16,crc,true);
+    ch.setUint32(20,data.length,true); ch.setUint32(24,data.length,true); ch.setUint16(28,nameBytes.length,true);
+    ch.setUint32(42,offset,true);
+    central.push(ch.buffer,nameBytes);
+    offset+=30+nameBytes.length+data.length;
+  }
+  const cdSize=central.reduce((t,x)=>t+x.byteLength,0);
+  const end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true);
+  end.setUint32(12,cdSize,true); end.setUint32(16,offset,true);
+  return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
+}
+function libSaveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+function libUniqueNamer(){
+  const used=new Set();
+  return (base,ext)=>{ let name=base+ext, i=2; while(used.has(name.toLowerCase())){ name=base+' ('+i+')'+ext; i++; } used.add(name.toLowerCase()); return name; };
+}
+const libStamp = () => new Date().toISOString().slice(0,10);
+async function libSaveFiles(files, zipBase){
+  if(files.length===1){ libSaveBlob(files[0].blob, files[0].name); return; }
+  libSaveBlob(await buildZipBlob(files), zipBase+'-'+libStamp()+'.zip');
+}
+const libSelectedItems = kind => [...libSel[kind].set].map(id=>libItem(kind,id)).filter(Boolean);
+
+/* ----- Download ----- */
+$('#libActDownload').addEventListener('click', async ()=>{
+  const kind=libActiveKind(); if(!kind) return;
+  const items=libSelectedItems(kind); if(!items.length) return;
+  if(kind==='notation'){ libOpenNotationDownload(items); return; }
+  const btn=$('#libActDownload'); btn.disabled=true; btn.textContent='Preparing…';
+  try{
+    const namer=libUniqueNamer(), files=[]; let missing=0;
+    for(const r of items){
+      const blob=await libGetBlob('recording',r);
+      if(!blob){ missing++; continue; }
+      files.push({name:namer(libSafeName(r.title), '.'+audioExtFromType(blob.type)), blob});
+    }
+    if(!files.length){ toast('None of the selected recordings could be read on this device or in Drive'); return; }
+    await libSaveFiles(files,'Recordings');
+    toast('Downloaded '+files.length+' recording'+(files.length===1?'':'s')+(files.length>1?' as a ZIP':'')+(missing?' · '+missing+' could not be read':''));
+  }catch(e){ toast('Could not download ('+((e&&e.message)||e)+')'); }
+  finally{ libUpdateBar(); }
+});
+function libOpenNotationDownload(items){
+  const withPdf=items.filter(n=>n.hasPdf).length;
+  $('#libDlTitle').textContent='Download '+items.length+' composition'+(items.length===1?'':'s');
+  $('#libDlSub').textContent='Choose what to include for each selected composition.';
+  $('#ldPdf').checked = withPdf>0; $('#ldPdf').disabled = withPdf===0;
+  $('#ldPdfNote').textContent = '— the original file ('+withPdf+' of '+items.length+' have one)';
+  $('#ldPractice').checked = withPdf===0;
+  $('#ldStyled').checked = false; $('#ldStyled').disabled = withPdf===0;
+  $('#ldStyledNote').textContent = '— banner and background on every page ('+withPdf+' of '+items.length+' have a PDF)';
+  $('#libDlStatus').textContent=''; $('#libDlGo').disabled=false;
+  openModal('m-lib-download');
+}
+$('#libDlGo').addEventListener('click', async ()=>{
+  const items=libSelectedItems('notation');
+  const wantPdf=$('#ldPdf').checked, wantPractice=$('#ldPractice').checked, wantStyled=$('#ldStyled').checked;
+  if(!wantPdf && !wantPractice && !wantStyled){ toast('Tick at least one thing to download'); return; }
+  if((wantPractice||wantStyled) && !window.PDFLib){ toast('Still loading the PDF engine — try again in a second'); return; }
+  if(wantStyled && (!window.pdfjsLib || !window.fontkit)){ toast('Still loading the PDF engines — try again in a second'); return; }
+  const go=$('#libDlGo'), status=$('#libDlStatus'); go.disabled=true;
+  const namer=libUniqueNamer(), files=[], problems=[];
+  const mk=(bytes)=>new Blob([bytes],{type:'application/pdf'});
+  try{
+    for(let i=0;i<items.length;i++){
+      const n=items[i], base=libSafeName(n.title);
+      status.textContent='Preparing '+(i+1)+' of '+items.length+' — '+(n.title||'(untitled)')+'…';
+      await new Promise(r=>setTimeout(r,0));
+      if(wantPdf && n.hasPdf){
+        const blob=await libGetBlob('notation',n);
+        if(blob) files.push({name:namer(base,'.pdf'), blob}); else problems.push((n.title||'(untitled)')+': PDF not found');
+      }
+      if(wantPractice){
+        try{ files.push({name:namer(base+' - practice sheet','.pdf'), blob:mk(n.hasPdf ? await buildCombinedPracticeSheetBytes(n) : await buildPracticeSheetCoverPdfBytes(n))}); }
+        catch(e){ problems.push((n.title||'(untitled)')+': practice sheet failed'); }
+      }
+      if(wantStyled && n.hasPdf){
+        try{ files.push({name:namer(base+' - styled practice sheet','.pdf'), blob:mk(await buildStyledPracticeSheetBytes(n))}); }
+        catch(e){ problems.push((n.title||'(untitled)')+': styled sheet failed'); }
+      }
+    }
+    if(!files.length){ status.textContent='Nothing could be prepared.'+(problems.length?' '+problems.join(' · '):''); go.disabled=false; return; }
+    status.textContent='Saving…';
+    await libSaveFiles(files,'Notations');
+    closeModal('m-lib-download');
+    toast('Downloaded '+files.length+' file'+(files.length===1?'':'s')+(files.length>1?' as a ZIP':'')+(problems.length?' · '+problems.length+' skipped ('+problems[0]+(problems.length>1?'…':'')+')':''));
+  }catch(e){ status.textContent='Could not finish ('+((e&&e.message)||e)+')'; }
+  finally{ go.disabled=false; }
+});
+
+/* ----- Share ----- */
+$('#libActShare').addEventListener('click', async ()=>{
+  const kind=libActiveKind(); if(!kind) return;
+  const btn=$('#libActShare');
+  if(libPreparedShare){                       // second tap after the files were prepared: a fresh gesture
+    const d=libPreparedShare; libPreparedShare=null; btn.textContent='Share';
+    try{ await navigator.share(d); }catch(e){ if(!e || e.name!=='AbortError') toast('Could not open the share sheet'); }
+    return;
+  }
+  const items=libSelectedItems(kind); if(!items.length) return;
+  btn.disabled=true; btn.textContent='Preparing…';
+  try{
+    const files=[], texts=[]; let missing=0;
+    const mimeMap={mp3:'audio/mpeg', wav:'audio/wav', m4a:'audio/mp4', webm:'audio/webm'};
+    const namer=libUniqueNamer();
+    for(const it of items){
+      if(kind==='notation' && !it.hasPdf){ texts.push(notationShareText(it)); continue; }
+      const blob=await libGetBlob(kind,it);
+      if(!blob){ missing++; continue; }
+      if(kind==='notation') files.push(new File([blob], namer(libSafeName(it.title),'.pdf'), {type:'application/pdf'}));
+      else{ const ext=audioExtFromType(blob.type); files.push(new File([blob], namer(libSafeName(it.title),'.'+ext), {type:mimeMap[ext]||blob.type||'audio/mpeg'})); }
+    }
+    if(!files.length && !texts.length){ toast('Nothing could be read on this device or in Drive'); return; }
+    const data={title: items.length+' '+LIB[kind].many};
+    if(files.length) data.files=files;
+    if(texts.length) data.text=texts.join('\n\n————————\n\n');
+    const canShareFiles = !files.length || (navigator.canShare ? navigator.canShare({files}) : true);
+    if(navigator.share && canShareFiles){
+      try{ await navigator.share(data); if(missing) toast(missing+' could not be read and were left out'); return; }
+      catch(e){
+        if(e && e.name==='AbortError') return;
+        if(e && e.name==='NotAllowedError'){      // the preparing took too long and the browser dropped the gesture
+          libPreparedShare=data; btn.disabled=false; btn.textContent='Ready — tap to share'; return;
+        }
+      }
+    }
+    // No share sheet here (e.g. desktop): download the files instead, or copy the text.
+    if(files.length){ await libSaveFiles(files.map(f=>({name:f.name, blob:f})), kind==='notation'?'Notations':'Recordings'); toast('Sharing isn\'t available here — downloaded instead'); }
+    else{ try{ await navigator.clipboard.writeText(data.text); toast('Copied — paste it wherever you like'); }catch(e){ toast('Could not share automatically on this browser'); } }
+  }catch(e){ toast('Could not share ('+((e&&e.message)||e)+')'); }
+  finally{ if(!libPreparedShare){ btn.textContent='Share'; } libUpdateBar(); }
+});
+
+/* ----- Delete (to Recently deleted, like deleting one at a time) ----- */
+$('#libActDelete').addEventListener('click', ()=>{
+  const kind=libActiveKind(); if(!kind) return;
+  const items=libSelectedItems(kind); if(!items.length) return;
+  const n=items.length, what=n+' '+(n===1?LIB[kind].one:LIB[kind].many);
+  if(!confirm('Delete '+what+'?\n\nThey move to Recently Deleted and are permanently removed after 30 days — restorable any time before that.')) return;
+  const stamp=Date.now();
+  items.forEach(it=>{ it.deletedAt=stamp; it.updatedAt=stamp; });
+  persist();
+  libExit(kind);
+  undoToast(what+' deleted — recoverable from Recently Deleted for 30 days', ()=>{
+    items.forEach(it=>{ delete it.deletedAt; it.updatedAt=Date.now(); });
+    persist(); LIB[kind].render();
+  });
+});
+
 /* ---------- Recently deleted classes — longer-lived undo for accidental class deletion,
    reachable from the Calendar view (the toast undo only lasts a few seconds). Kept as its own
    local buffer rather than synced/merged like other data — a device shows only the classes it
@@ -8131,6 +8450,7 @@ function stopRecordingsActivity(){
 function showStudioPane(name, scopeEl){
   const section = scopeEl.closest('.view');
   if(section.id==='view-studio'){
+    libExitAll();
     if(name!=='recordings') stopRecordingsActivity();
     S.meta.lastStudioPane = name; persistLazy();
   } else if(section.id==='view-earnings'){
@@ -8546,7 +8866,7 @@ function renderNotationList(){
       (n.type ? '<div class="not-type-tag">'+esc(n.type)+'</div>' : '') +
       '<div class="not-title">'+(n.hasPdf?'<i class="not-pdf-icon">&#128206;</i>':'')+esc(n.title||'(untitled)')+'</div>'+
       (sub ? '<div class="not-sub">'+sub+'</div>' : '');
-    card.addEventListener('click', ()=>openNotationView(n.id));
+    libAttachSelection('notation', n.id, card, ()=>openNotationView(n.id));
     listEl.appendChild(card);
   });
 }
@@ -9155,6 +9475,7 @@ function recUpdateBulkBar(){
   $$('#recBulkBar [data-bulk-preset]').forEach(b=> b.disabled = recBulkSelected.size===0 || recBulkBusy);
 }
 $('#recBulkModeBtn').addEventListener('click', ()=>{
+  if(!recBulkMode && libSel.recording.on) libExit('recording');
   recBulkMode = !recBulkMode;
   recBulkSelected.clear();
   $('#recBulkBar').style.display = recBulkMode ? 'flex' : 'none';
@@ -9334,7 +9655,7 @@ function renderRecordingsList(){
       });
     }
     row.querySelector('.rec-play-btn').addEventListener('click', e=>{ e.stopPropagation(); toggleRecordingPlayback(r.id); });
-    row.addEventListener('click', ()=>{ if(recBulkMode) return; openRecordingView(r.id); }); // in select mode, tapping the row shouldn't jump into the editor
+    libAttachSelection('recording', r.id, row, ()=>{ if(recBulkMode) return; openRecordingView(r.id); }); // in select mode, tapping the row toggles it instead of opening the editor
     const wfWrap = row.querySelector('.rec-waveform-wrap');
     wfWrap.addEventListener('click', e=>{
       e.stopPropagation();
