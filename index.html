@@ -1286,6 +1286,7 @@
             <select id="recFilterTala"><option value="">All talas</option></select>
             <select id="recFilterComposer"><option value="">All composers</option></select>
           </div>
+          <div id="recAlbumHeader" style="display:none"></div>
           <div class="rec-list" id="recordingsList"></div>
           <div class="empty" id="recordingsEmpty" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:34px;height:34px;margin-bottom:8px"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M9 22h6"/></svg>
@@ -1691,6 +1692,30 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="m-rec-album-pick">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="albPickTitle" style="max-width:520px">
+    <h3 id="albPickTitle">Move to album</h3>
+    <div class="sub" id="albPickSub"></div>
+    <div class="field"><label for="albNewName">Create a new album</label><input id="albNewName" maxlength="60" placeholder="Album name, e.g. Sarali Varisai"></div>
+    <div class="field" style="margin-top:8px"><label for="albNewDesc">Description (optional)</label><textarea id="albNewDesc" maxlength="200" rows="2" placeholder="e.g. All the Sarali Varisai exercises, in order"></textarea></div>
+    <div style="margin-top:10px"><button type="button" class="btn gold" id="albCreateBtn">Create album &amp; move</button></div>
+    <div id="albExistingWrap" style="display:none">
+      <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">OR MOVE TO AN EXISTING ALBUM</div>
+      <div id="albPickList" style="max-height:230px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-rec-album-pick">Cancel</button></div></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-rec-album-edit">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="albEditTitle" style="max-width:520px">
+    <h3 id="albEditTitle">Edit album</h3>
+    <div class="field"><label for="albEditName">Name *</label><input id="albEditName" maxlength="60"></div>
+    <div class="field" style="margin-top:8px"><label for="albEditDesc">Description</label><textarea id="albEditDesc" maxlength="200" rows="3"></textarea></div>
+    <div class="modal-foot"><div class="right"><button class="btn" data-close="m-rec-album-edit">Cancel</button><button class="btn gold" id="albEditSave">Save</button></div></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="m-recently-deleted">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recentlyDeletedTitle" style="max-width:640px">
     <h3 id="recentlyDeletedTitle">Recently deleted</h3>
@@ -1718,6 +1743,7 @@
     <button type="button" class="btn small gold" id="libActDownload" disabled>Download</button>
     <button type="button" class="btn small" id="libActShare" disabled>Share</button>
     <button type="button" class="btn small" id="libActEnhance" disabled style="display:none">&#10024; Enhance</button>
+    <button type="button" class="btn small" id="libActAlbum" disabled style="display:none">&#128193; Move to album</button>
     <button type="button" class="btn small" id="libActDelete" disabled style="color:var(--red)">Delete</button>
   </div>
   <div class="row" id="libEnhanceRow" style="display:none">
@@ -2397,6 +2423,7 @@ S.notations.forEach(n=>{ n.hasPdf ||= false; n.pdfName ||= null; });
 S.recordings ||= []; S.seq.rec ||= 1;
 S.recordings.forEach(r=>{ r.raga ||= ''; r.tala ||= ''; r.composer ||= ''; });
 S.talaPatterns ||= []; S.seq.tala ||= 1;
+S.recordingAlbums ||= [];
 S.meta.weekSkip ||= {};
 S.classes.forEach(cl=>cl.mat ||= {});
 stampFees(S);
@@ -6195,6 +6222,7 @@ function libUpdateBar(){
   const enh=$('#libActEnhance'), isRec = kind==='recording';
   enh.style.display = isRec ? '' : 'none';
   enh.disabled = !n || libEnhanceBusy;
+  const albBtn=$('#libActAlbum'); albBtn.style.display = isRec ? '' : 'none'; albBtn.disabled = !n || libEnhanceBusy;
   if(!n) libEnhanceOpen=false;
   enh.classList.toggle('gold', isRec && libEnhanceOpen);
   $('#libEnhanceRow').style.display = (isRec && libEnhanceOpen && n) ? 'flex' : 'none';
@@ -6772,7 +6800,7 @@ $('#fullRestoreFile').addEventListener('change', async ()=>{
 
 let pendingImport=null;
 function normalizeData(d){
-  d.students ||= []; d.classes ||= []; d.payments ||= []; d.withdrawals ||= []; d.notations ||= []; d.recordings ||= []; d.talaPatterns ||= []; d.talaExports ||= [];
+  d.students ||= []; d.classes ||= []; d.payments ||= []; d.withdrawals ||= []; d.notations ||= []; d.recordings ||= []; d.talaPatterns ||= []; d.talaExports ||= []; d.recordingAlbums ||= [];
   d.seq ||= {}; d.seq.stu ||= 1; d.seq.cls ||= 1; d.seq.pay ||= 1; d.seq.wd ||= 1; d.seq.not ||= 1; d.seq.rec ||= 1; d.seq.tala ||= 1; d.seq.talaExport ||= 1;
   d.meta ||= {};
   (d.classes||[]).forEach(cl=>cl.mat ||= {});
@@ -6825,6 +6853,7 @@ function mergeData(inc){
   mergeArr(S.withdrawals, inc.withdrawals, 'wid');
   mergeArr(S.notations, inc.notations, 'id');
   mergeArr(S.recordings, inc.recordings, 'id');
+  S.recordingAlbums ||= []; mergeArr(S.recordingAlbums, inc.recordingAlbums, 'id');
   mergeArr(S.talaPatterns, inc.talaPatterns, 'id');
   mergeArr(S.talaExports, inc.talaExports, 'id');
   ['stu','cls','pay','wd','not','rec','tala','talaExport'].forEach(k=>{ S.seq[k]=Math.max(S.seq[k]||1,(inc.seq&&inc.seq[k])||1); });
@@ -9556,7 +9585,7 @@ $('#notSortBy').addEventListener('change', e=>{ notSortBy = e.target.value; rend
 /* =====================================================
    RECORDINGS LIBRARY
    ===================================================== */
-let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title', recSourceFilter = 'teaching';
+let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title', recSourceFilter = 'teaching', recAlbumOpen = '';
 // Enhance now lives in the shared "Select many" bar (next to Download / Share / Delete) and works on
 // whatever recordings are ticked there.
 $('#libActEnhance').addEventListener('click', ()=>{
@@ -9623,13 +9652,18 @@ function recordingTagsLine(r){
 function matchesRecordingFilter(r){
   if(r.deletedAt) return false; // soft-deleted — lives in Recently Deleted instead
   if((r.source||'teaching')!==recSourceFilter) return false;
+  // A recording filed in an album lives inside that album's folder; it only shows in the main list
+  // while searching/filtering, so it's never hard to find.
+  const alb = recAlbumOf(r);
+  if(recAlbumOpen){ if(!alb || alb.id!==recAlbumOpen) return false; }
+  else if(alb && !recIsFiltering()) return false;
   if(recTypeFilter && r.type!==recTypeFilter) return false;
   if(recRagaFilter && r.raga!==recRagaFilter) return false;
   if(recTalaFilter && r.tala!==recTalaFilter) return false;
   if(recComposerFilter && r.composer!==recComposerFilter) return false;
   if(recSearchQuery){
     const q = recSearchQuery.toLowerCase();
-    const hay = [r.title,r.type,r.raga,r.tala,r.composer,r.notes].filter(Boolean).join(' ').toLowerCase();
+    const hay = [r.title,r.type,r.raga,r.tala,r.composer,r.notes,alb&&alb.name].filter(Boolean).join(' ').toLowerCase();
     if(!hay.includes(q)) return false;
   }
   return true;
@@ -9699,16 +9733,126 @@ async function refreshRecDriveStorageNote(force){
   }catch(e){ /* quiet — a nice-to-have figure isn't worth a toast if this particular call fails */ }
   recDriveStorageFetching = false;
 }
+/* ---------- Recording albums (folders) — group similar recordings; shown in the list like any other item ---------- */
+function recIsFiltering(){ return !!(recSearchQuery||recTypeFilter||recRagaFilter||recTalaFilter||recComposerFilter); }
+function recAlbumOf(r){ return r && r.albumId ? ((S.recordingAlbums||[]).find(a=>a.id===r.albumId && !a.deletedAt)||null) : null; }
+function albumsForSource(){ return (S.recordingAlbums||[]).filter(a=>!a.deletedAt && (a.source||'teaching')===recSourceFilter); }
+function albumCount(id){ return (S.recordings||[]).filter(r=>!r.deletedAt && r.albumId===id).length; }
+function newAlbumId(){ return 'alb_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function visibleAlbums(){
+  if(recAlbumOpen) return [];
+  if(recTypeFilter||recRagaFilter||recTalaFilter||recComposerFilter) return [];
+  const q = recSearchQuery.toLowerCase();
+  return albumsForSource()
+    .filter(a=>!q || (a.name+' '+(a.description||'')).toLowerCase().includes(q))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+}
+function moveRecordingsToAlbum(ids, albumId){
+  const now = Date.now(); let n = 0;
+  ids.forEach(id=>{ const r = S.recordings.find(x=>x.id===id); if(!r) return; r.albumId = albumId||''; r.updatedAt = now; n++; });
+  persist();
+  libExit('recording');
+  const a = albumId && (S.recordingAlbums||[]).find(x=>x.id===albumId);
+  toast(n+' recording'+(n===1?'':'s')+(a ? ' moved to “'+a.name+'”' : ' taken out of their album'));
+}
+function renderRecAlbumHeader(){
+  const el = $('#recAlbumHeader'); if(!el) return;
+  const a = recAlbumOpen && (S.recordingAlbums||[]).find(x=>x.id===recAlbumOpen && !x.deletedAt);
+  if(recAlbumOpen && !a) recAlbumOpen = '';
+  if(!a){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  const n = albumCount(a.id);
+  el.style.display = '';
+  el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0 12px">'
+    + '<button type="button" class="btn tiny" id="albBack">&#8592; All recordings</button>'
+    + '<div style="flex:1 1 180px;min-width:0"><div style="font-weight:700">&#128193; '+esc(a.name)+'</div>'
+    + (a.description ? '<div class="tiny" style="color:var(--muted)">'+esc(a.description)+'</div>' : '')
+    + '<div class="tiny" style="color:var(--muted)">'+n+' recording'+(n===1?'':'s')+'</div></div>'
+    + '<button type="button" class="btn tiny" id="albEdit">Edit</button>'
+    + '<button type="button" class="btn tiny" id="albDelete" style="color:var(--red)">Delete album</button></div>';
+  $('#albBack').addEventListener('click', ()=>{ recAlbumOpen=''; renderRecordingsList(); });
+  $('#albEdit').addEventListener('click', ()=>{
+    $('#albEditName').value = a.name; $('#albEditDesc').value = a.description||'';
+    $('#albEditSave').dataset.albumId = a.id; openModal('m-rec-album-edit');
+  });
+  $('#albDelete').addEventListener('click', ()=>{
+    if(!confirm('Delete the album “'+a.name+'”?\n\nThe '+n+' recording'+(n===1?'':'s')+' inside are NOT deleted — they go back to the main list.')) return;
+    const now = Date.now();
+    (S.recordings||[]).forEach(r=>{ if(r.albumId===a.id){ r.albumId=''; r.updatedAt=now; } });
+    S.recordingAlbums = S.recordingAlbums.filter(x=>x.id!==a.id);
+    tombstone(a.id);
+    recAlbumOpen = '';
+    persist(); renderRecordingsList(); toast('Album deleted');
+  });
+}
+$('#albEditSave').addEventListener('click', ()=>{
+  const a = (S.recordingAlbums||[]).find(x=>x.id===$('#albEditSave').dataset.albumId); if(!a) return;
+  const name = $('#albEditName').value.trim(); if(!name){ toast('Give the album a name'); return; }
+  a.name = name; a.description = $('#albEditDesc').value.trim(); a.updatedAt = Date.now();
+  persist(); closeModal('m-rec-album-edit'); renderRecordingsList();
+});
+function renderAlbumPick(){
+  const ids = Array.from(libSel.recording.set);
+  $('#albPickSub').textContent = ids.length+' recording'+(ids.length===1?'':'s')+' selected. Albums keep similar recordings together — open one from the list any time.';
+  $('#albNewName').value = ''; $('#albNewDesc').value = '';
+  const albums = albumsForSource().filter(a=>a.id!==recAlbumOpen).sort((a,b)=>a.name.localeCompare(b.name));
+  const anyFiled = ids.some(id=>recAlbumOf(S.recordings.find(r=>r.id===id)));
+  const rowStyle = 'display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--line);cursor:pointer';
+  let html = albums.map(a=>'<div data-alb="'+a.id+'" style="'+rowStyle+'"><span>&#128193;</span><div style="flex:1;min-width:0"><div>'+esc(a.name)+'</div>'
+    + (a.description?'<div class="tiny" style="color:var(--muted)">'+esc(a.description)+'</div>':'')
+    + '</div><span class="tiny" style="color:var(--muted)">'+albumCount(a.id)+'</span></div>').join('');
+  if(anyFiled) html += '<div data-alb-none="1" style="'+rowStyle+'"><span>&#8617;</span><div>Take out of album (back to the main list)</div></div>';
+  $('#albPickList').innerHTML = html;
+  $('#albExistingWrap').style.display = html ? '' : 'none';
+}
+$('#libActAlbum').addEventListener('click', ()=>{
+  if(libActiveKind()!=='recording' || libEnhanceBusy || !libSel.recording.set.size) return;
+  renderAlbumPick(); openModal('m-rec-album-pick');
+});
+$('#albCreateBtn').addEventListener('click', ()=>{
+  const name = $('#albNewName').value.trim(); if(!name){ toast('Give the album a name'); $('#albNewName').focus(); return; }
+  const ids = Array.from(libSel.recording.set); if(!ids.length) return;
+  const now = Date.now();
+  const alb = {id:newAlbumId(), name, description:$('#albNewDesc').value.trim(), source:recSourceFilter, createdAt:now, updatedAt:now};
+  (S.recordingAlbums ||= []).push(alb);
+  closeModal('m-rec-album-pick');
+  moveRecordingsToAlbum(ids, alb.id);
+});
+$('#albPickList').addEventListener('click', e=>{
+  const row = e.target.closest('[data-alb],[data-alb-none]'); if(!row) return;
+  const ids = Array.from(libSel.recording.set); if(!ids.length) return;
+  closeModal('m-rec-album-pick');
+  moveRecordingsToAlbum(ids, row.hasAttribute('data-alb-none') ? '' : row.dataset.alb);
+});
+
 function renderRecordingsList(){
   refreshRecDriveStorageNote();
+  renderRecAlbumHeader();
   const listEl = $('#recordingsList'); if(!listEl) return;
   const list = (S.recordings||[]).filter(matchesRecordingFilter).sort((a,b)=>libSortCompare(a,b,recSortBy));
   listEl.innerHTML = '';
   const empty = $('#recordingsEmpty');
-  if(!list.length){
+  const albums = visibleAlbums();
+  if(!list.length && !albums.length){
     empty.style.display = '';
-    $('#recordingsEmptyMsg').textContent = (S.recordings||[]).length ? 'Nothing matches this search or filter.' : 'No recordings yet — tap New recording to make your first one.';
+    $('#recordingsEmptyMsg').textContent = recAlbumOpen ? 'This album is empty — go back, tap Select many, tick recordings and choose Move to album.'
+      : ((S.recordings||[]).length ? 'Nothing matches this search or filter.' : 'No recordings yet — tap New recording to make your first one.');
   } else { empty.style.display = 'none'; }
+  albums.forEach(a=>{
+    const n = albumCount(a.id);
+    const row = document.createElement('div');
+    row.className = 'rec-row';
+    row.innerHTML =
+      '<div class="rec-play-btn" style="pointer-events:none;font-size:1rem">&#128193;</div>'+
+      '<div class="rec-row-body"><div class="rec-row-title">'+esc(a.name)+'</div>'+
+      (a.description ? '<div class="rec-row-note">'+esc(a.description)+'</div>' : '')+
+      '<div class="rec-row-sub">Album · '+n+' recording'+(n===1?'':'s')+'</div></div>'+
+      '<div style="color:var(--muted);font-size:1.3rem;flex:0 0 auto">&#8250;</div>';
+    row.addEventListener('click', ()=>{
+      if(libSel.recording.on) return;            // in select mode, albums aren't selectable — use Move to album
+      recAlbumOpen = a.id; renderRecordingsList(); window.scrollTo({top:0});
+    });
+    listEl.appendChild(row);
+  });
   list.forEach(r=>{
     const row = document.createElement('div');
     row.className = 'rec-row';
@@ -9719,7 +9863,7 @@ function renderRecordingsList(){
       '<div class="rec-row-body"><div class="rec-row-title">'+esc(r.title||'(untitled)')+'</div>'+
       (tags ? '<div class="rec-row-sub">'+esc(tags)+'</div>' : '')+
       (r.notes ? '<div class="rec-row-note">'+esc(r.notes)+'</div>' : '')+
-      '<div class="rec-row-sub">'+fmtDuration(r.durationSec)+' · '+fmtRecDate(r.createdAt)+'</div>'+
+      '<div class="rec-row-sub">'+fmtDuration(r.durationSec)+' · '+fmtRecDate(r.createdAt)+(!recAlbumOpen && recAlbumOf(r) ? ' · &#128193; '+esc(recAlbumOf(r).name) : '')+'</div>'+
       '<div class="rec-waveform-wrap'+(isPlaying?' on':'')+'" data-recid="'+r.id+'"><canvas></canvas><div class="rec-waveform-progress"></div></div>'+
       '</div>';
     row.querySelector('.rec-play-btn').addEventListener('click', e=>{ e.stopPropagation(); toggleRecordingPlayback(r.id); });
@@ -10550,7 +10694,7 @@ $('#recUploadFile').addEventListener('change', async (e)=>{
 });
 $('#recSearch').addEventListener('input', e=>{ recSearchQuery = e.target.value.trim(); renderRecordingsList(); });
 function setRecSourceFilter(src){
-  recSourceFilter = src;
+  recSourceFilter = src; recAlbumOpen = '';
   $('#recSrcTeachingBtn').className = 'btn small'+(src==='teaching'?' gold':'');
   $('#recSrcOwnBtn').className = 'btn small'+(src==='own-practice'?' gold':'');
   renderRecordingsFilters(); renderRecordingsList();
