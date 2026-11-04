@@ -1695,6 +1695,13 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recentlyDeletedTitle" style="max-width:640px">
     <h3 id="recentlyDeletedTitle">Recently deleted</h3>
     <div class="sub">Deleted recordings, compositions, and tala videos stay here for 30 days before being permanently removed — restore anything you didn't mean to delete.</div>
+    <div id="trashBar-items" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button type="button" class="btn tiny" data-trash-toggle>&#9745; Select many</button>
+      <span class="tiny" data-trash-count style="color:var(--muted)"></span>
+      <button type="button" class="btn tiny" data-trash-all style="display:none">Select all</button>
+      <button type="button" class="btn tiny gold" data-trash-restore style="display:none" disabled>Restore</button>
+      <button type="button" class="btn tiny" data-trash-purge style="display:none;color:var(--red)" disabled>Delete permanently</button>
+    </div>
     <div id="recentlyDeletedList" style="margin:12px 0;max-height:440px;overflow-y:auto"></div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-recently-deleted">Close</button></div></div>
   </div>
@@ -1741,6 +1748,13 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recentlyDeletedClassesTitle" style="max-width:640px">
     <h3 id="recentlyDeletedClassesTitle">Recently deleted classes</h3>
     <div class="sub">A deleted class stays here for 30 days before being permanently removed — restore anything you deleted by mistake, any time, not just in the few seconds right after.</div>
+    <div id="trashBar-classes" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button type="button" class="btn tiny" data-trash-toggle>&#9745; Select many</button>
+      <span class="tiny" data-trash-count style="color:var(--muted)"></span>
+      <button type="button" class="btn tiny" data-trash-all style="display:none">Select all</button>
+      <button type="button" class="btn tiny gold" data-trash-restore style="display:none" disabled>Restore</button>
+      <button type="button" class="btn tiny" data-trash-purge style="display:none;color:var(--red)" disabled>Delete permanently</button>
+    </div>
     <div id="recentlyDeletedClassesList" style="margin:12px 0;max-height:440px;overflow-y:auto"></div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-recently-deleted-classes">Close</button></div></div>
   </div>
@@ -6409,6 +6423,49 @@ $('#libActDelete').addEventListener('click', ()=>{
   });
 });
 
+/* ---------- Select many for both Recently deleted lists (classes + Data & Backup) ---------- */
+const trashSel = {items:{on:false,set:new Set()}, classes:{on:false,set:new Set()}};
+function trashBarSync(name, barId, keys){
+  const st = trashSel[name], bar = $('#'+barId); if(!bar) return;
+  const have = new Set(keys); st.set.forEach(k=>{ if(!have.has(k)) st.set.delete(k); });
+  if(!keys.length) st.on = false;
+  bar.style.display = keys.length ? 'flex' : 'none';
+  const n = st.set.size;
+  bar.querySelector('[data-trash-toggle]').innerHTML = st.on ? 'Done' : '&#9745; Select many';
+  bar.querySelector('[data-trash-count]').textContent = st.on ? n+' selected' : '';
+  const all = bar.querySelector('[data-trash-all]');
+  all.style.display = st.on ? '' : 'none';
+  all.textContent = (n===keys.length && n>0) ? 'Deselect all' : 'Select all';
+  ['restore','purge'].forEach(a=>{ const b = bar.querySelector('[data-trash-'+a+']'); b.style.display = st.on ? '' : 'none'; b.disabled = !n; });
+}
+function trashWire(name, barId, listId, o){
+  const st = trashSel[name], bar = $('#'+barId), list = $('#'+listId);
+  const rr = ()=>{ const y = list.scrollTop; o.render(); list.scrollTop = y; };
+  const finish = ()=>{ st.on = false; st.set.clear(); rr(); };
+  bar.addEventListener('click', async e=>{
+    const b = e.target.closest('button'); if(!b || b.disabled) return;
+    if(b.hasAttribute('data-trash-toggle')){ st.on = !st.on; st.set.clear(); rr(); }
+    else if(b.hasAttribute('data-trash-all')){ const keys = o.keys(); if(st.set.size===keys.length) st.set.clear(); else keys.forEach(k=>st.set.add(k)); rr(); }
+    else if(b.hasAttribute('data-trash-restore')){
+      const ks = Array.from(st.set); if(!ks.length) return;
+      await o.restore(ks); finish();
+      toast('Restored '+ks.length+' '+o.noun+(ks.length===1?'':'s'));
+    }
+    else if(b.hasAttribute('data-trash-purge')){
+      const ks = Array.from(st.set); if(!ks.length) return;
+      if(!confirm('Permanently delete '+ks.length+' '+o.noun+(ks.length===1?'':'s')+'?\n\nThis cannot be undone.')) return;
+      await o.purge(ks); finish();
+      toast('Permanently deleted '+ks.length+' '+o.noun+(ks.length===1?'':'s'));
+    }
+  });
+  list.addEventListener('click', e=>{
+    if(!st.on) return;
+    const row = e.target.closest('[data-trash-key]'); if(!row) return;
+    const k = row.dataset.trashKey;
+    if(st.set.has(k)) st.set.delete(k); else st.set.add(k);
+    rr();
+  });
+}
 /* ---------- Recently deleted classes — longer-lived undo for accidental class deletion,
    reachable from the Calendar view (the toast undo only lasts a few seconds). Kept as its own
    local buffer rather than synced/merged like other data — a device shows only the classes it
@@ -6421,19 +6478,22 @@ function renderRecentlyDeletedClassesBadge(){
 function renderRecentlyDeletedClassesList(){
   const el = $('#recentlyDeletedClassesList'); if(!el) return;
   const items = (S.recentlyDeletedClasses||[]).slice().sort((a,b)=>b.deletedAt-a.deletedAt);
+  trashBarSync('classes','trashBar-classes', items.map(c=>c.cid));
   if(!items.length){
     el.innerHTML = '<div class="empty" style="padding:20px 0">No recently deleted classes.</div>';
     return;
   }
+  const sel = trashSel.classes;
   el.innerHTML = items.map(c=>{
     const daysLeft = Math.max(0, RECENTLY_DELETED_DAYS - Math.floor((Date.now()-c.deletedAt)/86400000));
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
-      + '<div><div>'+esc(sessionNames(c))+'</div>'
+    return '<div data-trash-key="'+c.cid+'" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)'+(sel.on?';cursor:pointer':'')+'">'
+      + (sel.on ? '<input type="checkbox" style="pointer-events:none;flex:0 0 auto" '+(sel.set.has(c.cid)?'checked':'')+'>' : '')
+      + '<div style="flex:1;min-width:0"><div>'+esc(sessionNames(c))+'</div>'
       + '<div class="tiny" style="color:var(--muted)">'+fmtD(c.date)+' '+fmtTime12(c.time)+' · deleted '+fmtRecDate(c.deletedAt)+' · auto-removed in '+daysLeft+' day'+(daysLeft===1?'':'s')+'</div></div>'
-      + '<div style="display:flex;gap:6px;flex:0 0 auto">'
+      + (sel.on ? '' : '<div style="display:flex;gap:6px;flex:0 0 auto">'
       + '<button class="btn tiny gold" data-restore-class="'+c.cid+'">Restore</button>'
       + '<button class="btn tiny" style="color:var(--red)" data-purge-class="'+c.cid+'">Delete permanently</button>'
-      + '</div></div>';
+      + '</div>')+'</div>';
   }).join('');
   el.querySelectorAll('[data-restore-class]').forEach(b=>{
     b.addEventListener('click', ()=>{ restoreDeletedClass(b.dataset.restoreClass); renderRecentlyDeletedClassesList(); });
@@ -6463,33 +6523,48 @@ function purgeDeletedClassPermanently(cid){
   renderRecentlyDeletedClassesBadge();
   persist();
 }
+trashWire('classes','trashBar-classes','recentlyDeletedClassesList',{
+  noun:'class', render:renderRecentlyDeletedClassesList,
+  keys:()=>(S.recentlyDeletedClasses||[]).map(c=>c.cid),
+  restore:async ks=>{ ks.forEach(cid=>restoreDeletedClass(cid)); },
+  purge:async ks=>{ const gone=new Set(ks); S.recentlyDeletedClasses=(S.recentlyDeletedClasses||[]).filter(x=>!gone.has(x.cid)); renderRecentlyDeletedClassesBadge(); persist(); }
+});
 $('#btnRecentlyDeletedClasses').addEventListener('click', ()=>{
+  trashSel.classes.on=false; trashSel.classes.set.clear();
   renderRecentlyDeletedClassesList();
   openModal('m-recently-deleted-classes');
 });
 /* ---------- Recently deleted — soft-delete recovery for recordings, notations, tala videos ---------- */
 const RECENTLY_DELETED_DAYS = 30;
-function renderRecentlyDeletedList(){
-  const el = $('#recentlyDeletedList'); if(!el) return;
+function getRecentlyDeletedItems(){
   const items = [];
   (S.recordings||[]).forEach(r=>{ if(r.deletedAt) items.push({kind:'recording', label:'Recording', obj:r}); });
   (S.notations||[]).forEach(n=>{ if(n.deletedAt) items.push({kind:'notation', label:'Composition', obj:n}); });
   (S.talaExports||[]).forEach(v=>{ if(v.deletedAt) items.push({kind:'talaVideo', label:'Tala video', obj:v}); });
   (S.talaPatterns||[]).forEach(p=>{ if(p.deletedAt) items.push({kind:'talaPattern', label:'Tala pattern', obj:{...p, title:p.name}}); });
   items.sort((a,b)=>b.obj.deletedAt-a.obj.deletedAt);
+  return items;
+}
+const rdKey = it => it.kind+'|'+it.obj.id;
+function renderRecentlyDeletedList(){
+  const el = $('#recentlyDeletedList'); if(!el) return;
+  const items = getRecentlyDeletedItems();
+  trashBarSync('items','trashBar-items', items.map(rdKey));
   if(!items.length){
     el.innerHTML = '<div class="empty" style="padding:20px 0">Nothing in Recently Deleted right now.</div>';
     return;
   }
+  const sel = trashSel.items;
   el.innerHTML = items.map(it=>{
     const daysLeft = Math.max(0, RECENTLY_DELETED_DAYS - Math.floor((Date.now()-it.obj.deletedAt)/86400000));
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
-      + '<div><div>'+esc(it.obj.title||'(untitled)')+'</div>'
+    return '<div data-trash-key="'+rdKey(it)+'" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)'+(sel.on?';cursor:pointer':'')+'">'
+      + (sel.on ? '<input type="checkbox" style="pointer-events:none;flex:0 0 auto" '+(sel.set.has(rdKey(it))?'checked':'')+'>' : '')
+      + '<div style="flex:1;min-width:0"><div>'+esc(it.obj.title||'(untitled)')+'</div>'
       + '<div class="tiny" style="color:var(--muted)">'+it.label+' · deleted '+fmtRecDate(it.obj.deletedAt)+' · auto-removed in '+daysLeft+' day'+(daysLeft===1?'':'s')+'</div></div>'
-      + '<div style="display:flex;gap:6px;flex:0 0 auto">'
+      + (sel.on ? '' : '<div style="display:flex;gap:6px;flex:0 0 auto">'
       + '<button class="btn tiny gold" data-restore-kind="'+it.kind+'" data-restore-id="'+it.obj.id+'">Restore</button>'
       + '<button class="btn tiny" style="color:var(--red)" data-purge-kind="'+it.kind+'" data-purge-id="'+it.obj.id+'">Delete permanently</button>'
-      + '</div></div>';
+      + '</div>')+'</div>';
   }).join('');
   el.querySelectorAll('[data-restore-kind]').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -6560,7 +6635,12 @@ async function purgeOldDeletedItems(){
     persist();
   }
 }
-$('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); closeModal('m-data-backup'); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
+trashWire('items','trashBar-items','recentlyDeletedList',{
+  noun:'item', render:renderRecentlyDeletedList, keys:()=>getRecentlyDeletedItems().map(rdKey),
+  restore:async ks=>{ ks.forEach(k=>{ const [kind,...r]=k.split('|'); restoreDeletedItem(kind, r.join('|')); }); },
+  purge:async ks=>{ for(const k of ks){ const [kind,...r]=k.split('|'); await purgeDeletedItem(kind, r.join('|')); } renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); renderTalaSavedRow(); }
+});
+$('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); trashSel.items.on=false; trashSel.items.set.clear(); closeModal('m-data-backup'); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
 
 /* ---------- Debug panel — long-press "Teacher Console" to open ---------- */
 async function computeStorageStats(){
