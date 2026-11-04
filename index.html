@@ -318,7 +318,7 @@
   .lib-sel-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;width:min(680px,94vw);z-index:50;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:10px 12px}
   .lib-sel-bar .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .lib-sel-bar .row + .row{margin-top:8px}
-  body.lib-selecting .main{padding-bottom:170px!important}
+  body.lib-selecting .main{padding-bottom:230px!important}
   @media(max-width:760px){ .lib-sel-bar{bottom:calc(68px + env(safe-area-inset-bottom)) } }
   .rem-highlight{animation:remGlow 1.8s ease-out}
   @keyframes remGlow{0%{box-shadow:0 0 0 3px var(--gold);background:rgba(214,158,32,.10)}100%{box-shadow:0 0 0 0 transparent;background:transparent}}
@@ -1224,7 +1224,7 @@
           <div class="not-toolbar">
             <input id="notSearch" class="search-input" placeholder="Search title, raga, tala, composer, lyrics…" style="flex:1 1 220px;min-width:0">
             <button class="btn gold" id="btnAddNotation">+ Add composition</button>
-            <button class="btn" id="notSelectBtn" title="Tick several compositions — or press and hold any one">&#9745; Select</button>
+            <button class="btn" id="notSelectBtn" title="Tick several compositions — or press and hold any one">&#9745; Select many</button>
           </div>
           <div class="not-toolbar" style="padding-top:8px">
             <button type="button" class="btn small gold" id="notSrcTeachingBtn" data-src="teaching">My Teaching</button>
@@ -1265,16 +1265,7 @@
             <button class="btn" id="btnUploadRecording">&#128228; Upload recording</button>
             <input id="recUploadFile" type="file" accept="audio/*" multiple style="display:none">
             <button class="btn tiny" id="btnFixAllRecordings" style="display:none">Fix all playback</button>
-            <button class="btn tiny" id="recBulkModeBtn">&#10024; Enhance several…</button>
-            <button class="btn tiny" id="recSelectBtn" title="Tick several recordings — or press and hold any one">&#9745; Select</button>
-          </div>
-          <div class="not-toolbar" id="recBulkBar" style="display:none;padding:10px 12px;background:var(--paper);border:1px solid var(--line);border-radius:8px;align-items:center;flex-wrap:wrap;gap:10px">
-            <span class="tiny" id="recBulkCount" style="color:var(--muted)">0 selected</span>
-            <button type="button" class="btn tiny" data-bulk-preset="natural" disabled>Natural</button>
-            <button type="button" class="btn tiny" data-bulk-preset="clear" disabled>Clear</button>
-            <button type="button" class="btn tiny" data-bulk-preset="warm" disabled>Warm</button>
-            <button type="button" class="btn tiny" id="recBulkCancelBtn">Cancel</button>
-            <span class="tiny" id="recBulkStatus" style="color:var(--muted);flex-basis:100%"></span>
+            <button class="btn tiny" id="recSelectBtn" title="Tick several recordings — or press and hold any one">&#9745; Select many</button>
           </div>
           <div class="not-toolbar" style="padding-top:8px">
             <button type="button" class="btn small gold" id="recSrcTeachingBtn" data-src="teaching">My Teaching</button>
@@ -1719,8 +1710,16 @@
   <div class="row">
     <button type="button" class="btn small gold" id="libActDownload" disabled>Download</button>
     <button type="button" class="btn small" id="libActShare" disabled>Share</button>
+    <button type="button" class="btn small" id="libActEnhance" disabled style="display:none">&#10024; Enhance</button>
     <button type="button" class="btn small" id="libActDelete" disabled style="color:var(--red)">Delete</button>
   </div>
+  <div class="row" id="libEnhanceRow" style="display:none">
+    <span class="tiny" style="color:var(--muted)">Enhance with:</span>
+    <button type="button" class="btn tiny" data-bulk-preset="natural">Natural</button>
+    <button type="button" class="btn tiny" data-bulk-preset="clear">Clear</button>
+    <button type="button" class="btn tiny" data-bulk-preset="warm">Warm</button>
+  </div>
+  <div class="row" id="libSelStatusRow" style="display:none"><span class="tiny" id="libSelStatus" style="color:var(--muted)"></span></div>
 </div>
 
 <div class="modal-backdrop" id="m-lib-download">
@@ -6131,7 +6130,7 @@ $('#lnkDataBackup').addEventListener('click', e=>{ e.preventDefault(); openModal
    styled practice sheet for every selected composition in one go.
    ===================================================== */
 var libSel = { notation:{on:false,set:new Set()}, recording:{on:false,set:new Set()} };
-var libBlobCache = new Map(), libPreparedShare = null, libLastLongPress = 0;
+var libBlobCache = new Map(), libPreparedShare = null, libLastLongPress = 0, libEnhanceOpen = false, libEnhanceBusy = false;
 const LIB = {
   notation:  { one:'composition', many:'compositions', items:()=>S.notations||[], visible:()=>(S.notations||[]).filter(matchesNotationFilters),
                render:()=>{ renderNotationFilters(); renderNotationList(); }, btn:'#notSelectBtn', mediaKey:n=>'notation-pdf:'+n.id, hasFile:n=>!!n.hasPdf },
@@ -6142,13 +6141,13 @@ const libActiveKind = () => libSel.notation.on ? 'notation' : (libSel.recording.
 const libSafeName = t => (t||'untitled').replace(/[^\w\-]+/g,'_');
 function libItem(kind,id){ return LIB[kind].items().find(x=>x.id===id); }
 function libEnter(kind,id){
-  if(kind==='recording' && recBulkMode) $('#recBulkModeBtn').click();
   const st=libSel[kind]; st.on=true;
   if(id){ st.set.add(id); libPrefetch(kind,id); }
   libRefresh(kind);
 }
 function libExit(kind){
   libSel[kind].on=false; libSel[kind].set.clear(); libBlobCache.clear(); libPreparedShare=null;
+  libEnhanceOpen=false; $('#libSelStatus').textContent='';
   libRefresh(kind);
 }
 function libExitAll(){ if(typeof libSel==='undefined' || !libSel) return; ['notation','recording'].forEach(k=>{ if(libSel[k].on) libExit(k); }); }
@@ -6178,7 +6177,16 @@ function libUpdateBar(){
   $('#libSelCount').textContent = n ? n+' selected' : 'Tap '+LIB[kind].many+' to select them';
   const allOn = vis.length>0 && vis.every(x=>libSel[kind].set.has(x.id));
   $('#libSelAll').textContent = allOn ? 'Clear all' : 'Select all';
-  ['libActDownload','libActShare','libActDelete'].forEach(id=>{ $('#'+id).disabled = !n; });
+  ['libActDownload','libActShare','libActDelete'].forEach(id=>{ $('#'+id).disabled = !n || libEnhanceBusy; });
+  const enh=$('#libActEnhance'), isRec = kind==='recording';
+  enh.style.display = isRec ? '' : 'none';
+  enh.disabled = !n || libEnhanceBusy;
+  if(!n) libEnhanceOpen=false;
+  enh.classList.toggle('gold', isRec && libEnhanceOpen);
+  $('#libEnhanceRow').style.display = (isRec && libEnhanceOpen && n) ? 'flex' : 'none';
+  $$('#libEnhanceRow [data-bulk-preset]').forEach(b=> b.disabled = libEnhanceBusy);
+  $('#libSelAll').disabled = $('#libSelDone').disabled = libEnhanceBusy;
+  $('#libSelStatusRow').style.display = $('#libSelStatus').textContent ? 'flex' : 'none';
   $('#libActDownload').textContent = kind==='notation' ? 'Download…' : 'Download';
   $('#libActShare').textContent = libPreparedShare ? 'Ready — tap to share' : 'Share';
 }
@@ -9469,34 +9477,26 @@ $('#notSortBy').addEventListener('change', e=>{ notSortBy = e.target.value; rend
    RECORDINGS LIBRARY
    ===================================================== */
 let recSearchQuery = '', recTypeFilter = '', recRagaFilter = '', recTalaFilter = '', recComposerFilter = '', recSortBy = 'title', recSourceFilter = 'teaching';
-let recBulkMode = false, recBulkSelected = new Set(), recBulkBusy = false;
-function recUpdateBulkBar(){
-  $('#recBulkCount').textContent = recBulkSelected.size+' selected';
-  $$('#recBulkBar [data-bulk-preset]').forEach(b=> b.disabled = recBulkSelected.size===0 || recBulkBusy);
-}
-$('#recBulkModeBtn').addEventListener('click', ()=>{
-  if(!recBulkMode && libSel.recording.on) libExit('recording');
-  recBulkMode = !recBulkMode;
-  recBulkSelected.clear();
-  $('#recBulkBar').style.display = recBulkMode ? 'flex' : 'none';
-  $('#recBulkModeBtn').textContent = recBulkMode ? 'Cancel selecting' : '✨ Enhance several…';
-  $('#recBulkStatus').textContent = '';
-  recUpdateBulkBar();
-  renderRecordingsList();
+// Enhance now lives in the shared "Select many" bar (next to Download / Share / Delete) and works on
+// whatever recordings are ticked there.
+$('#libActEnhance').addEventListener('click', ()=>{
+  if(libActiveKind()!=='recording' || libEnhanceBusy || !libSel.recording.set.size) return;
+  libEnhanceOpen = !libEnhanceOpen;
+  libUpdateBar();
 });
-$('#recBulkCancelBtn').addEventListener('click', ()=> $('#recBulkModeBtn').click());
-$('#recBulkBar').addEventListener('click', async (e)=>{
-  const btn = e.target.closest('[data-bulk-preset]'); if(!btn || recBulkBusy || recBulkSelected.size===0) return;
+$('#libEnhanceRow').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('[data-bulk-preset]'); if(!btn || libEnhanceBusy || libActiveKind()!=='recording') return;
+  const ids = Array.from(libSel.recording.set); if(!ids.length) return;
   const presetKey = btn.dataset.bulkPreset;
   const preset = ENHANCE_PRESETS[presetKey];
-  const ids = Array.from(recBulkSelected);
   if(!confirm('Enhance '+ids.length+' recording'+(ids.length===1?'':'s')+' with the '+preset.name+' preset?\n\nThis replaces each saved recording (and its Drive copy) — the originals won\'t be kept alongside them.')) return;
-  recBulkBusy = true;
-  recUpdateBulkBar();
+  libEnhanceBusy = true;
+  libUpdateBar();
   let done=0, failed=0;
   for(const id of ids){
     const r = S.recordings.find(x=>x.id===id); if(!r) continue;
-    $('#recBulkStatus').textContent = 'Enhancing '+(done+failed+1)+' of '+ids.length+' — '+(r.title||'(untitled)')+'…';
+    $('#libSelStatus').textContent = 'Enhancing '+(done+failed+1)+' of '+ids.length+' — '+(r.title||'(untitled)')+'…';
+    libUpdateBar();
     try{
       const media = await mediaGetWithDriveFallback('recording-audio:'+r.id, r.driveFileId);
       if(!media) throw new Error('not available on this device');
@@ -9508,15 +9508,11 @@ $('#recBulkBar').addEventListener('click', async (e)=>{
         driveKeepLatestRevisionForever(r.driveFileId);
       }
       done++;
-    }catch(e){ failed++; }
+    }catch(err){ failed++; }
   }
-  recBulkBusy = false;
-  recBulkMode = false;
-  recBulkSelected.clear();
-  $('#recBulkBar').style.display = 'none';
-  $('#recBulkModeBtn').textContent = '✨ Enhance several…';
+  libEnhanceBusy = false;
+  libExit('recording');   // clears the selection, the cached (now outdated) files and the status line
   toast('Enhanced '+done+' recording'+(done===1?'':'s')+(failed?' — '+failed+' failed (still original, untouched)':''));
-  renderRecordingsList();
 });
 let recStream = null, recRecorder = null, recChunks = [], recTimerHandle = null, recStartMs = 0, recDurationSec = 0, recBlob = null;
 /* ---------- recording-time tanpura background mix ---------- */
@@ -9639,7 +9635,6 @@ function renderRecordingsList(){
     const isPlaying = recPlayingId === r.id;
     const tags = recordingTagsLine(r);
     row.innerHTML =
-      (recBulkMode ? '<input type="checkbox" class="rec-bulk-check" style="margin-right:8px" '+(recBulkSelected.has(r.id)?'checked':'')+'>' : '')+
       '<button type="button" class="rec-play-btn" aria-label="'+(isPlaying?'Pause':'Play')+'">'+(isPlaying?'&#10074;&#10074;':'&#9658;')+'</button>'+
       '<div class="rec-row-body"><div class="rec-row-title">'+esc(r.title||'(untitled)')+'</div>'+
       (tags ? '<div class="rec-row-sub">'+esc(tags)+'</div>' : '')+
@@ -9647,15 +9642,8 @@ function renderRecordingsList(){
       '<div class="rec-row-sub">'+fmtDuration(r.durationSec)+' · '+fmtRecDate(r.createdAt)+'</div>'+
       '<div class="rec-waveform-wrap'+(isPlaying?' on':'')+'" data-recid="'+r.id+'"><canvas></canvas><div class="rec-waveform-progress"></div></div>'+
       '</div>';
-    if(recBulkMode){
-      row.querySelector('.rec-bulk-check').addEventListener('click', e=>{
-        e.stopPropagation();
-        if(e.target.checked) recBulkSelected.add(r.id); else recBulkSelected.delete(r.id);
-        recUpdateBulkBar();
-      });
-    }
     row.querySelector('.rec-play-btn').addEventListener('click', e=>{ e.stopPropagation(); toggleRecordingPlayback(r.id); });
-    libAttachSelection('recording', r.id, row, ()=>{ if(recBulkMode) return; openRecordingView(r.id); }); // in select mode, tapping the row toggles it instead of opening the editor
+    libAttachSelection('recording', r.id, row, ()=>openRecordingView(r.id)); // in select mode, tapping the row toggles it instead of opening the editor
     const wfWrap = row.querySelector('.rec-waveform-wrap');
     wfWrap.addEventListener('click', e=>{
       e.stopPropagation();
