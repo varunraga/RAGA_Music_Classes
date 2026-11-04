@@ -200,6 +200,13 @@
   .tl-block.raga{background:var(--purple-bg);border-color:var(--purple);color:var(--purple-ink)}
   .tl-block.status-cancelled{opacity:.72;text-decoration:line-through}
   .tl-empty{color:var(--muted);font-size:.9rem;padding:26px 4px}
+  /* On a phone the day is laid out at a readable width and the strip scrolls sideways (swipe) instead of squeezing every class together. */
+  .tl-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;padding-bottom:4px}
+  @media (max-width:760px){
+    .tl-scroll{margin:0 -6px;padding:0 6px 8px}
+    .tl-block{min-width:132px}
+    .tl-block b{font-size:.84rem}
+  }
   .status-badge{position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;line-height:1;z-index:3;box-shadow:0 0 0 1.5px var(--card)}
   .status-badge.completed{background:var(--grey)}
   .status-badge.cancelled{background:var(--red)}
@@ -806,7 +813,7 @@
 
       <div class="panel">
         <div class="panel-head"><h3>Today's schedule</h3><div style="display:flex;gap:10px;align-items:center"><button class="btn tiny" id="btnAllDone" title="Mark every remaining scheduled attendance today as Completed">✓ Mark all completed</button><span class="hint" id="tlHint">8:00 – 20:00</span></div></div>
-        <div class="panel-body"><div class="timeline" id="timeline"></div></div>
+        <div class="panel-body"><div class="tl-scroll" id="tlScroll"><div class="timeline" id="timeline"></div></div></div>
       </div>
 
       <div class="two-col">
@@ -832,7 +839,11 @@
         <div>
           <div class="panel">
             <div class="panel-head"><h3>Pending fees</h3></div>
-            <div class="tscroll"><table id="pendingTable"><thead><tr><th>Student</th><th class="r">Outstanding</th></tr></thead><tbody></tbody></table></div>
+            <div class="tscroll"><table id="pendingTable"><thead><tr><th style="width:30px"><input type="checkbox" id="pendPickAll" aria-label="Select all students shown"></th><th>Student</th><th class="r">Outstanding</th></tr></thead><tbody></tbody></table></div>
+            <div id="pendSelBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:10px 16px 14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)">
+              <div id="pendSelText" style="font-size:.88rem"></div>
+              <button type="button" class="btn tiny" id="pendPickClear" style="display:none">Clear</button>
+            </div>
             <div class="empty" id="pendingEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5.3"/></svg>No pending fees. All settled.</div>
           </div>
           <div class="panel">
@@ -2255,7 +2266,12 @@
     <div class="empty" id="acEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5.3"/></svg>No completed classes match these filters.</div>
     <div id="acTotalBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)">
       <div id="acTotalText" style="font-size:.88rem"></div>
-      <button type="button" class="btn tiny" id="acPickClear" style="display:none">Clear selection</button>
+      <div id="acBulkActions" style="display:none;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="tiny" style="color:var(--muted)">Mark material for selected:</span>
+        <button type="button" class="btn tiny" id="acBulkSent" title="Mark material as sent for every selected class">&#9834; Sent</button>
+        <button type="button" class="btn tiny" id="acBulkNa" title="Mark material as not required for every selected class">&#8211; Not required</button>
+        <button type="button" class="btn tiny" id="acPickClear">Clear selection</button>
+      </div>
     </div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-allcompleted">Close</button></div></div>
   </div>
@@ -4137,9 +4153,12 @@ function renderTimeline(){
   const el=$('#timeline'); el.innerHTML='';
   const {start,end} = hourRange();
   const span=end-start;
-  const hint=$('#tlHint'); if(hint) hint.textContent=pad(start)+':00 – '+pad(end)+':00';
+  const mobile = window.matchMedia('(max-width:760px)').matches;
+  const hint=$('#tlHint'); if(hint) hint.textContent=pad(start)+':00 \u2013 '+pad(end)+':00'+(mobile?' \u00b7 swipe \u2194':'');
+  // Phone: give every hour a fixed width so classes stay readable, and let the strip scroll sideways.
+  el.style.minWidth = mobile ? Math.round(span*88)+'px' : '';
   el.insertAdjacentHTML('beforeend','<div class="tl-ruler"></div>');
-  for(let h=start;h<=end;h+=2){
+  for(let h=start;h<=end;h+=(mobile?1:2)){
     el.insertAdjacentHTML('beforeend','<span class="tl-hour" style="left:'+((h-start)/span*100)+'%">'+fmtTime12(pad(h)+':00')+'</span>');
   }
   const nowH = new Date();
@@ -4150,6 +4169,14 @@ function renderTimeline(){
     el.insertAdjacentHTML('beforeend','<div class="tl-empty">No classes today — schedule one from the calendar, or enjoy the quiet.</div>');
     return;
   }
+  // Classes that overlap in time get their own row instead of sitting on top of each other.
+  const laneEnds=[], laneOf=new Map();
+  todays.forEach(c=>{
+    const st=toMin(c.time)/60, w=Math.max(c.dur/60, mobile?1.5:span*0.08);
+    let ln=laneEnds.findIndex(e=>e<=st+0.001); if(ln<0){ ln=laneEnds.length; laneEnds.push(0); }
+    laneEnds[ln]=st+w; laneOf.set(c.cid,ln);
+  });
+  el.style.height = (120 + (laneEnds.length-1)*62)+'px';
   todays.forEach(c=>{
     const st=toMin(c.time)/60, w=c.dur/60;
     const cat=sessionCategory(c), status=sessionStatus(c);
@@ -4157,6 +4184,7 @@ function renderTimeline(){
     b.className='tl-block '+cat+' status-'+status;
     b.style.left=((st-start)/span*100)+'%';
     b.style.width=Math.max(w/span*100,8)+'%';
+    b.style.bottom=(34+laneOf.get(c.cid)*62)+'px';
     const showQuick = status==='scheduled';
     b.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+'</b>'+fmtTime12(c.time)+' · '+c.mode+
       (showQuick ? '<span class="tl-actions"><button data-qc="'+c.cid+'" title="Mark completed">✓</button><button data-qx="'+c.cid+'" title="Cancelled by student">✗</button></span>' : '');
@@ -4166,7 +4194,15 @@ function renderTimeline(){
   });
   el.querySelectorAll('[data-qc]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); quickStatus(b.dataset.qc,'Completed'); }));
   el.querySelectorAll('[data-qx]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); quickStatus(b.dataset.qx,'Cancelled by Student'); }));
+  // Phone: start the strip at the current time (or the first class) rather than at the far left.
+  const sc=$('#tlScroll');
+  if(mobile && sc && !sc.dataset.placed){
+    const focusH = (nh>=start&&nh<=end) ? nh : toMin(todays[0].time)/60;
+    sc.scrollLeft = Math.max(0, (focusH-start)/span*el.offsetWidth - 40);
+    sc.dataset.placed = '1';
+  }
 }
+window.matchMedia('(max-width:760px)').addEventListener('change', ()=>{ const sc=$('#tlScroll'); if(sc) delete sc.dataset.placed; renderTimeline(); });
 function quickStatus(cid, status){
   const cl=S.classes.find(x=>x.cid===cid); if(!cl) return;
   const snap=JSON.parse(JSON.stringify(cl));
@@ -4401,7 +4437,7 @@ function acUpdateTotals(){
     if(bits.length) h+='<div class="tiny" style="color:var(--muted);margin-top:2px">'+bits.join(' · ')+'</div>';
     el.innerHTML=h;
   }
-  $('#acPickClear').style.display = n ? '' : 'none';
+  $('#acBulkActions').style.display = n ? 'flex' : 'none';
   const all=$('#acPickAll');
   const shownPicked=acShown.filter(k=>acPicked.has(k)).length;
   all.checked = acShown.length>0 && shownPicked===acShown.length;
@@ -4412,6 +4448,20 @@ $('#acPickAll').addEventListener('change',e=>{
   document.querySelectorAll('#acTable [data-acpick]').forEach(chk=>{ chk.checked = acPicked.has(chk.dataset.acpick); });
   acUpdateTotals();
 });
+function acBulkMaterial(val){
+  const keys=[...acPicked]; let n=0;
+  keys.forEach(pk=>{
+    const [cid,sid]=pk.split('|');
+    const c=S.classes.find(x=>x.cid===cid);
+    if(!c || c.att[sid]!=='Completed') return;
+    setMatStatus(cid,sid,val); n++;
+  });
+  if(!n) return;
+  renderAll(); renderAllCompletedList();
+  toast(n+' class'+(n===1?'':'es')+' marked '+(val==='sent'?'material sent':'material not required'));
+}
+$('#acBulkSent').addEventListener('click',()=>acBulkMaterial('sent'));
+$('#acBulkNa').addEventListener('click',()=>acBulkMaterial('na'));
 $('#acPickClear').addEventListener('click',()=>{
   acPicked.clear();
   document.querySelectorAll('#acTable [data-acpick]').forEach(chk=>{ chk.checked=false; });
@@ -4431,22 +4481,62 @@ $('#acAllTimeChk').addEventListener('change',e=>{
 });
 $('#lnkViewAllCompleted').addEventListener('click',e=>{ e.preventDefault(); openAllCompleted(); });
 
+let pendPicked = new Set(), pendShown = [], pendOut = {};
 function renderPending(){
   const tb=$('#pendingTable tbody'); tb.innerHTML='';
   const rows = S.students.filter(s=>s.cat==='Personal' && (dueAllTime(s)>0 || paidAllTime(s)>0))
     .map(s=>({s,o:outstandingFor(s)})).sort((a,b)=>b.o-a.o);
   $('#pendingEmpty').style.display = rows.length?'none':'';
   $('#pendingTable').style.display = rows.length?'':'none';
+  $('#pendSelBar').style.display = rows.length?'flex':'none';
+  pendShown = rows.map(({s})=>s.id); pendOut = {};
   rows.forEach(({s,o})=>{
+    pendOut[s.id]=o;
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.title = "View "+s.name+"'s profile";
-    tr.innerHTML = '<td>'+esc(s.name)+'<div class="muted" style="font-size:.75rem">'+s.level+'</div></td>'+
+    tr.innerHTML = '<td><input type="checkbox" data-pendpick="'+s.id+'" aria-label="Select '+esc(s.name)+'"'+(pendPicked.has(s.id)?' checked':'')+'></td>'+
+      '<td>'+esc(s.name)+'<div class="muted" style="font-size:.75rem">'+s.level+'</div></td>'+
       '<td class="r num '+(o>0?'amount-due':'amount-ok')+'">'+(o>0?RUPEE.format(o):(o<0?RUPEE.format(-o)+' advance':'Settled'))+'</td>';
-    tr.addEventListener('click', ()=>openProfile(s.id));
+    tr.addEventListener('click', e=>{ if(e.target.closest('[data-pendpick]')) return; openProfile(s.id); });
+    const chk = tr.querySelector('[data-pendpick]');
+    chk.addEventListener('click', e=>e.stopPropagation());
+    chk.addEventListener('change', ()=>{ if(chk.checked) pendPicked.add(s.id); else pendPicked.delete(s.id); pendUpdateTotals(); });
     tb.appendChild(tr);
   });
+  pendUpdateTotals();
 }
+// Total pending for just the ticked students (same rule as the "PERSONAL outstanding" card: only what is
+// actually owed counts; an advance paid by a ticked student is mentioned but not netted off).
+function pendUpdateTotals(){
+  pendPicked.forEach(id=>{ if(!(id in pendOut)) pendPicked.delete(id); });
+  let n=0, total=0, owing=0, adv=0;
+  pendPicked.forEach(id=>{ n++; const o=pendOut[id]; if(o>0){ total+=o; owing++; } else if(o<0) adv++; });
+  const el=$('#pendSelText');
+  if(!n) el.innerHTML='<span style="color:var(--muted)">Tick students to see the total pending for just those.</span>';
+  else{
+    let h='<b>'+n+'</b> student'+(n===1?'':'s')+' selected \u2014 Pending <b class="num amount-due">'+RUPEE.format(total)+'</b>';
+    const bits=[];
+    if(owing<n) bits.push(owing+' with fees pending');
+    if(adv) bits.push(adv+' paid in advance, not netted off');
+    if(bits.length) h+='<div class="tiny" style="color:var(--muted);margin-top:2px">'+bits.join(' \u00b7 ')+'</div>';
+    el.innerHTML=h;
+  }
+  $('#pendPickClear').style.display = n ? '' : 'none';
+  const all=$('#pendPickAll'), shownPicked=pendShown.filter(id=>pendPicked.has(id)).length;
+  all.checked = pendShown.length>0 && shownPicked===pendShown.length;
+  all.indeterminate = shownPicked>0 && shownPicked<pendShown.length;
+}
+$('#pendPickAll').addEventListener('change',e=>{
+  pendShown.forEach(id=>{ if(e.target.checked) pendPicked.add(id); else pendPicked.delete(id); });
+  document.querySelectorAll('#pendingTable [data-pendpick]').forEach(c=>{ c.checked=pendPicked.has(c.dataset.pendpick); });
+  pendUpdateTotals();
+});
+$('#pendPickClear').addEventListener('click',()=>{
+  pendPicked.clear();
+  document.querySelectorAll('#pendingTable [data-pendpick]').forEach(c=>{ c.checked=false; });
+  pendUpdateTotals();
+});
 
 /* =====================================================
    RENDER — CALENDAR
