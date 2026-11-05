@@ -803,6 +803,9 @@
     <!-- ======== DASHBOARD ======== -->
     <section class="view active" id="view-dashboard">
       <img id="bannerImg" class="banner" alt="RAGA Music Classes">
+      <div style="display:flex;justify-content:flex-end;margin:0 0 12px">
+        <button type="button" class="btn" id="btnHeadsUp" title="Reopen the Heads Up pop-up: today, tomorrow, pending status, material, backup and unscheduled students">&#128276; Heads Up <span class="badge hold" id="headsUpCount" style="display:none;margin-left:4px"></span></button>
+      </div>
       <div class="stat-row">
         <div class="stat clickable" data-goto="students"><div class="label">Active students</div><div class="value num" id="statStudents">0</div><div class="sub"><span class="dot" style="background:var(--green)"></span><b id="statPersonal">0</b> Personal · <span class="dot" style="background:var(--purple)"></span><b id="statRaga">0</b> RAGA</div></div>
         <div class="stat money clickable" data-goto="earnings"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
@@ -6122,11 +6125,9 @@ function renderNavBadge(){
   b.style.display = n? '':'none';
   b.textContent = n;
   renderUnupdatedBanner();
+  renderHeadsUpBtn();
 }
-function maybeShowReminder(){
-  let dismissed=false;
-  try{ dismissed = sessionStorage.getItem(KEY+'.reminded')==='1'; }catch(e){}
-  if(dismissed){ unupdatedMarkSeen(unupdatedClasses().map(c=>c.cid)); return; } // already told them this session
+function reminderState(){
   const t=reminderList(TODAY), tm=reminderList(TOMORROW);
   const un=unupdatedClasses();
   const bOver = backupOverdue();
@@ -6135,11 +6136,32 @@ function maybeShowReminder(){
   const needCount = dow!==1 ? studentsNeedingSchedule(mon0).length : 0; // quiet Mon only; visible Tue through Sun
   const needUrgent = dow===5||dow===6||dow===0; // Fri, Sat, Sun
   const matP = materialPending();
-  if(!t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length) return;
+  return {t,tm,un,bOver,needCount,needUrgent,matP};
+}
+// Number on the Dashboard's Heads Up button: how many kinds of thing currently need attention.
+function renderHeadsUpBtn(){
+  const b=$('#headsUpCount'); if(!b) return;
+  const r=reminderState();
+  const n=(r.un.length?1:0)+(r.bOver?1:0)+(r.needCount?1:0)+((r.matP.overdue||r.matP.today)?1:0);
+  b.style.display = n ? '' : 'none';
+  b.textContent = n;
+}
+// manual=true: opened from the Dashboard button — always shows, even if it was already dismissed this session
+// or nothing needs attention.
+function maybeShowReminder(manual){
+  if(!manual){
+    let dismissed=false;
+    try{ dismissed = sessionStorage.getItem(KEY+'.reminded')==='1'; }catch(e){}
+    if(dismissed){ unupdatedMarkSeen(unupdatedClasses().map(c=>c.cid)); return; } // already told them this session
+  }
+  const {t,tm,un,bOver,needCount,needUrgent,matP} = reminderState();
+  const nothing = !t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length;
+  if(nothing && !manual) return;
   const item = c => '<div class="rem-item"><span class="t num">'+fmtTime12(c.time)+'</span>'+
     '<span><b>'+esc(sessionNames(c))+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</span>'+
     '<span class="badge '+(c.mode==='Online'?'online':'offline')+'" style="margin-left:auto">'+c.mode+'</span></div>';
   let html='';
+  if(manual && !un.length && !bOver && !needCount && !matP.today && !matP.overdue) html += '<div class="rem-item" style="border-color:var(--green)"><span class="t">&#10003;</span><span><b>All clear</b> \u2014 nothing pending right now.</span></div>';
   if(un.length){
     const shown=un.slice(0,4);
     html += '<div class="field" style="margin-bottom:4px"><label style="color:var(--red)">&#9888; Status not updated · '+un.length+' class'+(un.length===1?'':'es')+'</label></div>'+
@@ -6181,6 +6203,7 @@ function maybeShowReminder(){
   }
   openModal('m-reminder');
 }
+$('#btnHeadsUp').addEventListener('click',()=>{ if(!$('#m-reminder').classList.contains('open')) maybeShowReminder(true); });
 $('#remGotIt').addEventListener('click',()=>{
   try{ sessionStorage.setItem(KEY+'.reminded','1'); }catch(e){}
   closeModal('m-reminder');
