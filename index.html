@@ -808,10 +808,9 @@
     <section class="view active" id="view-dashboard">
       <img id="bannerImg" class="banner" alt="RAGA Music Classes">
       <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:0 0 12px">
-        <button type="button" class="btn" id="btnRagaTracker" title="All upcoming Raga Shiksha classes, grouped by student, with their website status">&#127760; Raga Shiksha tracker</button>
+        <button type="button" class="btn" id="btnRagaTracker" title="All upcoming Raga Shiksha classes by student. The number shows classes still to be scheduled on the website.">&#127760; Raga Shiksha tracker <span class="badge hold" id="ragaTrackerCount" style="display:none;margin-left:4px"></span></button>
         <button type="button" class="btn" id="btnHeadsUp" title="Reopen the Heads Up pop-up: today, tomorrow, pending status, material, backup and unscheduled students">&#128276; Heads Up <span class="badge hold" id="headsUpCount" style="display:none;margin-left:4px"></span></button>
       </div>
-      <div class="unupd-banner" id="ragaSiteBanner" style="display:none;border-color:var(--gold)" role="button" tabindex="0" title="Raga Shiksha classes that still need scheduling on the website"></div>
       <div class="stat-row">
         <div class="stat clickable" data-goto="students"><div class="label">Active students</div><div class="value num" id="statStudents">0</div><div class="sub"><span class="dot" style="background:var(--green)"></span><b id="statPersonal">0</b> Personal · <span class="dot" style="background:var(--purple)"></span><b id="statRaga">0</b> RAGA</div></div>
         <div class="stat money clickable" data-goto="earnings"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
@@ -910,14 +909,16 @@
         <div class="panel">
           <div class="panel-head"><h3>Class history</h3><span class="hint" id="profClassHint"></span></div>
           <div class="heat" id="profHeat"></div>
-          <div class="tscroll"><table id="profClasses"><thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Topic</th><th>Material</th><th class="r">Action</th></tr></thead><tbody></tbody></table></div>
+          <div class="tscroll"><table id="profClasses"><thead><tr><th style="width:30px"><input type="checkbox" id="profClassAll" aria-label="Select all classes shown"></th><th>Date</th><th>Time</th><th>Status</th><th>Topic</th><th>Material</th><th class="r">Action</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="profClassesEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="12" cy="15.5" r="1.7" fill="currentColor" stroke="none"/></svg>No classes yet for this student.</div>
+          <div id="profClassSel" style="display:none;margin:10px 16px 14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.88rem"></div>
         </div>
         <div class="panel" id="profPayPanel">
           <div class="panel-head"><h3 id="profPayTitle">Payments</h3><span class="hint" id="profPayHint"></span></div>
           <div id="profRagaSummary" style="display:none"></div>
-          <div class="tscroll"><table id="profPays"><thead><tr><th>Date</th><th>Month</th><th>Mode</th><th class="r">Amount</th></tr></thead><tbody></tbody></table></div>
+          <div class="tscroll"><table id="profPays"><thead><tr><th style="width:30px"><input type="checkbox" id="profPayAll" aria-label="Select all payments"></th><th>Date</th><th>Month</th><th>Mode</th><th class="r">Amount</th></tr></thead><tbody></tbody></table></div>
           <div class="empty" id="profPaysEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" font-family="inherit">₹</text></svg>No payments recorded.</div>
+          <div id="profPaySel" style="display:none;margin:10px 16px 14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.88rem"></div>
         </div>
       </div>
     </section>
@@ -3293,8 +3294,20 @@ $('#m-file-viewer').addEventListener('mousedown', (e)=>{
 });
 
 
+// Tap/click on the dimmed area outside a pop-up closes it — every pop-up, including Heads Up. The press must start
+// AND end on the dimmed area, so dragging a text selection out of a pop-up doesn't close it. Uses pointer + click
+// events (not mousedown alone) so it also works reliably on phones.
 $$('.modal-backdrop').forEach(bd=>{
-  bd.addEventListener('mousedown',e=>{ if(e.target===bd && bd.id!=='m-reminder') closeModal(bd.id); });
+  let downOnBackdrop=false;
+  const down=e=>{ downOnBackdrop = (e.target===bd); };
+  bd.addEventListener('pointerdown',down);
+  bd.addEventListener('mousedown',down);
+  bd.addEventListener('click',e=>{
+    if(e.target!==bd || !downOnBackdrop) return;
+    downOnBackdrop=false;
+    if(bd.id==='m-reminder'){ try{ sessionStorage.setItem(KEY+'.reminded','1'); }catch(err){} }   // same as pressing "Got it"
+    closeModal(bd.id);
+  });
 });
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.dataset.close)));
 
@@ -3605,9 +3618,60 @@ $('#levelFilter').addEventListener('change',renderStudents);
    ===================================================== */
 let profileId=null;
 function openProfile(id){ profileId=id; renderProfile(); go('student'); }
+/* ---------- student profile: tick classes / payments to total them ---------- */
+let profSelFor=null, profSelClasses=new Set(), profSelPays=new Set(), profShownClasses=[], profShownPays=[], profStudent=null;
+function profUpdateTotals(){
+  const st=profStudent; if(!st) return;
+  const cb=$('#profClassSel');
+  cb.style.display = profShownClasses.length ? '' : 'none';
+  const cs=profShownClasses.filter(c=>profSelClasses.has(c.cid));
+  const done=cs.filter(c=>c.att[st.id]==='Completed');
+  const fees=done.reduce((t,c)=>t+classAmount(st,c),0);
+  const pend=done.filter(c=>isUSD(st) && classINR(c,st.id)==null).length;
+  cb.innerHTML = cs.length
+    ? '<b>'+cs.length+'</b> class'+(cs.length===1?'':'es')+' selected &middot; <b>'+done.length+'</b> completed &middot; Fees <b class="num">'+RUPEE.format(fees)+'</b>'+
+      (cs.length>done.length ? '<div class="tiny" style="color:var(--muted);margin-top:2px">Fees count completed classes only.</div>' : '')+
+      (pend ? '<div class="tiny" style="color:var(--muted);margin-top:2px">'+pend+' completed class'+(pend===1?'':'es')+' still awaiting the INR amount.</div>' : '')
+    : '<span style="color:var(--muted)">Tick classes to see the total number and fees.</span>';
+  const ca=$('#profClassAll'), nc=cs.length;
+  ca.checked = profShownClasses.length>0 && nc===profShownClasses.length;
+  ca.indeterminate = nc>0 && nc<profShownClasses.length;
+  const pb=$('#profPaySel');
+  pb.style.display = (st.cat!=='RAGA' && profShownPays.length) ? '' : 'none';
+  const ps=profShownPays.filter(p=>profSelPays.has(p.pid));
+  const got=ps.reduce((t,p)=>t+p.amount,0);
+  pb.innerHTML = ps.length
+    ? '<b>'+ps.length+'</b> payment'+(ps.length===1?'':'s')+' selected &middot; Received <b class="num amount-ok">'+RUPEE.format(got)+'</b>'
+    : '<span style="color:var(--muted)">Tick payments to see the total number and amount received.</span>';
+  const pa=$('#profPayAll'), np=ps.length;
+  pa.checked = profShownPays.length>0 && np===profShownPays.length;
+  pa.indeterminate = np>0 && np<profShownPays.length;
+}
+$('#profClasses tbody').addEventListener('change',e=>{
+  const cb=e.target.closest('[data-pcsel]'); if(!cb) return;
+  if(cb.checked) profSelClasses.add(cb.dataset.pcsel); else profSelClasses.delete(cb.dataset.pcsel);
+  profUpdateTotals();
+});
+$('#profPays tbody').addEventListener('change',e=>{
+  const cb=e.target.closest('[data-ppsel]'); if(!cb) return;
+  if(cb.checked) profSelPays.add(cb.dataset.ppsel); else profSelPays.delete(cb.dataset.ppsel);
+  profUpdateTotals();
+});
+$('#profClassAll').addEventListener('change',e=>{
+  profShownClasses.forEach(c=>{ if(e.target.checked) profSelClasses.add(c.cid); else profSelClasses.delete(c.cid); });
+  document.querySelectorAll('#profClasses [data-pcsel]').forEach(cb=>{ cb.checked=profSelClasses.has(cb.dataset.pcsel); });
+  profUpdateTotals();
+});
+$('#profPayAll').addEventListener('change',e=>{
+  profShownPays.forEach(p=>{ if(e.target.checked) profSelPays.add(p.pid); else profSelPays.delete(p.pid); });
+  document.querySelectorAll('#profPays [data-ppsel]').forEach(cb=>{ cb.checked=profSelPays.has(cb.dataset.ppsel); });
+  profUpdateTotals();
+});
 function renderProfile(){
   const st=sById(profileId);
   if(!st){ profileId=null; go('students'); return; }
+  if(profSelFor!==profileId){ profSelFor=profileId; profSelClasses.clear(); profSelPays.clear(); }
+  profStudent=st;
   const out = st.cat==='Personal' ? outstandingFor(st) : 0;
   const head=$('#profileHead');
   head.innerHTML = avatarHTML(st.name,true)+
@@ -3654,12 +3718,13 @@ function renderProfile(){
   $('#profClassHint').textContent = hist.length+' total';
   $('#profClassesEmpty').style.display = hist.length?'none':'';
   $('#profClasses').style.display = hist.length?'':'none';
-  hist.slice(0,80).forEach(c=>{
+  profShownClasses=hist.slice(0,80);
+  profShownClasses.forEach(c=>{
     const stt=c.att[st.id];
     const cls = stt==='Completed' ? 'completed' : (CANC.includes(stt) ? 'cancelled' : (stt==='Absent' ? 'hold' : 'scheduled'));
     const partner = c.studentIds.length>1 ? c.studentIds.filter(x=>x!==st.id).map(firstName).join(', ') : '';
     const rowId='pc'+c.cid+'-'+st.id;
-    tb.insertAdjacentHTML('beforeend','<tr><td class="muted">'+fmtD(c.date)+'</td><td class="num muted">'+fmtTime12(c.time)+'</td>'+
+    tb.insertAdjacentHTML('beforeend','<tr><td><input type="checkbox" data-pcsel="'+c.cid+'"'+(profSelClasses.has(c.cid)?' checked':'')+' aria-label="Select class"></td><td class="muted">'+fmtD(c.date)+'</td><td class="num muted">'+fmtTime12(c.time)+'</td>'+
       '<td><span class="badge '+cls+'">'+stt+'</span>'+
         (isUSD(st)&&stt==='Completed' ? (classINR(c,st.id)!=null?' <span class="num muted">'+RUPEE.format(classINR(c,st.id))+'</span>':' <span class="badge hold">₹ pending</span>') : '')+
         (partner ? ' <span class="muted" style="font-size:.72rem">with '+esc(partner)+'</span>' : '')+'</td>'+
@@ -3669,7 +3734,9 @@ function renderProfile(){
     if(stt==='Completed') wireMatQuick($('#'+rowId), c.cid, st.id);
   });
   tb.querySelectorAll('[data-pm]').forEach(b=>b.addEventListener('click',()=>openClassModal(b.dataset.pm)));
+  profSelClasses.forEach(id=>{ if(!profShownClasses.some(c=>c.cid===id)) profSelClasses.delete(id); });
   if(st.cat==='RAGA'){
+    profShownPays=[]; profSelPays.clear();
     $('#profPayTitle').textContent='RAGA earnings';
     $('#profPays').style.display='none';
     $('#profPaysEmpty').style.display='none';
@@ -3692,8 +3759,10 @@ function renderProfile(){
     $('#profPayHint').textContent='Total: '+RUPEE.format(pays.reduce((t,p)=>t+p.amount,0));
     $('#profPaysEmpty').style.display=pays.length?'none':'';
     $('#profPays').style.display=pays.length?'':'none';
-    pays.forEach(p=>ptb.insertAdjacentHTML('beforeend','<tr><td class="muted">'+fmtD(p.date)+'</td><td class="muted">'+monthLabel(p.month)+'</td><td>'+p.mode+'</td><td class="r num amount-ok">'+RUPEE.format(p.amount)+'</td></tr>'));
+    profShownPays=pays; profSelPays.forEach(id=>{ if(!pays.some(p=>p.pid===id)) profSelPays.delete(id); });
+    pays.forEach(p=>ptb.insertAdjacentHTML('beforeend','<tr><td><input type="checkbox" data-ppsel="'+p.pid+'"'+(profSelPays.has(p.pid)?' checked':'')+' aria-label="Select payment"></td><td class="muted">'+fmtD(p.date)+'</td><td class="muted">'+monthLabel(p.month)+'</td><td>'+p.mode+'</td><td class="r num amount-ok">'+RUPEE.format(p.amount)+'</td></tr>'));
   }
+  profUpdateTotals();
 }
 $('#showArchived').addEventListener('change',renderStudents);
 
@@ -6257,24 +6326,16 @@ function renderNavBadge(){
   b.style.display = n? '':'none';
   b.textContent = n;
   renderUnupdatedBanner();
-  renderRagaSiteBanner();
+  renderRagaTrackerBadge();
   renderHeadsUpBtn();
 }
-function renderRagaSiteBanner(){
-  const el=$('#ragaSiteBanner'); if(!el) return;
-  const todo=ragaSiteTodo(), no=ragaSiteNoCredit();
-  if(!todo.length && !no.length){ el.style.display='none'; el.innerHTML=''; return; }
-  const e=todo[0]||no[0], n=todo.length;
-  el.style.display='';
-  el.innerHTML='<span class="ico" style="background:var(--gold)">!</span><div class="txt">'+
-    (n ? '<b>'+n+' Raga Shiksha class'+(n===1?'':'es')+' not scheduled on the website yet</b>'
-       : '<b>'+no.length+' Raga Shiksha class'+(no.length===1?'':'es')+' waiting on student credits</b>')+
-    '<div class="tiny" style="color:var(--muted);margin-top:2px">Next: '+esc(rsWhen(e.c))+' &middot; '+fmtTime12(e.c.time)+' &middot; '+esc(firstName(e.sid))+
-    (n && no.length ? ' &middot; '+no.length+' waiting on credits' : '')+' &mdash; students aren&#39;t notified until it&#39;s scheduled on ragashiksha.com</div></div>'+
-    rsLink('Schedule now')+'<button type="button" class="btn tiny" style="flex:0 0 auto">Review</button>';
+// Number on the Dashboard's Raga Shiksha tracker button: classes still to be scheduled on the website (reminder window).
+function renderRagaTrackerBadge(){
+  const b=$('#ragaTrackerCount'); if(!b) return;
+  const n=ragaSiteTodo().length;
+  b.style.display = n ? '' : 'none';
+  b.textContent = n;
 }
-$('#ragaSiteBanner').addEventListener('click',e=>{ if(e.target.closest('a')) return; maybeShowReminder(true); });
-$('#ragaSiteBanner').addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); maybeShowReminder(true); } });
 function ragaSiteSectionHTML(todo, no){
   const row=(e,isTodo)=>{
     const st=sById(e.sid), c=e.c, key=c.cid+'|'+e.sid;
