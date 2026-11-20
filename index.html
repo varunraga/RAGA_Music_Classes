@@ -556,6 +556,10 @@
   .mat-btn:hover{border-color:var(--gold)}
   .mat-btn.on[data-matval="sent"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
   .mat-btn.on[data-matval="na"]{background:var(--paper);color:var(--muted);border-color:var(--line);font-weight:700}
+  .mat-btn.on[data-rsval=""]{background:rgba(201,76,76,.12);color:var(--red);border-color:var(--red);font-weight:700}
+  .mat-btn.on[data-rsval="nocredit"]{background:rgba(200,150,40,.16);color:var(--ink);border-color:var(--gold);font-weight:700}
+  .mat-btn.on[data-rsval="done"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
+  .rs-warn{color:var(--red);font-weight:800}
   .mat-tag{font-size:.7rem;padding:2px 7px;border-radius:20px;font-weight:700;white-space:nowrap}
   .mat-tag.sent{background:rgba(46,139,103,.14);color:var(--green)}
   .mat-tag.na{background:var(--paper);color:var(--muted)}
@@ -806,6 +810,7 @@
       <div style="display:flex;justify-content:flex-end;margin:0 0 12px">
         <button type="button" class="btn" id="btnHeadsUp" title="Reopen the Heads Up pop-up: today, tomorrow, pending status, material, backup and unscheduled students">&#128276; Heads Up <span class="badge hold" id="headsUpCount" style="display:none;margin-left:4px"></span></button>
       </div>
+      <div class="unupd-banner" id="ragaSiteBanner" style="display:none;border-color:var(--gold)" role="button" tabindex="0" title="Raga Shiksha classes that still need scheduling on the website"></div>
       <div class="stat-row">
         <div class="stat clickable" data-goto="students"><div class="label">Active students</div><div class="value num" id="statStudents">0</div><div class="sub"><span class="dot" style="background:var(--green)"></span><b id="statPersonal">0</b> Personal · <span class="dot" style="background:var(--purple)"></span><b id="statRaga">0</b> RAGA</div></div>
         <div class="stat money clickable" data-goto="earnings"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
@@ -2129,6 +2134,11 @@
       <div class="field" style="margin-bottom:8px"><label>Attendance / status per student</label></div>
       <div id="attRows"></div>
     </div>
+    <div id="rsBlock" style="margin-top:14px;display:none">
+      <div class="field" style="margin-bottom:4px"><label>Scheduled on the Raga Shiksha website?</label></div>
+      <div class="tiny" style="color:var(--muted);margin-bottom:8px">Scheduling here does not notify the student &mdash; the class must also be scheduled on ragashiksha.com, otherwise the student can&#39;t attend.</div>
+      <div id="rsRows"></div>
+    </div>
     <div id="topicHwBlock" style="margin-top:14px;display:none">
       <div class="form-grid2">
         <div class="field span2"><label for="cTopic">Topic covered</label><input id="cTopic" placeholder="e.g. Sarali Varisai, speed 2"></div>
@@ -2783,6 +2793,75 @@ function materialPending(){
   }));
   return {today, overdue};
 }
+
+/* ---------- Raga Shiksha website tracking ----------
+   A RAGA class scheduled here is NOT visible to the student until it is also scheduled on the Raga Shiksha website.
+   Per student per class: c.rs[sid] = 'done' (scheduled on the website) | 'nocredit' (student has no credits yet) | unset (yet to schedule). */
+const RAGA_SITE_URL = 'https://ragashiksha.com/dashboard';
+const RS_MARK_DAYS = 7;     // the red warning mark shows on classes up to 7 days ahead
+const RS_ALERT_DAYS = 3;    // the Heads Up pop-up, Dashboard banner and button count only start 3 days before the class
+const rsStatus = (c,sid) => (c.rs && c.rs[sid]) || null;
+function setRsStatus(cid, sid, val){
+  const cl=S.classes.find(x=>x.cid===cid); if(!cl) return;
+  cl.rs ||= {};
+  if(val) cl.rs[sid]=val; else delete cl.rs[sid];
+  cl.updatedAt=Date.now();
+}
+function ragaSiteEntries(days){
+  const end = addDaysS(TODAY, (days==null?RS_ALERT_DAYS:days)+1), out=[];
+  S.classes.forEach(c=>{
+    if(c.kind==='own-lesson' || c.date<TODAY || c.date>=end) return;
+    c.studentIds.forEach(sid=>{
+      const st=sById(sid);
+      if(!st || st.cat!=='RAGA' || c.att[sid]!=='Scheduled') return;
+      out.push({c,sid,v:rsStatus(c,sid)});
+    });
+  });
+  return out.sort((a,b)=> a.c.date===b.c.date ? toMin(a.c.time)-toMin(b.c.time) : (a.c.date<b.c.date?-1:1));
+}
+const ragaSiteTodo = () => ragaSiteEntries().filter(e=>!e.v);
+const ragaSiteNoCredit = () => ragaSiteEntries().filter(e=>e.v==='nocredit');
+function rsWarn(c){
+  if(c.kind==='own-lesson' || c.date<TODAY || c.date>addDaysS(TODAY,RS_MARK_DAYS)) return '';
+  const hit=c.studentIds.some(sid=>{ const st=sById(sid); return st && st.cat==='RAGA' && c.att[sid]==='Scheduled' && !rsStatus(c,sid); });
+  return hit ? ' <span class="rs-warn" title="Not yet scheduled on the Raga Shiksha website">&#9888;</span>' : '';
+}
+const rsLink = (label,cls) => '<a class="btn '+(cls||'tiny gold')+'" href="'+RAGA_SITE_URL+'" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;flex:0 0 auto">'+label+' &#8599;</a>';
+const rsWhen = c => c.date===TODAY?'Today':(c.date===TOMORROW?'Tomorrow':fmtD(c.date));
+
+// --- class dialog: per-student website status ---
+let rsDraft = {};
+function rsInit(c){ rsDraft = Object.assign({}, (c && c.rs) || {}); refreshRsBlock(); }
+function rsCollect(ids, base){
+  const out = Object.assign({}, base||{});
+  ids.forEach(sid=>{ if(sid in rsDraft){ if(rsDraft[sid]) out[sid]=rsDraft[sid]; else delete out[sid]; } });
+  return out;
+}
+function refreshRsBlock(){
+  const box=$('#rsBlock'), rows=$('#rsRows'); if(!box||!rows) return;
+  const c = editingClassId ? S.classes.find(x=>x.cid===editingClassId) : null;
+  const ids=[$('#cStu1').value,$('#cStu2').value].filter(Boolean);
+  const list = clsKind==='teaching' ? ids.filter(sid=>{ const st=sById(sid); return st && st.cat==='RAGA' && (!c || c.att[sid]==='Scheduled'); }) : [];
+  box.style.display = list.length ? '' : 'none';
+  rows.innerHTML='';
+  list.forEach(sid=>{
+    const st=sById(sid), cur=rsDraft[sid]||'';
+    const row=document.createElement('div'); row.className='att-row'; row.style.flexWrap='wrap';
+    row.innerHTML='<div class="who"><b>'+esc(st.name)+'</b><span>RAGA</span></div>'+
+      '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
+      '<button type="button" class="mat-btn'+(cur===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
+      '<button type="button" class="mat-btn'+(cur==='nocredit'?' on':'')+'" data-rsval="nocredit" title="This student has no credits left on Raga Shiksha">No credits</button>'+
+      '<button type="button" class="mat-btn'+(cur==='done'?' on':'')+'" data-rsval="done" title="Scheduled on the Raga Shiksha website">&#10003; Scheduled</button>'+
+      rsLink('Schedule now')+'</div>';
+    row.querySelectorAll('[data-rsval]').forEach(b=>b.addEventListener('click',()=>{
+      rsDraft[sid]=b.dataset.rsval;
+      row.querySelectorAll('[data-rsval]').forEach(x=>x.classList.toggle('on', x.dataset.rsval===rsDraft[sid]));
+    }));
+    rows.appendChild(row);
+  });
+}
+$('#cStu1').addEventListener('change', refreshRsBlock);
+$('#cStu2').addEventListener('change', refreshRsBlock);
 
 /* ---------- shared dynamic hour range (Calendar + Dashboard Timeline) ---------- */
 function hourRange(){
@@ -3725,6 +3804,7 @@ function openClassModal(cid, presetDate, presetStu){
   setClsKind(kind, !!c);
   $('#clsDelete').style.display = c ? '' : 'none';
   if(c && kind==='teaching') renderAttRows(c);
+  rsInit(c);
   toggleLinkField();
   if(!c && presetStu){ $('#cStu1').value = presetStu; }
   if(!c) autofillFromPrimary();
@@ -3820,6 +3900,7 @@ function setClsKind(kind, isEdit){
   $('#topicHwBlock').style.display = isEdit ? '' : 'none';
   $('#cHwLabel').textContent = teaching ? 'Homework' : 'Notes / feedback from Guru';
   $('#cHw').placeholder = teaching ? 'e.g. Practice at both speeds daily' : 'e.g. Focus on gamakas in Todi next time';
+  refreshRsBlock();
 }
 $('#kindTeachingBtn').addEventListener('click', ()=>{ if(!editingClassId) setClsKind('teaching', false); });
 $('#kindOwnBtn').addEventListener('click', ()=>{ if(!editingClassId) setClsKind('own-lesson', false); });
@@ -4049,7 +4130,7 @@ $('#clsSave').addEventListener('click', async ()=>{
       const v = grp ? grp.dataset.selected : '';
       if(v) newMat[sid]=v; else delete newMat[sid];
     });
-    Object.assign(c,{kind:'teaching', studentIds:ids, att:newAtt, inr:newInr, mat:newMat, date, time, dur, mode, link,
+    Object.assign(c,{kind:'teaching', studentIds:ids, att:newAtt, inr:newInr, mat:newMat, rs:rsCollect(ids,c.rs), date, time, dur, mode, link,
       topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()});
     let seriesCount = 0;
     if($('#cApplySeries').checked && c.seriesId){
@@ -4085,11 +4166,11 @@ $('#clsSave').addEventListener('click', async ()=>{
   // Shared across every class in this batch — lets "apply to the whole series" later find them
   // all again. Only generated for an actual repeating batch; a one-off class doesn't need one.
   const teachingSeriesId = dates.length>1 ? 'SR'+Date.now().toString(36)+Math.random().toString(36).slice(2,6) : null;
-  dates.forEach(d=>{
+  dates.forEach((d,di)=>{
     const att={}; ids.forEach(sid=>att[sid]= d < TODAY ? 'Completed' : 'Scheduled');
     const inr0={}; ids.forEach(sid=>{ const st=sById(sid); if(st && !isUSD(st) && att[sid]==='Completed') inr0[sid]=unitFee(st,mode); });
     S.classes.push({cid:'C'+pad(S.seq.cls).padStart(4,'0'), kind:'teaching', studentIds:ids, att, date:d, time, dur, mode,
-      link, inr:inr0, mat:{}, topic:'', hw:'', seriesId:teachingSeriesId, updatedAt:Date.now()});
+      link, inr:inr0, mat:{}, rs:(di===0 ? rsCollect(ids,{}) : {}), topic:'', hw:'', seriesId:teachingSeriesId, updatedAt:Date.now()});
     S.seq.cls++;
   });
   toast(dates.length>1 ? dates.length+' weekly classes scheduled — '+ids.map(firstName).join(' & ')
@@ -4189,7 +4270,7 @@ function renderTimeline(){
     b.style.width=Math.max(w/span*100,8)+'%';
     b.style.bottom=(34+laneOf.get(c.cid)*62)+'px';
     const showQuick = status==='scheduled';
-    b.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+'</b>'+fmtTime12(c.time)+' · '+c.mode+
+    b.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+rsWarn(c)+'</b>'+fmtTime12(c.time)+' · '+c.mode+
       (showQuick ? '<span class="tl-actions"><button data-qc="'+c.cid+'" title="Mark completed">✓</button><button data-qx="'+c.cid+'" title="Cancelled by student">✗</button></span>' : '');
     b.title='Click to manage';
     b.addEventListener('click',()=>openClassModal(c.cid));
@@ -4257,7 +4338,7 @@ function renderUpcoming(){
     tr.style.cursor='pointer';
     tr.title='View this week on the calendar';
     tr.innerHTML='<td><b>'+when+'</b> <span class="muted num">'+fmtTime12(c.time)+'</span></td>'+
-      '<td>'+esc(sessionNames(c))+(c.studentIds.length>1?' <span class="muted">(batch)</span>':'')+'</td>'+
+      '<td>'+esc(sessionNames(c))+rsWarn(c)+(c.studentIds.length>1?' <span class="muted">(batch)</span>':'')+'</td>'+
       '<td><span class="badge '+(c.kind==='own-lesson'?'own-lesson':(prim&&prim.cat==='RAGA'?'raga':'personal'))+'">'+(c.kind==='own-lesson'?'My lesson':(prim?prim.cat:'—'))+'</span></td>'+
       '<td><span class="badge '+(c.mode==='Online'?'online':'offline')+'">'+c.mode+'</span></td>'+
       '<td class="r"><button class="btn small" data-manage="'+c.cid+'">Manage</button></td>';
@@ -4612,7 +4693,7 @@ function renderCalendar(){
         ev.className='cal-ev '+cat+' status-'+status;
         ev.style.top=(toMin(c.time)%60/60*52)+'px';
         ev.style.height=Math.max(c.dur/60*52-4,22)+'px';
-        ev.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+'</b>'+fmtTime12(c.time);
+        ev.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+rsWarn(c)+'</b>'+fmtTime12(c.time);
         ev.title=sessionNames(c)+' · click to manage';
         ev.addEventListener('click',e=>{ e.stopPropagation(); openClassModal(c.cid); });
         cell.appendChild(ev);
@@ -6125,7 +6206,51 @@ function renderNavBadge(){
   b.style.display = n? '':'none';
   b.textContent = n;
   renderUnupdatedBanner();
+  renderRagaSiteBanner();
   renderHeadsUpBtn();
+}
+function renderRagaSiteBanner(){
+  const el=$('#ragaSiteBanner'); if(!el) return;
+  const todo=ragaSiteTodo(), no=ragaSiteNoCredit();
+  if(!todo.length && !no.length){ el.style.display='none'; el.innerHTML=''; return; }
+  const e=todo[0]||no[0], n=todo.length;
+  el.style.display='';
+  el.innerHTML='<span class="ico" style="background:var(--gold)">!</span><div class="txt">'+
+    (n ? '<b>'+n+' Raga Shiksha class'+(n===1?'':'es')+' not scheduled on the website yet</b>'
+       : '<b>'+no.length+' Raga Shiksha class'+(no.length===1?'':'es')+' waiting on student credits</b>')+
+    '<div class="tiny" style="color:var(--muted);margin-top:2px">Next: '+esc(rsWhen(e.c))+' &middot; '+fmtTime12(e.c.time)+' &middot; '+esc(firstName(e.sid))+
+    (n && no.length ? ' &middot; '+no.length+' waiting on credits' : '')+' &mdash; students aren&#39;t notified until it&#39;s scheduled on ragashiksha.com</div></div>'+
+    rsLink('Schedule now')+'<button type="button" class="btn tiny" style="flex:0 0 auto">Review</button>';
+}
+$('#ragaSiteBanner').addEventListener('click',e=>{ if(e.target.closest('a')) return; maybeShowReminder(true); });
+$('#ragaSiteBanner').addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); maybeShowReminder(true); } });
+function ragaSiteSectionHTML(todo, no){
+  const row=(e,isTodo)=>{
+    const st=sById(e.sid), c=e.c;
+    return '<div class="rem-item" style="flex-wrap:wrap;gap:8px 12px" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
+      '<span class="t" style="min-width:90px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-weight:400;color:var(--muted);font-size:.78rem">'+fmtTime12(c.time)+'</span></span>'+
+      '<span style="flex:1 1 110px;min-width:0"><b>'+esc(st?st.name:e.sid)+'</b></span>'+
+      '<span style="display:flex;gap:5px;flex-wrap:wrap">'+
+      '<button type="button" class="mat-btn" data-rsset="done" title="Scheduled on the Raga Shiksha website">&#10003; Scheduled</button>'+
+      (isTodo ? '<button type="button" class="mat-btn" data-rsset="nocredit" title="This student has no credits left">No credits</button>'
+              : '<button type="button" class="mat-btn" data-rsset="" title="Back to yet to schedule">Yet to schedule</button>')+
+      '</span></div>';
+  };
+  let h='';
+  if(todo.length){
+    const shown=todo.slice(0,6);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px"><label style="color:var(--red);font-weight:700;font-size:.85rem">&#9888; Not yet scheduled on Raga Shiksha website &mdash; '+todo.length+'</label>'+rsLink('Schedule now')+'</div>'+
+      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Students aren&#39;t notified (and can&#39;t attend) until each class is also scheduled on ragashiksha.com. Reminders start 3 days before each class.</div>'+
+      '<div class="rem-list">'+shown.map(e=>row(e,true)).join('')+'</div>'+
+      (todo.length>shown.length ? '<div class="tiny" style="color:var(--muted);margin:-2px 0 10px">+ '+(todo.length-shown.length)+' more &mdash; they will show here as you tick these off.</div>' : '');
+  }
+  if(no.length){
+    h+='<div style="margin:6px 0 4px"><label style="font-weight:700;font-size:.85rem">&#128179; No credits yet &mdash; '+no.length+'</label></div>'+
+      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Can&#39;t be scheduled on the website until the student has credits.</div>'+
+      '<div class="rem-list">'+no.slice(0,4).map(e=>row(e,false)).join('')+'</div>'+
+      (no.length>4 ? '<div class="tiny" style="color:var(--muted);margin:-2px 0 10px">+ '+(no.length-4)+' more</div>' : '');
+  }
+  return h;
 }
 function reminderState(){
   const t=reminderList(TODAY), tm=reminderList(TOMORROW);
@@ -6136,13 +6261,13 @@ function reminderState(){
   const needCount = dow!==1 ? studentsNeedingSchedule(mon0).length : 0; // quiet Mon only; visible Tue through Sun
   const needUrgent = dow===5||dow===6||dow===0; // Fri, Sat, Sun
   const matP = materialPending();
-  return {t,tm,un,bOver,needCount,needUrgent,matP};
+  return {t,tm,un,bOver,needCount,needUrgent,matP,rsTodo:ragaSiteTodo(),rsNo:ragaSiteNoCredit()};
 }
 // Number on the Dashboard's Heads Up button: how many kinds of thing currently need attention.
 function renderHeadsUpBtn(){
   const b=$('#headsUpCount'); if(!b) return;
   const r=reminderState();
-  const n=(r.un.length?1:0)+(r.bOver?1:0)+(r.needCount?1:0)+((r.matP.overdue||r.matP.today)?1:0);
+  const n=(r.un.length?1:0)+(r.bOver?1:0)+(r.needCount?1:0)+((r.matP.overdue||r.matP.today)?1:0)+((r.rsTodo.length||r.rsNo.length)?1:0);
   b.style.display = n ? '' : 'none';
   b.textContent = n;
 }
@@ -6154,20 +6279,25 @@ function maybeShowReminder(manual){
     try{ dismissed = sessionStorage.getItem(KEY+'.reminded')==='1'; }catch(e){}
     if(dismissed){ unupdatedMarkSeen(unupdatedClasses().map(c=>c.cid)); return; } // already told them this session
   }
-  const {t,tm,un,bOver,needCount,needUrgent,matP} = reminderState();
-  const nothing = !t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length;
-  if(nothing && !manual) return;
+  if(fillReminder(manual)) openModal('m-reminder');
+}
+// Builds the pop-up body. Returns false when there is nothing to show (and it wasn't opened manually).
+function fillReminder(manual){
+  const {t,tm,un,bOver,needCount,needUrgent,matP,rsTodo,rsNo} = reminderState();
+  const nothing = !t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length && !rsTodo.length && !rsNo.length;
+  if(nothing && !manual) return false;
   const item = c => '<div class="rem-item"><span class="t num">'+fmtTime12(c.time)+'</span>'+
     '<span><b>'+esc(sessionNames(c))+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</span>'+
     '<span class="badge '+(c.mode==='Online'?'online':'offline')+'" style="margin-left:auto">'+c.mode+'</span></div>';
   let html='';
-  if(manual && !un.length && !bOver && !needCount && !matP.today && !matP.overdue) html += '<div class="rem-item" style="border-color:var(--green)"><span class="t">&#10003;</span><span><b>All clear</b> \u2014 nothing pending right now.</span></div>';
+  if(manual && !un.length && !bOver && !needCount && !matP.today && !matP.overdue && !rsTodo.length && !rsNo.length) html += '<div class="rem-item" style="border-color:var(--green)"><span class="t">&#10003;</span><span><b>All clear</b> \u2014 nothing pending right now.</span></div>';
   if(un.length){
     const shown=un.slice(0,4);
     html += '<div class="field" style="margin-bottom:4px"><label style="color:var(--red)">&#9888; Status not updated · '+un.length+' class'+(un.length===1?'':'es')+'</label></div>'+
       '<div class="rem-list" id="remUnupd">'+shown.map(c=>unupdatedItemHTML(c)).join('')+'</div>'+
       '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:12px">'+(un.length>shown.length ? '+ '+(un.length-shown.length)+' more — view all &amp; ' : '')+'Update in bulk</button>';
   }
+  html += ragaSiteSectionHTML(rsTodo, rsNo);
   if(bOver){
     const bd=backupDays();
     html += '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
@@ -6201,7 +6331,12 @@ function maybeShowReminder(manual){
     const ga=$('#remUnupdAll'); if(ga) ga.addEventListener('click',openUnupdatedList);
     unupdatedMarkSeen(un.map(c=>c.cid));
   }
-  openModal('m-reminder');
+  $('#remBody').querySelectorAll('[data-rsset]').forEach(b=>b.addEventListener('click',()=>{
+    const row=b.closest('[data-rs-cid]'); if(!row) return;
+    setRsStatus(row.dataset.rsCid, row.dataset.rsSid, b.dataset.rsset);
+    renderAll(); fillReminder(true);
+  }));
+  return true;
 }
 $('#btnHeadsUp').addEventListener('click',()=>{ if(!$('#m-reminder').classList.contains('open')) maybeShowReminder(true); });
 $('#remGotIt').addEventListener('click',()=>{
