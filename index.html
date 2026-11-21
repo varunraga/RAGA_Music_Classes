@@ -557,7 +557,7 @@
   .mat-btn.on[data-matval="sent"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
   .mat-btn.on[data-matval="na"]{background:var(--paper);color:var(--muted);border-color:var(--line);font-weight:700}
   .mat-btn.on[data-rsval=""]{background:rgba(201,76,76,.12);color:var(--red);border-color:var(--red);font-weight:700}
-  .mat-btn.on[data-rsval="nocredit"]{background:rgba(200,150,40,.16);color:var(--ink);border-color:var(--gold);font-weight:700}
+  .mat-btn.on[data-rsval^="nocredit"]{background:rgba(200,150,40,.16);color:var(--ink);border-color:var(--gold);font-weight:700}
   .mat-btn.on[data-rsval="done"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
   .rs-warn{color:var(--red);font-weight:800}
   #btnSeriesMgr .badge.hold{background:#fff!important;color:#B45309!important;border:none!important;font-weight:800;min-width:22px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.18)}
@@ -2913,11 +2913,33 @@ function ragaUnit(c){
   return {c, sid:sids[0], sids, v, batch:sids.length>1};
 }
 const rsUnitNames = e => e.sids.map(id=>(sById(id)||{}).name||id).join(' & ');
+// Which student(s) of a batch have no credits, e.g. "No credits: Vivaan" ('' when none / not a batch).
+const rsNoCreditNote = e => { if(!e.batch) return ''; const n=e.sids.filter(id=>rsStatus(e.c,id)==='nocredit'); return n.length ? 'No credits: '+n.map(firstName).join(' & ') : ''; };
+// Status buttons for one unit. attr: 'data-rsval' (tracker) or 'data-rsset' (Heads Up). mode: 'full' | 'todo' | 'nocr'.
+// A batch gets one "No credits: <name>" button PER STUDENT; Scheduled / Yet to schedule apply to the whole batch.
+function rsBtnsHTML(e, attr, mode){
+  const c=e.c;
+  const b=(val,label,on,title)=>'<button type="button" class="mat-btn'+(on?' on':'')+'" '+attr+'="'+val+'"'+(title?' title="'+esc(title)+'"':'')+'>'+label+'</button>';
+  const yet=b('','Yet to schedule',!e.v,'Back to yet to schedule');
+  const done=b('done','&#10003; Scheduled',e.v==='done','Scheduled on the Raga Shiksha website'+(e.batch?' (both students)':''));
+  const nocr = e.batch
+    ? e.sids.map(id=>b('nocredit:'+id,'No credits: '+esc(firstName(id)),rsStatus(c,id)==='nocredit',((sById(id)||{}).name||id)+' has no credits left')).join('')
+    : b('nocredit','No credits',e.v==='nocredit','This student has no credits left');
+  return mode==='todo' ? done+nocr : (mode==='nocr' ? done+yet : yet+nocr+done);
+}
 const rsBatchTag = e => e.batch ? ' <span class="badge hold" style="margin-left:4px">Batch</span>' : '';
 function setRsStatus(cid, sid, val){
   const cl=S.classes.find(x=>x.cid===cid); if(!cl) return;
-  const u=ragaUnit(cl), targets=(u && u.sids.includes(sid)) ? u.sids : [sid];   // a batch is always set for both students together
+  const u=ragaUnit(cl);
   cl.rs ||= {};
+  // In a batch, "No credits" belongs to ONE student ('nocredit:<studentId>', toggles). The class itself stays a single unit.
+  if(u && u.batch && typeof val==='string' && val.indexOf('nocredit:')===0){
+    const t=val.slice(9);
+    if(cl.rs[t]==='nocredit') delete cl.rs[t];
+    else{ cl.rs[t]='nocredit'; u.sids.forEach(x=>{ if(cl.rs[x]==='done') delete cl.rs[x]; }); }   // a batch with a no-credit student can't be "scheduled"
+    cl.updatedAt=Date.now(); return;
+  }
+  const targets=(u && u.sids.includes(sid)) ? u.sids : [sid];   // Scheduled / Yet to schedule apply to the whole batch
   targets.forEach(t=>{ if(val) cl.rs[t]=val; else delete cl.rs[t]; });
   cl.updatedAt=Date.now();
 }
@@ -2979,30 +3001,40 @@ function refreshRsBlock(){
   const groups = list.length>1 ? [list] : list.map(x=>[x]);
   groups.forEach(g=>{
     const sid=g[0], batch=g.length>1, names=g.map(id=>sById(id).name).join(' & ');
-    const curOf=()=>{ const vs=g.map(id=>rsDraft[id]||''); return vs.every(x=>x==='done')?'done':(vs.some(x=>x==='nocredit')?'nocredit':''); };
-    const cur=curOf();
     const row=document.createElement('div'); row.className='att-row'; row.style.flexWrap='wrap';
-    row.innerHTML='<div class="who"><b>'+esc(names)+'</b><span>'+(batch?'Batch class \u2014 book both students together on the website':'RAGA')+'</span></div>'+
-      '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
-      '<button type="button" class="mat-btn'+(cur===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
-      '<button type="button" class="mat-btn'+(cur==='nocredit'?' on':'')+'" data-rsval="nocredit" title="'+(batch?'One or both students have no credits, so the batch can\'t be booked':'This student has no credits left on Raga Shiksha')+'">No credits</button>'+
-      '<button type="button" class="mat-btn'+(cur==='done'?' on':'')+'" data-rsval="done" title="Scheduled on the Raga Shiksha website">&#10003; Scheduled</button>'+
-      rsLink('Schedule now')+'</div>';
+    row.innerHTML='<div class="who"><b>'+esc(names)+'</b><span>'+(batch?'Batch class \u2014 book both students together on the website':'RAGA')+'</span></div><div class="rs-ctl" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"></div>';
+    const ctl=row.querySelector('.rs-ctl');
     const ser = (c && c.seriesId) ? S.classes.filter(x=>x.cid!==c.cid && x.seriesId===c.seriesId && x.date>=TODAY && x.kind!=='own-lesson' && g.every(id=>x.studentIds.includes(id) && x.att[id]==='Scheduled')) : [];
+    let serBtn=null;
     if(ser.length){
-      const sb=document.createElement('button'); sb.type='button'; sb.className='btn tiny'; sb.textContent='Apply to the '+ser.length+' other upcoming class'+(ser.length===1?'':'es')+' in this series';
-      sb.addEventListener('click',()=>{
-        const v=curOf(), lab=v==='done'?'Scheduled':(v==='nocredit'?'No credits':'Yet to schedule');
+      serBtn=document.createElement('button'); serBtn.type='button'; serBtn.className='btn tiny'; serBtn.textContent='Apply to the '+ser.length+' other upcoming class'+(ser.length===1?'':'es')+' in this series';
+      serBtn.addEventListener('click',()=>{
+        const vs=g.map(id=>rsDraft[id]||''), noNames=g.filter(id=>rsDraft[id]==='nocredit').map(firstName);
+        const lab = vs.every(x=>x==='done') ? 'Scheduled' : (noNames.length ? 'No credits: '+noNames.join(' & ') : 'Yet to schedule');
         if(!confirm('Set "'+lab+'" for '+names+' on the '+ser.length+' other upcoming class'+(ser.length===1?'':'es')+' in this series?')) return;
-        ser.forEach(x=>setRsStatus(x.cid,sid,v));
+        ser.forEach(x=>{ x.rs ||= {}; g.forEach(id=>{ if(rsDraft[id]) x.rs[id]=rsDraft[id]; else delete x.rs[id]; }); x.updatedAt=Date.now(); });
         renderAll(); toast('Updated '+ser.length+' class'+(ser.length===1?'':'es'));
       });
-      row.lastChild.appendChild(sb);
     }
-    row.querySelectorAll('[data-rsval]').forEach(b=>b.addEventListener('click',()=>{
-      g.forEach(id=>{ rsDraft[id]=b.dataset.rsval; });
-      row.querySelectorAll('[data-rsval]').forEach(x=>x.classList.toggle('on', x.dataset.rsval===b.dataset.rsval));
-    }));
+    const draw=()=>{
+      const vs=g.map(id=>rsDraft[id]||''), allDone=vs.every(x=>x==='done'), anyNo=vs.some(x=>x==='nocredit');
+      const btn=(val,label,on,title)=>'<button type="button" class="mat-btn'+(on?' on':'')+'" data-rsval="'+val+'"'+(title?' title="'+esc(title)+'"':'')+'>'+label+'</button>';
+      ctl.innerHTML = btn('','Yet to schedule',!allDone&&!anyNo)+
+        (batch ? g.map(id=>btn('nocredit:'+id,'No credits: '+esc(firstName(id)),rsDraft[id]==='nocredit',sById(id).name+' has no credits left on Raga Shiksha')).join('')
+               : btn('nocredit','No credits',anyNo,'This student has no credits left on Raga Shiksha'))+
+        btn('done','&#10003; Scheduled',allDone,'Scheduled on the Raga Shiksha website')+rsLink('Schedule now');
+      if(serBtn) ctl.appendChild(serBtn);
+      ctl.querySelectorAll('[data-rsval]').forEach(b=>b.addEventListener('click',()=>{
+        const val=b.dataset.rsval;
+        if(val.indexOf('nocredit:')===0){
+          const t=val.slice(9);
+          if(rsDraft[t]==='nocredit') rsDraft[t]='';
+          else{ rsDraft[t]='nocredit'; g.forEach(id=>{ if(rsDraft[id]==='done') rsDraft[id]=''; }); }
+        } else g.forEach(id=>{ rsDraft[id]=val; });
+        draw();
+      }));
+    };
+    draw();
     rows.appendChild(row);
   });
 }
@@ -4402,7 +4434,7 @@ const dowName = d => DAYS[parseD(d).getDay()];
 const typeLabelOf = c => { const k=sessionCategory(c); return k==='raga'?'RAGA':(k==='own-lesson'?'My lesson':'Personal'); };
 const fullNamesOf = c => c.kind==='own-lesson' ? ('My lesson \u2014 '+(c.withWhom||'Guru')) : c.studentIds.map(id=>(sById(id)||{}).name||id).join(' & ');
 function mondayOfDate(d){ const t=parseD(d); t.setDate(t.getDate()+(t.getDay()===0?-6:1-t.getDay())); return dstr(t); }
-const rsWebText = (c,sid) => { const u=ragaUnit(c), v=(u && u.sids.includes(sid)) ? u.v : rsStatus(c,sid); return ({done:'Scheduled on website', nocredit:'No credits'}[v] || 'Yet to schedule'); };
+const rsWebText = (c,sid) => { const u=ragaUnit(c), v=(u && u.sids.includes(sid)) ? u.v : rsStatus(c,sid); if(v==='nocredit' && u && u.batch){ const n=rsNoCreditNote(u); return n||'No credits'; } return ({done:'Scheduled on website', nocredit:'No credits'}[v] || 'Yet to schedule'); };
 
 // One entry per seriesId, with its classes in date order.
 function seriesAll(){
@@ -6732,11 +6764,8 @@ function ragaSiteSectionHTML(todo, no){
     return '<div class="rem-item" style="flex-wrap:wrap;gap:8px 12px" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
       '<input type="checkbox" data-rspick="'+key+'" aria-label="Select '+esc(rsUnitNames(e))+'"'+(rsPick.has(key)?' checked':'')+'>'+
       '<span class="t" style="min-width:90px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-weight:400;color:var(--muted);font-size:.78rem">'+fmtTime12(c.time)+'</span></span>'+
-      '<span style="flex:1 1 110px;min-width:0"><b>'+esc(rsUnitNames(e))+'</b>'+rsBatchTag(e)+'</span>'+
-      '<span style="display:flex;gap:5px;flex-wrap:wrap">'+
-      '<button type="button" class="mat-btn" data-rsset="done" title="Scheduled on the Raga Shiksha website">&#10003; Scheduled</button>'+
-      (isTodo ? '<button type="button" class="mat-btn" data-rsset="nocredit" title="'+(e.batch?'One or both students have no credits':'This student has no credits left')+'">No credits</button>'
-              : '<button type="button" class="mat-btn" data-rsset="" title="Back to yet to schedule">Yet to schedule</button>')+
+      '<span style="flex:1 1 110px;min-width:0"><b>'+esc(rsUnitNames(e))+'</b>'+rsBatchTag(e)+(rsNoCreditNote(e)?'<div class="tiny" style="color:var(--gold-ink)">'+esc(rsNoCreditNote(e))+'</div>':'')+'</span>'+
+      '<span style="display:flex;gap:5px;flex-wrap:wrap">'+rsBtnsHTML(e,'data-rsset',isTodo?'todo':'nocr')+
       '</span></div>';
   };
   let h='';
@@ -6774,14 +6803,12 @@ const rsKey = e => e.v || 'yet';
 const rsNm = e => rsUnitNames(e);
 const rsGroupKey = e => e.batch ? 'B:'+e.sids.slice().sort().join('+') : 'S:'+e.sid;
 function rsRowHTML(e, showName){
-  const c=e.c, v=e.v||'';
+  const c=e.c, note=rsNoCreditNote(e);
+  const noteHtml=note ? '<div class="tiny" style="font-weight:400;color:var(--gold-ink)">'+esc(note)+'</div>' : '';
   return '<div style="display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line)" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
     '<span style="min-width:96px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-size:.78rem;color:var(--muted)">'+fmtTime12(c.time)+'</span></span>'+
-    (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b>'+rsBatchTag(e)+'</span>' : '')+
-    '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+
-    '<button type="button" class="mat-btn'+(v===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
-    '<button type="button" class="mat-btn'+(v==='nocredit'?' on':'')+'" data-rsval="nocredit">No credits</button>'+
-    '<button type="button" class="mat-btn'+(v==='done'?' on':'')+'" data-rsval="done">&#10003; Scheduled</button></span></div>';
+    (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b>'+rsBatchTag(e)+noteHtml+'</span>' : (note ? '<span style="flex:1 1 100px;min-width:0">'+noteHtml+'</span>' : ''))+
+    '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+rsBtnsHTML(e,'data-rsval','full')+'</span></div>';
 }
 function renderRsPanel(){
   const body=$('#rsPanelBody'); if(!body) return;
@@ -6963,9 +6990,14 @@ function fillReminder(manual){
   });
   rb.querySelectorAll('[data-rsbulk]').forEach(b=>b.addEventListener('click',()=>{
     const keys=Array.from(rsPick); if(!keys.length) return;
-    keys.forEach(k=>{ const [cid,sid]=k.split('|'); setRsStatus(cid,sid,b.dataset.rsbulk); });
+    let skipped=0, done=0;
+    keys.forEach(k=>{
+      const [cid,sid]=k.split('|'), u=ragaUnit(S.classes.find(x=>x.cid===cid));
+      if(b.dataset.rsbulk==='nocredit' && u && u.batch){ skipped++; return; }   // a batch needs the specific student chosen
+      setRsStatus(cid,sid,b.dataset.rsbulk); done++;
+    });
     rsPick.clear(); renderAll(); redraw();
-    toast('Updated '+keys.length+' class'+(keys.length===1?'':'es'));
+    toast('Updated '+done+' class'+(done===1?'':'es')+(skipped?' · '+skipped+' batch class'+(skipped===1?'':'es')+' skipped — tap "No credits: <name>" on the batch to say which student':''));
   }));
   return true;
 }
