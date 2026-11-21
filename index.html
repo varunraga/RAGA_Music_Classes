@@ -560,6 +560,14 @@
   .mat-btn.on[data-rsval="nocredit"]{background:rgba(200,150,40,.16);color:var(--ink);border-color:var(--gold);font-weight:700}
   .mat-btn.on[data-rsval="done"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
   .rs-warn{color:var(--red);font-weight:800}
+  #btnSeriesMgr .badge{background:#fff;color:#8a5a00}
+  #calExpWeekField,#calExpSeriesField{margin-top:20px}
+  .exp-opt{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
+  .exp-opt b{font-size:.95rem;font-weight:700}
+  .exp-opt .exp-ico{font-size:1.3rem;line-height:1}
+  .exp-opt .exp-sub{font-size:.76rem;color:var(--muted);line-height:1.3;font-weight:400;text-transform:none;letter-spacing:0}
+  .exp-opt.on{border-color:var(--gold);background:rgba(200,150,40,.13);box-shadow:0 0 0 2px rgba(200,150,40,.25)}
+  @media (max-width:480px){ #calExpKindWrap{grid-template-columns:1fr!important} }
   .mat-tag{font-size:.7rem;padding:2px 7px;border-radius:20px;font-weight:700;white-space:nowrap}
   .mat-tag.sent{background:rgba(46,139,103,.14);color:var(--green)}
   .mat-tag.na{background:var(--paper);color:var(--muted)}
@@ -942,10 +950,16 @@
             <button class="btn small" id="calPrev" aria-label="Previous">‹</button>
             <button class="btn small" id="calToday">Today</button>
             <button class="btn small" id="calNext" aria-label="Next week">›</button>
-            <button class="btn small" id="btnSeriesMgr" title="See, edit and extend all weekly repeating classes">&#128257; Repeating <span class="badge hold" id="seriesCount" style="display:none;margin-left:4px"></span></button>
-            <button class="btn small" id="btnCalExport" title="Export a week's classes or your repeating classes to Excel or PDF">&#11015; Export</button>
-            <button class="btn small" id="btnRecentlyDeletedClasses">Recently deleted<span id="recentlyDeletedClassesBadge" class="badge hold" style="display:none;margin-left:5px"></span></button>
-            <button class="btn gold small" id="btnSchedule">Schedule class</button>
+            <div style="display:flex;gap:8px 16px;flex-wrap:wrap;justify-content:space-between;align-items:center;flex:1 1 100%">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn small" id="btnRecentlyDeletedClasses">Recently deleted<span id="recentlyDeletedClassesBadge" class="badge hold" style="display:none;margin-left:5px"></span></button>
+                <button class="btn gold small" id="btnSchedule">Schedule class</button>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn gold small" id="btnSeriesMgr" title="See, edit and extend all weekly repeating classes">Repeating Classes <span class="badge hold" id="seriesCount" style="display:none;margin-left:4px"></span></button>
+                <button class="btn gold small" id="btnCalExport" title="Export a week's classes or your repeating classes to Excel or PDF">&#11015; Export</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="unupd-banner" id="calUnupdated" style="display:none" role="button" tabindex="0" title="Show the classes still waiting for a status"></div>
@@ -2206,8 +2220,10 @@
     <h3 id="calExpTitle">Export schedule</h3>
     <div class="sub">Same style as your other reports &mdash; download as Excel, or open a print-ready page to save as PDF.</div>
     <div class="field" style="margin-top:12px"><label>What to export</label>
-      <label class="check" style="font-weight:400"><input type="radio" name="calExpKind" value="week" checked> A week&#39;s scheduled classes</label>
-      <label class="check" style="font-weight:400"><input type="radio" name="calExpKind" value="series"> Repeating classes (as of a date)</label>
+      <div id="calExpKindWrap" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
+        <button type="button" class="exp-opt on" data-calexp="week"><span class="exp-ico">&#128197;</span><b>A week&#39;s classes</b><span class="exp-sub">Every class scheduled in a week you pick</span></button>
+        <button type="button" class="exp-opt" data-calexp="series"><span class="exp-ico">&#128257;</span><b>Repeating classes</b><span class="exp-sub">All weekly series, as of a date</span></button>
+      </div>
     </div>
     <div class="field" id="calExpWeekField"><label for="calExpDate">Pick any date in the week</label><input id="calExpDate" type="date"><div class="tiny" id="calExpWeekHint" style="color:var(--muted);margin-top:4px"></div></div>
     <div class="field" id="calExpSeriesField" style="display:none"><label for="calExpAsOf">As of</label><input id="calExpAsOf" type="date"><div class="tiny" id="calExpSeriesHint" style="color:var(--muted);margin-top:4px"></div></div>
@@ -4532,14 +4548,15 @@ $('#serDetect').addEventListener('click',()=>{ $('#lnkDetectSeries').click(); re
 $('#btnSeriesMgr').addEventListener('click',()=>{ $('#serSearch').value=''; serBackToList(); openModal('m-series'); });
 
 /* ---------- Schedule exports (Excel + PDF) ---------- */
+const classFormat = c => (c.kind!=='own-lesson' && c.studentIds.length>1) ? 'Paired (batch)' : 'Individual';
 function calExportWeekData(anyDate){
   const mon=mondayOfDate(anyDate), end=addDaysS(mon,7);
-  const aoa=[['Date','Day','Timings','Duration (min)','Student','Type','Mode','Fee per class (\u20B9)','Status','Lesson details (topic)','Revision / homework','Repeats weekly','Raga Shiksha website']];
+  const aoa=[['S.No','Date','Day','Timings','Duration (min)','Student','Type','Class format','Mode','Fee per class (\u20B9)','Status','Lesson details (topic)','Revision / homework','Repeats weekly','Raga Shiksha website']];
   let n=0, fees=0;
   S.classes.filter(c=>c.date>=mon && c.date<end).sort(byDateTime).forEach(c=>{
     if(c.kind==='own-lesson'){
       const stat=c.ownStatus||'Scheduled';
-      aoa.push([fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,fullNamesOf(c),'My lesson',c.mode||'',c.feeAmount!=null?c.feeAmount:'',stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No','']);
+      aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,fullNamesOf(c),'My lesson','Individual',c.mode||'',c.feeAmount!=null?c.feeAmount:'',stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No','']);
       n++; if(typeof c.feeAmount==='number' && stat!=='Cancelled') fees+=c.feeAmount;
       return;
     }
@@ -4549,18 +4566,18 @@ function calExportWeekData(anyDate){
       const stat=c.att[sid]||'Scheduled';
       const actual=stat==='Completed' ? classINR(c,sid) : null;
       const fee = actual!=null ? actual : (isUSD(st) ? '$'+unitFee(st,c.mode) : unitFee(st,c.mode));
-      aoa.push([fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,st.name+(partner?' (batch with '+partner+')':''),st.cat==='RAGA'?'RAGA':'Personal',c.mode||'',fee,stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No',
+      aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,st.name+(partner?' (with '+partner+')':''),st.cat==='RAGA'?'RAGA':'Personal',classFormat(c),c.mode||'',fee,stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No',
         (st.cat==='RAGA' && stat==='Scheduled') ? rsWebText(c,sid) : '']);
       n++; if(typeof fee==='number' && !CANC.includes(stat)) fees+=fee;
     });
   });
   if(!n) return null;
-  aoa.push(['','','','','Total ('+n+' entr'+(n===1?'y':'ies')+')','','',fees,'','','','','']);
-  return {name:'raga-week-schedule-'+mon, title:'Weekly Schedule \u2014 '+fmtDFull(mon)+' to '+fmtDFull(addDaysS(mon,6)), sheets:[{name:'Week schedule', aoa, money:[8]}]};
+  aoa.push(['','','','','','Total ('+n+' entr'+(n===1?'y':'ies')+')','','','',fees,'','','','','']);
+  return {name:'raga-week-schedule-'+mon, title:'Weekly Schedule \u2014 '+fmtDFull(mon)+' to '+fmtDFull(addDaysS(mon,6)), sheets:[{name:'Week schedule', aoa, money:[10]}]};
 }
 function calExportSeriesData(asOf){
-  const sum=[['Student(s)','Type','Day','Timings','Duration (min)','Mode','Fee per class (\u20B9)','Started on','Repeats until','Classes remaining','Next class','Last lesson covered','Revision / homework given','Raga Shiksha website']];
-  const dates=[['Student(s)','Type','Date','Day','Timings','Status','Lesson details (topic)','Revision / homework','Raga Shiksha website']];
+  const sum=[['S.No','Student(s)','Type','Class format','Day','Timings','Duration (min)','Mode','Fee per class (\u20B9)','Started on','Repeats until','Classes remaining','Next class','Last lesson covered','Revision / homework given','Raga Shiksha website']];
+  const dates=[['S.No','Student(s)','Type','Class format','Date','Day','Timings','Status','Lesson details (topic)','Revision / homework','Raga Shiksha website']];
   const dowKey = r => ((parseD(r.date).getDay()+6)%7)*10000 + toMin(r.time);
   const list=seriesAll().map(sr=>({sr, rem:sr.list.filter(c=>c.date>=asOf)})).filter(x=>x.rem.length)
     .sort((a,b)=> dowKey(a.rem[0])-dowKey(b.rem[0]) || fullNamesOf(a.rem[0]).localeCompare(fullNamesOf(b.rem[0])));
@@ -4572,21 +4589,20 @@ function calExportSeriesData(asOf){
       const parts=nx.studentIds.map(id=>{ const st=sById(id); return st ? {usd:isUSD(st), v:unitFee(st,nx.mode)} : null; }).filter(Boolean);
       fee = (parts.length===1 && !parts[0].usd) ? parts[0].v : parts.map(x=>x.usd?'$'+x.v:RUPEE.format(x.v)).join(' + ');
     }
-    const past=sr.list.filter(c=>c.date<=asOf && ((c.topic||'').trim() || (c.hw||'').trim())).pop();
     const lastTopic=sr.list.filter(c=>c.date<=asOf && (c.topic||'').trim()).pop();
     const lastHw=sr.list.filter(c=>c.date<=asOf && (c.hw||'').trim()).pop();
     let web='';
     if(raga){ const dn=rem.filter(c=>c.studentIds.some(id=>rsStatus(c,id)==='done')).length; web=dn+' of '+rem.length+' on website'; }
-    sum.push([fullNamesOf(nx),typeLabelOf(nx),dowName(nx.date),timingsOf(nx),nx.dur,nx.mode||'',fee,fmtDMY(sr.first.date),fmtDMY(sr.last.date),rem.length,fmtDMY(nx.date),
+    sum.push([sum.length,fullNamesOf(nx),typeLabelOf(nx),classFormat(nx),dowName(nx.date),timingsOf(nx),nx.dur,nx.mode||'',fee,fmtDMY(sr.first.date),fmtDMY(sr.last.date),rem.length,fmtDMY(nx.date),
       lastTopic?lastTopic.topic+' ('+fmtDMY(lastTopic.date)+')':'', lastHw?lastHw.hw+' ('+fmtDMY(lastHw.date)+')':'', web]);
     rem.forEach(c=>{
       const stat = isOwn ? (c.ownStatus||'Scheduled') : c.studentIds.map(id=>(c.studentIds.length>1?firstName(id)+': ':'')+(c.att[id]||'Scheduled')).join('; ');
       const rsT = raga && sessionStatus(c)==='scheduled' ? c.studentIds.map(id=>(c.studentIds.length>1?firstName(id)+': ':'')+rsWebText(c,id)).join('; ') : '';
-      dates.push([fullNamesOf(c),typeLabelOf(c),fmtDMY(c.date),dowName(c.date),timingsOf(c),stat,c.topic||'',c.hw||'',rsT]);
+      dates.push([dates.length,fullNamesOf(c),typeLabelOf(c),classFormat(c),fmtDMY(c.date),dowName(c.date),timingsOf(c),stat,c.topic||'',c.hw||'',rsT]);
     });
   });
   return {name:'raga-repeating-classes-'+asOf, title:'Repeating Classes \u2014 as of '+fmtDFull(asOf),
-    sheets:[{name:'Repeating classes', aoa:sum, money:[7]},{name:'Upcoming dates', aoa:dates}]};
+    sheets:[{name:'Repeating classes', aoa:sum, money:[9]},{name:'Upcoming dates', aoa:dates}]};
 }
 function calReportHtml(data){
   const tbl=sh=>{
@@ -4606,8 +4622,9 @@ function calReportHtml(data){
     data.sheets.map(sh=>(data.sheets.length>1?'<h3 style="margin:12px 0 4px;font-family:Marcellus,serif;color:#0D3B2B">'+esc(sh.name)+'</h3>':'')+tbl(sh)).join('')+
     '<div class="sig-block"><div class="sig-name">Varun M Kaginagolli</div><div class="sig-label">For RAGA Music Classes</div></div>';
 }
+let calExpKind = 'week';
 function calExportData(){
-  const kind=document.querySelector('input[name="calExpKind"]:checked').value;
+  const kind=calExpKind;
   if(kind==='week'){
     const d=$('#calExpDate').value; if(!d){ toast('Pick a date in the week'); return null; }
     const data=calExportWeekData(d); if(!data){ toast('No classes scheduled in that week'); return null; }
@@ -4618,7 +4635,8 @@ function calExportData(){
   return data;
 }
 function calExpRefreshHints(){
-  const kind=document.querySelector('input[name="calExpKind"]:checked').value;
+  const kind=calExpKind;
+  $$('#m-cal-export [data-calexp]').forEach(b=>b.classList.toggle('on', b.dataset.calexp===kind));
   $('#calExpWeekField').style.display = kind==='week' ? '' : 'none';
   $('#calExpSeriesField').style.display = kind==='series' ? '' : 'none';
   const d=$('#calExpDate').value;
@@ -4633,9 +4651,10 @@ function calExpRefreshHints(){
 $('#btnCalExport').addEventListener('click',()=>{
   $('#calExpDate').value = mondayOf(weekOffset);      // the week currently shown on the calendar
   $('#calExpAsOf').value = TODAY;
+  calExpKind = 'week';
   calExpRefreshHints(); openModal('m-cal-export');
 });
-$$('input[name="calExpKind"]').forEach(r=>r.addEventListener('change',calExpRefreshHints));
+$$('#m-cal-export [data-calexp]').forEach(b=>b.addEventListener('click',()=>{ calExpKind=b.dataset.calexp; calExpRefreshHints(); }));
 $('#calExpDate').addEventListener('input',calExpRefreshHints);
 $('#calExpAsOf').addEventListener('input',calExpRefreshHints);
 $('#calExpXlsx').addEventListener('click',()=>{
