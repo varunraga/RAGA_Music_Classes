@@ -942,6 +942,8 @@
             <button class="btn small" id="calPrev" aria-label="Previous">‹</button>
             <button class="btn small" id="calToday">Today</button>
             <button class="btn small" id="calNext" aria-label="Next week">›</button>
+            <button class="btn small" id="btnSeriesMgr" title="See, edit and extend all weekly repeating classes">&#128257; Repeating <span class="badge hold" id="seriesCount" style="display:none;margin-left:4px"></span></button>
+            <button class="btn small" id="btnCalExport" title="Export a week's classes or your repeating classes to Excel or PDF">&#11015; Export</button>
             <button class="btn small" id="btnRecentlyDeletedClasses">Recently deleted<span id="recentlyDeletedClassesBadge" class="badge hold" style="display:none;margin-left:5px"></span></button>
             <button class="btn gold small" id="btnSchedule">Schedule class</button>
           </div>
@@ -2156,6 +2158,62 @@
         <button class="btn" data-close="m-class">Cancel</button>
         <button class="btn gold" id="clsSave">Save class</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-series">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="serTitle" style="max-width:700px">
+    <h3 id="serTitle">Repeating classes</h3>
+    <div class="sub" id="serSub">Every weekly series in one place. Changes apply to upcoming classes still marked <b>Scheduled</b> &mdash; completed and cancelled classes are never touched.</div>
+    <div id="serListView">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+        <input id="serSearch" class="search-input" placeholder="Search student&hellip;" style="flex:1 1 170px;min-width:0" aria-label="Search repeating classes" autocomplete="off">
+        <label class="check"><input type="checkbox" id="serShowEnded"> Include ended</label>
+        <button type="button" class="btn tiny" id="serDetect" title="Finds older weekly classes that were never grouped and links them as a series">Group older recurring classes</button>
+      </div>
+      <div id="serList"></div>
+      <div class="modal-foot"><div class="right"><button class="btn" data-close="m-series">Close</button></div></div>
+    </div>
+    <div id="serEditView" style="display:none">
+      <div id="serEditHead" style="margin:10px 0 12px"></div>
+      <div class="form-grid2">
+        <div class="field"><label for="serDay">Day of week</label><select id="serDay"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></div>
+        <div class="field"><label for="serTime">Start time</label><input id="serTime" type="time"></div>
+        <div class="field"><label for="serDur">Duration (min)</label><select id="serDur"><option>30</option><option>45</option><option>60</option><option>90</option><option>120</option><option>150</option><option>180</option></select></div>
+        <div class="field"><label for="serMode">Mode</label><select id="serMode"><option>Offline</option><option>Online</option></select></div>
+        <div class="field span2" id="serLinkField" style="display:none"><label for="serLink">Class link (Zoom / Meet)</label><input id="serLink" type="url" placeholder="https://&hellip;"></div>
+        <div class="field"><label for="serUntil">Repeat until</label><input id="serUntil" type="date"></div>
+        <div class="field"><label>Extend by</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn tiny" data-serext="4">+4 weeks</button>
+            <button type="button" class="btn tiny" data-serext="8">+8 weeks</button>
+            <button type="button" class="btn tiny" data-serext="12">+12 weeks</button>
+            <button type="button" class="btn tiny" data-serext="26">+26 weeks</button>
+          </div></div>
+      </div>
+      <div id="serPreview" class="tiny" style="margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;line-height:1.6"></div>
+      <div class="modal-foot">
+        <button class="btn danger" id="serDeleteRest" type="button">Delete remaining classes</button>
+        <div class="right"><button class="btn" id="serBack" type="button">Back</button><button class="btn gold" id="serSave" type="button">Save changes</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="m-cal-export">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="calExpTitle" style="max-width:520px">
+    <h3 id="calExpTitle">Export schedule</h3>
+    <div class="sub">Same style as your other reports &mdash; download as Excel, or open a print-ready page to save as PDF.</div>
+    <div class="field" style="margin-top:12px"><label>What to export</label>
+      <label class="check" style="font-weight:400"><input type="radio" name="calExpKind" value="week" checked> A week&#39;s scheduled classes</label>
+      <label class="check" style="font-weight:400"><input type="radio" name="calExpKind" value="series"> Repeating classes (as of a date)</label>
+    </div>
+    <div class="field" id="calExpWeekField"><label for="calExpDate">Pick any date in the week</label><input id="calExpDate" type="date"><div class="tiny" id="calExpWeekHint" style="color:var(--muted);margin-top:4px"></div></div>
+    <div class="field" id="calExpSeriesField" style="display:none"><label for="calExpAsOf">As of</label><input id="calExpAsOf" type="date"><div class="tiny" id="calExpSeriesHint" style="color:var(--muted);margin-top:4px"></div></div>
+    <div class="modal-foot">
+      <button class="btn" data-close="m-cal-export">Cancel</button>
+      <div class="right"><button class="btn gold" id="calExpXlsx" type="button">Download Excel</button><button class="btn gold" id="calExpPdf" type="button">PDF (print / save)</button></div>
     </div>
   </div>
 </div>
@@ -4307,6 +4365,291 @@ $('#clsSave').addEventListener('click', async ()=>{
                                      : 'Class scheduled — '+ids.map(firstName).join(' & ')+' on '+fmtD(date)));
   closeModal('m-class'); renderAll();
 });
+/* =====================================================
+   CALENDAR: repeating-classes manager + schedule exports
+   ===================================================== */
+const byDateTime = (a,b)=> a.date===b.date ? (toMin(a.time)-toMin(b.time)) : (a.date<b.date?-1:1);
+const hmOf = m => pad(Math.floor(m/60)%24)+':'+pad(m%60);
+const timingsOf = c => fmtTime12(c.time)+' \u2013 '+fmtTime12(hmOf(toMin(c.time)+c.dur));
+const dowName = d => DAYS[parseD(d).getDay()];
+const typeLabelOf = c => { const k=sessionCategory(c); return k==='raga'?'RAGA':(k==='own-lesson'?'My lesson':'Personal'); };
+const fullNamesOf = c => c.kind==='own-lesson' ? ('My lesson \u2014 '+(c.withWhom||'Guru')) : c.studentIds.map(id=>(sById(id)||{}).name||id).join(' & ');
+function mondayOfDate(d){ const t=parseD(d); t.setDate(t.getDate()+(t.getDay()===0?-6:1-t.getDay())); return dstr(t); }
+const rsWebText = (c,sid) => ({done:'Scheduled on website', nocredit:'No credits'}[rsStatus(c,sid)] || 'Yet to schedule');
+
+// One entry per seriesId, with its classes in date order.
+function seriesAll(){
+  const map={};
+  S.classes.forEach(c=>{ if(c.seriesId) (map[c.seriesId]=map[c.seriesId]||[]).push(c); });
+  return Object.keys(map).map(id=>{
+    const list=map[id].slice().sort(byDateTime);
+    const up=list.filter(c=>c.date>=TODAY);
+    return {id, list, up, editable:up.filter(c=>sessionStatus(c)==='scheduled'), rep:(up[0]||list[list.length-1]),
+            first:list[0], last:list[list.length-1], past:list.length-up.length};
+  });
+}
+function renderSeriesBadge(){
+  const b=$('#seriesCount'); if(!b) return;
+  const n=seriesAll().filter(sr=>sr.up.length>0).length;
+  b.style.display = n ? '' : 'none'; b.textContent = n;
+}
+
+/* ---------- Repeating classes manager ---------- */
+let serEditId = null;
+function renderSeriesList(){
+  const el=$('#serList'); if(!el) return;
+  const q=($('#serSearch').value||'').trim().toLowerCase(), ended=$('#serShowEnded').checked;
+  const dowKey = r => ((parseD(r.date).getDay()+6)%7)*10000 + toMin(r.time);   // Monday first
+  const all=seriesAll().filter(sr=>(ended || sr.up.length>0) && (!q || fullNamesOf(sr.rep).toLowerCase().includes(q)))
+    .sort((a,b)=> dowKey(a.rep)-dowKey(b.rep) || fullNamesOf(a.rep).localeCompare(fullNamesOf(b.rep)));
+  if(!all.length){ el.innerHTML='<div class="empty" style="padding:20px 0">'+(q ? 'No repeating class matches &ldquo;'+esc($('#serSearch').value.trim())+'&rdquo;.' : 'No repeating classes yet. Schedule a class with &ldquo;Weekly&rdquo; repeat, or use &ldquo;Group older recurring classes&rdquo; above.')+'</div>'; return; }
+  el.innerHTML=all.map(sr=>{
+    const r=sr.rep, active=sr.up.length>0;
+    return '<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 10px'+(active?'':';opacity:.7')+'">'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="flex:1 1 200px;min-width:0">'+
+      '<b>'+esc(fullNamesOf(r))+'</b> <span class="badge hold" style="margin-left:4px">'+typeLabelOf(r)+'</span>'+
+      '<div class="tiny" style="color:var(--muted)">Every '+dowName(r.date)+' &middot; '+timingsOf(r)+' &middot; '+r.dur+' min &middot; '+esc(r.mode||'')+'</div>'+
+      '<div class="tiny" style="color:var(--muted)">'+(active ? sr.up.length+' upcoming' : 'Ended')+' &middot; '+sr.past+' past &middot; '+fmtDMY(sr.first.date)+' \u2192 '+fmtDMY(sr.last.date)+'</div></div>'+
+      '<button type="button" class="btn tiny '+(active?'gold':'')+'" data-seredit="'+sr.id+'">'+(active?'Edit':'Extend')+'</button></div></div>';
+  }).join('');
+}
+function serBackToList(){
+  serEditId=null;
+  $('#serEditView').style.display='none'; $('#serListView').style.display=''; $('#serSub').style.display='';
+  renderSeriesList();
+}
+function serToggleLink(){ $('#serLinkField').style.display = $('#serMode').value==='Online' ? '' : 'none'; }
+function serOpenEdit(id){
+  const sr=seriesAll().find(x=>x.id===id); if(!sr) return;
+  serEditId=id; const r=sr.rep;
+  $('#serEditHead').innerHTML='<b>'+esc(fullNamesOf(r))+'</b> <span class="badge hold" style="margin-left:4px">'+typeLabelOf(r)+'</span>'+
+    '<div class="tiny" style="color:var(--muted);margin-top:2px">'+sr.up.length+' upcoming &middot; <b>'+sr.editable.length+'</b> still marked Scheduled (these get changed) &middot; runs until '+fmtDMY(sr.last.date)+'</div>';
+  if(![...$('#serDur').options].some(o=>o.value===String(r.dur))) $('#serDur').add(new Option(r.dur, r.dur));
+  $('#serDay').value=String(parseD(r.date).getDay()); $('#serTime').value=r.time; $('#serDur').value=String(r.dur);
+  $('#serMode').value=r.mode||'Offline'; $('#serLink').value=r.link||''; $('#serUntil').value=sr.last.date;
+  $('#serListView').style.display='none'; $('#serEditView').style.display=''; $('#serSub').style.display='none';
+  serToggleLink(); serPreview();
+}
+// Works out exactly what Save would do, without changing anything.
+function serPlan(){
+  const sr=seriesAll().find(x=>x.id===serEditId); if(!sr) return null;
+  const r=sr.rep, newDow=+$('#serDay').value, curDow=parseD(r.date).getDay();
+  const shift=(newDow-curDow+7)%7;                     // forward only, so a moved class never lands in the past
+  const time=$('#serTime').value, dur=+$('#serDur').value, mode=$('#serMode').value, link=$('#serLink').value.trim(), until=$('#serUntil').value;
+  const shiftedEditable=sr.editable.map(c=>({c, newDate: shift ? addDaysS(c.date,shift) : c.date}));
+  const moved=new Map(shiftedEditable.map(x=>[x.c.cid,x.newDate]));
+  const allDates=sr.list.map(c=>moved.has(c.cid)?moved.get(c.cid):c.date);
+  const lastAfter=allDates.reduce((m,d)=>d>m?d:m, allDates[0]);
+  let toAdd=[], toRemove=[], tooMany=false;
+  if(until){
+    if(until>lastAfter){ for(let d=addDaysS(lastAfter,7); d<=until; d=addDaysS(d,7)){ toAdd.push(d); if(toAdd.length>104){ tooMany=true; break; } } }
+    else toRemove=shiftedEditable.filter(x=>x.newDate>until);
+  }
+  const gone=new Set(toRemove.map(x=>x.c.cid));
+  const clashes=[];
+  shiftedEditable.forEach(({c,newDate})=>{
+    if(gone.has(c.cid) || !time) return;
+    if(newDate!==c.date || time!==c.time || dur!==c.dur){ const w=overlapWarning(newDate,time,dur,c.cid); if(w) clashes.push(fmtD(newDate)+' \u2014 clashes with '+w); }
+  });
+  if(time) toAdd.forEach(d=>{ const w=overlapWarning(d,time,dur,null); if(w) clashes.push(fmtD(d)+' \u2014 clashes with '+w); });
+  return {sr,r,newDow,shift,time,dur,mode,link,until,lastAfter,shiftedEditable,toAdd,toRemove,tooMany,clashes};
+}
+function serPreview(){
+  const p=serPlan(), el=$('#serPreview'); if(!p){ el.innerHTML=''; return; }
+  const r=p.r, lines=[];
+  if(p.shift) lines.push('Day: '+DAYS[parseD(r.date).getDay()]+' \u2192 <b>'+DAYS[p.newDow]+'</b>');
+  if(p.time && p.time!==r.time) lines.push('Time: '+fmtTime12(r.time)+' \u2192 <b>'+fmtTime12(p.time)+'</b>');
+  if(p.dur!==r.dur) lines.push('Duration: '+r.dur+' \u2192 <b>'+p.dur+' min</b>');
+  if(p.mode!==(r.mode||'Offline')) lines.push('Mode: '+(r.mode||'Offline')+' \u2192 <b>'+p.mode+'</b>');
+  if(p.mode==='Online' && p.link!==(r.link||'')) lines.push('Class link updated');
+  const n=p.shiftedEditable.length;
+  let h = lines.length ? lines.join('<br>')+'<div>Applies to <b>'+n+'</b> upcoming class'+(n===1?'':'es')+' still marked Scheduled.</div>' : '<div style="color:var(--muted)">No day, time, duration or mode changes.</div>';
+  if(p.toAdd.length) h+='<div style="color:var(--green)">+ Adds <b>'+p.toAdd.length+'</b> new weekly class'+(p.toAdd.length===1?'':'es')+': '+fmtD(p.toAdd[0])+' \u2192 '+fmtD(p.toAdd[p.toAdd.length-1])+'</div>';
+  if(p.toRemove.length) h+='<div style="color:var(--red)">&minus; Removes <b>'+p.toRemove.length+'</b> scheduled class'+(p.toRemove.length===1?'':'es')+' after '+fmtDMY(p.until)+' (kept in Recently deleted for 30 days)</div>';
+  if(p.tooMany) h+='<div style="color:var(--red)">That end date is more than two years away &mdash; pick an earlier one.</div>';
+  if(sessionCategory(r)==='raga' && (p.shift || (p.time && p.time!==r.time)))
+    h+='<div style="color:var(--red)">&#9888; Raga Shiksha: moved classes are un-ticked on the website tracker &mdash; update them on ragashiksha.com so students aren&#39;t notified of the old time.</div>';
+  if(p.clashes.length) h+='<div style="color:var(--red)">&#9888; Time clash: '+esc(p.clashes.slice(0,3).join('; '))+(p.clashes.length>3?' &hellip;+'+(p.clashes.length-3)+' more':'')+'</div>';
+  el.innerHTML=h;
+}
+function serRemoveClasses(list, now){
+  list.forEach(c=>{
+    S.classes=S.classes.filter(x=>x.cid!==c.cid); tombstone(c.cid);
+    S.recentlyDeletedClasses.push({...c, deletedAt:now});
+  });
+  if(list.length) renderRecentlyDeletedClassesBadge();
+}
+$('#serSave').addEventListener('click',()=>{
+  const p=serPlan(); if(!p) return;
+  if(!p.time){ toast('Pick a start time'); return; }
+  if(p.tooMany){ toast('Pick an end date within the next two years'); return; }
+  if(p.toRemove.length && !confirm('End this series on '+fmtDMY(p.until)+'?\n\n'+p.toRemove.length+' later class'+(p.toRemove.length===1?'':'es')+' will move to Recently deleted (restorable for 30 days).')) return;
+  if(p.clashes.length && !confirm('Time clash detected:\n\n'+p.clashes.slice(0,4).join('\n')+(p.clashes.length>4?'\n\u2026and '+(p.clashes.length-4)+' more':'')+'\n\nSave anyway?')) return;
+  const now=Date.now(), isRaga=sessionCategory(p.r)==='raga', gone=new Set(p.toRemove.map(x=>x.c.cid));
+  let resets=0;
+  p.shiftedEditable.forEach(({c,newDate})=>{
+    if(gone.has(c.cid)) return;
+    const movedNow = newDate!==c.date || p.time!==c.time;
+    c.date=newDate; c.time=p.time; c.dur=p.dur; c.mode=p.mode; if(p.mode==='Online') c.link=p.link;
+    if(isRaga && movedNow && c.rs){ Object.keys(c.rs).forEach(k=>{ if(c.rs[k]==='done'){ delete c.rs[k]; resets++; } }); }
+    c.updatedAt=now;
+  });
+  serRemoveClasses(p.toRemove.map(x=>x.c), now);
+  const tpl=p.sr.last;
+  p.toAdd.forEach(d=>{
+    const base={cid:'C'+pad(S.seq.cls).padStart(4,'0'), seriesId:p.sr.id, date:d, time:p.time, dur:p.dur, mode:p.mode, link:(p.mode==='Online'?p.link:(tpl.link||'')), topic:'', hw:'', updatedAt:now};
+    if(tpl.kind==='own-lesson') S.classes.push({...base, kind:'own-lesson', withWhom:tpl.withWhom, studentIds:[], att:{}, ownStatus:'Scheduled', feeAmount:null, feeMode:null, feeRef:'', feeReceiptFileId:null, feeReceiptExt:null, feeReceiptMime:null, feeReceiptName:null});
+    else { const att={}; tpl.studentIds.forEach(sid=>att[sid]='Scheduled'); S.classes.push({...base, kind:'teaching', studentIds:tpl.studentIds.slice(), att, inr:{}, mat:{}, rs:{}}); }
+    S.seq.cls++;
+  });
+  const bits=[];
+  if(p.shiftedEditable.length-gone.size) bits.push('updated '+(p.shiftedEditable.length-gone.size));
+  if(p.toAdd.length) bits.push('added '+p.toAdd.length);
+  if(p.toRemove.length) bits.push('removed '+p.toRemove.length);
+  renderAll(); serBackToList();
+  toast('Series saved \u2014 '+(bits.join(', ')||'no changes')+(resets?' \u00b7 '+resets+' need re-scheduling on Raga Shiksha':''));
+});
+$('#serDeleteRest').addEventListener('click',()=>{
+  const sr=seriesAll().find(x=>x.id===serEditId); if(!sr) return;
+  if(!sr.editable.length){ toast('No upcoming Scheduled classes left in this series'); return; }
+  if(!confirm('Delete the '+sr.editable.length+' upcoming class'+(sr.editable.length===1?'':'es')+' of this series?\n\nThey move to Recently deleted (restorable for 30 days). Completed and past classes are kept.')) return;
+  serRemoveClasses(sr.editable, Date.now());
+  renderAll(); serBackToList(); toast('Deleted '+sr.editable.length+' upcoming class'+(sr.editable.length===1?'':'es'));
+});
+$('#serBack').addEventListener('click',serBackToList);
+['serDay','serTime','serDur','serMode','serLink','serUntil'].forEach(id=>{
+  $('#'+id).addEventListener('input',serPreview); $('#'+id).addEventListener('change',serPreview);
+});
+$('#serMode').addEventListener('change',serToggleLink);
+$$('#m-series [data-serext]').forEach(b=>b.addEventListener('click',()=>{
+  const p=serPlan(); if(!p) return;
+  $('#serUntil').value=addDaysS(p.lastAfter, 7*(+b.dataset.serext)); serPreview();
+}));
+$('#serList').addEventListener('click',e=>{ const b=e.target.closest('[data-seredit]'); if(b) serOpenEdit(b.dataset.seredit); });
+$('#serSearch').addEventListener('input',renderSeriesList);
+$('#serShowEnded').addEventListener('change',renderSeriesList);
+$('#serDetect').addEventListener('click',()=>{ $('#lnkDetectSeries').click(); renderSeriesList(); });
+$('#btnSeriesMgr').addEventListener('click',()=>{ $('#serSearch').value=''; serBackToList(); openModal('m-series'); });
+
+/* ---------- Schedule exports (Excel + PDF) ---------- */
+function calExportWeekData(anyDate){
+  const mon=mondayOfDate(anyDate), end=addDaysS(mon,7);
+  const aoa=[['Date','Day','Timings','Duration (min)','Student','Type','Mode','Fee per class (\u20B9)','Status','Lesson details (topic)','Revision / homework','Repeats weekly','Raga Shiksha website']];
+  let n=0, fees=0;
+  S.classes.filter(c=>c.date>=mon && c.date<end).sort(byDateTime).forEach(c=>{
+    if(c.kind==='own-lesson'){
+      const stat=c.ownStatus||'Scheduled';
+      aoa.push([fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,fullNamesOf(c),'My lesson',c.mode||'',c.feeAmount!=null?c.feeAmount:'',stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No','']);
+      n++; if(typeof c.feeAmount==='number' && stat!=='Cancelled') fees+=c.feeAmount;
+      return;
+    }
+    c.studentIds.forEach(sid=>{
+      const st=sById(sid); if(!st) return;
+      const partner=c.studentIds.filter(x=>x!==sid).map(firstName).join(', ');
+      const stat=c.att[sid]||'Scheduled';
+      const actual=stat==='Completed' ? classINR(c,sid) : null;
+      const fee = actual!=null ? actual : (isUSD(st) ? '$'+unitFee(st,c.mode) : unitFee(st,c.mode));
+      aoa.push([fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,st.name+(partner?' (batch with '+partner+')':''),st.cat==='RAGA'?'RAGA':'Personal',c.mode||'',fee,stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No',
+        (st.cat==='RAGA' && stat==='Scheduled') ? rsWebText(c,sid) : '']);
+      n++; if(typeof fee==='number' && !CANC.includes(stat)) fees+=fee;
+    });
+  });
+  if(!n) return null;
+  aoa.push(['','','','','Total ('+n+' entr'+(n===1?'y':'ies')+')','','',fees,'','','','','']);
+  return {name:'raga-week-schedule-'+mon, title:'Weekly Schedule \u2014 '+fmtDFull(mon)+' to '+fmtDFull(addDaysS(mon,6)), sheets:[{name:'Week schedule', aoa, money:[8]}]};
+}
+function calExportSeriesData(asOf){
+  const sum=[['Student(s)','Type','Day','Timings','Duration (min)','Mode','Fee per class (\u20B9)','Started on','Repeats until','Classes remaining','Next class','Last lesson covered','Revision / homework given','Raga Shiksha website']];
+  const dates=[['Student(s)','Type','Date','Day','Timings','Status','Lesson details (topic)','Revision / homework','Raga Shiksha website']];
+  const dowKey = r => ((parseD(r.date).getDay()+6)%7)*10000 + toMin(r.time);
+  const list=seriesAll().map(sr=>({sr, rem:sr.list.filter(c=>c.date>=asOf)})).filter(x=>x.rem.length)
+    .sort((a,b)=> dowKey(a.rem[0])-dowKey(b.rem[0]) || fullNamesOf(a.rem[0]).localeCompare(fullNamesOf(b.rem[0])));
+  if(!list.length) return null;
+  list.forEach(({sr,rem})=>{
+    const nx=rem[0], isOwn=nx.kind==='own-lesson', raga=sessionCategory(nx)==='raga';
+    let fee='';
+    if(!isOwn){
+      const parts=nx.studentIds.map(id=>{ const st=sById(id); return st ? {usd:isUSD(st), v:unitFee(st,nx.mode)} : null; }).filter(Boolean);
+      fee = (parts.length===1 && !parts[0].usd) ? parts[0].v : parts.map(x=>x.usd?'$'+x.v:RUPEE.format(x.v)).join(' + ');
+    }
+    const past=sr.list.filter(c=>c.date<=asOf && ((c.topic||'').trim() || (c.hw||'').trim())).pop();
+    const lastTopic=sr.list.filter(c=>c.date<=asOf && (c.topic||'').trim()).pop();
+    const lastHw=sr.list.filter(c=>c.date<=asOf && (c.hw||'').trim()).pop();
+    let web='';
+    if(raga){ const dn=rem.filter(c=>c.studentIds.some(id=>rsStatus(c,id)==='done')).length; web=dn+' of '+rem.length+' on website'; }
+    sum.push([fullNamesOf(nx),typeLabelOf(nx),dowName(nx.date),timingsOf(nx),nx.dur,nx.mode||'',fee,fmtDMY(sr.first.date),fmtDMY(sr.last.date),rem.length,fmtDMY(nx.date),
+      lastTopic?lastTopic.topic+' ('+fmtDMY(lastTopic.date)+')':'', lastHw?lastHw.hw+' ('+fmtDMY(lastHw.date)+')':'', web]);
+    rem.forEach(c=>{
+      const stat = isOwn ? (c.ownStatus||'Scheduled') : c.studentIds.map(id=>(c.studentIds.length>1?firstName(id)+': ':'')+(c.att[id]||'Scheduled')).join('; ');
+      const rsT = raga && sessionStatus(c)==='scheduled' ? c.studentIds.map(id=>(c.studentIds.length>1?firstName(id)+': ':'')+rsWebText(c,id)).join('; ') : '';
+      dates.push([fullNamesOf(c),typeLabelOf(c),fmtDMY(c.date),dowName(c.date),timingsOf(c),stat,c.topic||'',c.hw||'',rsT]);
+    });
+  });
+  return {name:'raga-repeating-classes-'+asOf, title:'Repeating Classes \u2014 as of '+fmtDFull(asOf),
+    sheets:[{name:'Repeating classes', aoa:sum, money:[7]},{name:'Upcoming dates', aoa:dates}]};
+}
+function calReportHtml(data){
+  const tbl=sh=>{
+    const head=sh.aoa[0], money=sh.money||[];
+    return '<table class="cx"><thead><tr>'+head.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+
+      sh.aoa.slice(1).map(r=>{
+        const tot=r.some(v=>typeof v==='string' && /^total/i.test(v));
+        return '<tr'+(tot?' style="font-weight:700"':'')+'>'+r.map((v,i)=>{
+          const num=typeof v==='number' && money.includes(i+1);
+          return '<td'+(num?' class="r"':'')+'>'+(num?RUPEE.format(v):esc(v==null?'':String(v)))+'</td>';
+        }).join('')+'</tr>';
+      }).join('')+'</tbody></table>';
+  };
+  return '<div data-landscape="1" style="display:none"></div>'+bannerDoc()+
+    '<style>#printSheet table.cx{font-size:8pt}#printSheet table.cx th,#printSheet table.cx td{padding:1.2mm 1.6mm;vertical-align:top}</style>'+
+    '<div style="color:#666;font-size:.85rem;margin-bottom:8px">'+esc(data.title)+' \u00b7 generated '+fmtDFull(TODAY)+'</div>'+
+    data.sheets.map(sh=>(data.sheets.length>1?'<h3 style="margin:12px 0 4px;font-family:Marcellus,serif;color:#0D3B2B">'+esc(sh.name)+'</h3>':'')+tbl(sh)).join('')+
+    '<div class="sig-block"><div class="sig-name">Varun M Kaginagolli</div><div class="sig-label">For RAGA Music Classes</div></div>';
+}
+function calExportData(){
+  const kind=document.querySelector('input[name="calExpKind"]:checked').value;
+  if(kind==='week'){
+    const d=$('#calExpDate').value; if(!d){ toast('Pick a date in the week'); return null; }
+    const data=calExportWeekData(d); if(!data){ toast('No classes scheduled in that week'); return null; }
+    return data;
+  }
+  const a=$('#calExpAsOf').value; if(!a){ toast('Pick an \u201cas of\u201d date'); return null; }
+  const data=calExportSeriesData(a); if(!data){ toast('No repeating classes on or after that date'); return null; }
+  return data;
+}
+function calExpRefreshHints(){
+  const kind=document.querySelector('input[name="calExpKind"]:checked').value;
+  $('#calExpWeekField').style.display = kind==='week' ? '' : 'none';
+  $('#calExpSeriesField').style.display = kind==='series' ? '' : 'none';
+  const d=$('#calExpDate').value;
+  if(d){
+    const mon=mondayOfDate(d), end=addDaysS(mon,7), n=S.classes.filter(c=>c.date>=mon && c.date<end).length;
+    $('#calExpWeekHint').textContent='Week: '+fmtD(mon)+' \u2013 '+fmtD(addDaysS(mon,6))+' \u00b7 '+n+' class'+(n===1?'':'es');
+  } else $('#calExpWeekHint').textContent='';
+  const a=$('#calExpAsOf').value;
+  if(a){ const n=seriesAll().filter(sr=>sr.list.some(c=>c.date>=a)).length; $('#calExpSeriesHint').textContent=n+' repeating series on or after this date.'; }
+  else $('#calExpSeriesHint').textContent='';
+}
+$('#btnCalExport').addEventListener('click',()=>{
+  $('#calExpDate').value = mondayOf(weekOffset);      // the week currently shown on the calendar
+  $('#calExpAsOf').value = TODAY;
+  calExpRefreshHints(); openModal('m-cal-export');
+});
+$$('input[name="calExpKind"]').forEach(r=>r.addEventListener('change',calExpRefreshHints));
+$('#calExpDate').addEventListener('input',calExpRefreshHints);
+$('#calExpAsOf').addEventListener('input',calExpRefreshHints);
+$('#calExpXlsx').addEventListener('click',()=>{
+  const data=calExportData(); if(!data) return;
+  closeModal('m-cal-export'); aoaDownload(data.name, data.title, data.sheets);
+});
+$('#calExpPdf').addEventListener('click',()=>{
+  const data=calExportData(); if(!data) return;
+  printCtx=calReportHtml(data);
+  $('#invTitle').textContent=data.title;
+  $('#invBody').innerHTML='<div class="docwrap" style="max-height:55vh;overflow:auto">'+printCtx+'</div>';
+  closeModal('m-cal-export'); openModal('m-invoice');
+});
+
 $('#clsDelete').addEventListener('click',()=>{
   const c = S.classes.find(x=>x.cid===editingClassId);
   if(!c) return;
@@ -4979,6 +5322,13 @@ $('#btnRegister').addEventListener('click',openRegister);
 $('#invPrint').addEventListener('click',()=>{
   if(!printCtx) return;
   $('#printSheet').innerHTML = printCtx;
+  // Wide reports (marked data-landscape) print on landscape A4; invoices and registers stay portrait.
+  if(printCtx.includes('data-landscape')){
+    const st=document.createElement('style'); st.id='printOrient'; st.textContent='@page{size:A4 landscape;margin:8mm}';
+    document.head.appendChild(st);
+    const done=()=>{ st.remove(); window.removeEventListener('afterprint',done); };
+    window.addEventListener('afterprint',done);
+  }
   window.print();
 });
 
@@ -6336,6 +6686,7 @@ function renderNavBadge(){
   b.textContent = n;
   renderUnupdatedBanner();
   renderRagaTrackerBadge();
+  renderSeriesBadge();
   renderHeadsUpBtn();
 }
 // Number on the Dashboard's Raga Shiksha tracker button: classes not yet scheduled on the website, including no-credit ones (reminder window).
