@@ -808,7 +808,7 @@
     <section class="view active" id="view-dashboard">
       <img id="bannerImg" class="banner" alt="RAGA Music Classes">
       <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:0 0 12px">
-        <button type="button" class="btn" id="btnRagaTracker" title="All upcoming Raga Shiksha classes by student. The number shows classes still to be scheduled on the website.">&#127760; Raga Shiksha tracker <span class="badge hold" id="ragaTrackerCount" style="display:none;margin-left:4px"></span></button>
+        <button type="button" class="btn" id="btnRagaTracker" title="All upcoming Raga Shiksha classes by student. The number shows classes not yet scheduled on the website, including those waiting on student credits.">&#127760; Raga Shiksha tracker <span class="badge hold" id="ragaTrackerCount" style="display:none;margin-left:4px"></span></button>
         <button type="button" class="btn" id="btnHeadsUp" title="Reopen the Heads Up pop-up: today, tomorrow, pending status, material, backup and unscheduled students">&#128276; Heads Up <span class="badge hold" id="headsUpCount" style="display:none;margin-left:4px"></span></button>
       </div>
       <div class="stat-row">
@@ -2196,6 +2196,7 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rsPanelTitle" style="max-width:640px">
     <h3 id="rsPanelTitle">Raga Shiksha tracker</h3>
     <div class="sub">Every upcoming Raga Shiksha class by student. A class must be scheduled on the website too, or the student isn&#39;t notified and can&#39;t attend.</div>
+    <input id="rsPanelSearch" class="search-input" placeholder="Search student…" style="width:100%;margin-top:10px" aria-label="Search students in the Raga Shiksha tracker" autocomplete="off">
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0">
       <button type="button" class="btn tiny" data-rsrange="7">Next 7 days</button>
       <button type="button" class="btn tiny" data-rsrange="30">Next 30 days</button>
@@ -2203,6 +2204,14 @@
       <span style="flex:1"></span>
       <a class="btn tiny gold" href="https://ragashiksha.com/dashboard" target="_blank" rel="noopener" style="text-decoration:none">Open Raga Shiksha &#8599;</a>
     </div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 6px"><span class="tiny" style="color:var(--muted);min-width:42px">Sort</span>
+      <button type="button" class="btn tiny" data-rssort="student">Student A&ndash;Z</button>
+      <button type="button" class="btn tiny" data-rssort="date">Earliest first</button></div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px"><span class="tiny" style="color:var(--muted);min-width:42px">Show</span>
+      <button type="button" class="btn tiny" data-rsstatus="all">All</button>
+      <button type="button" class="btn tiny" data-rsstatus="yet">Yet to schedule</button>
+      <button type="button" class="btn tiny" data-rsstatus="nocredit">No credits</button>
+      <button type="button" class="btn tiny" data-rsstatus="done">&#10003; Scheduled</button></div>
     <div id="rsPanelBody"></div>
     <div class="modal-foot"><div class="right"><button class="btn" data-close="m-raga-site">Close</button></div></div>
   </div>
@@ -6329,10 +6338,10 @@ function renderNavBadge(){
   renderRagaTrackerBadge();
   renderHeadsUpBtn();
 }
-// Number on the Dashboard's Raga Shiksha tracker button: classes still to be scheduled on the website (reminder window).
+// Number on the Dashboard's Raga Shiksha tracker button: classes not yet scheduled on the website, including no-credit ones (reminder window).
 function renderRagaTrackerBadge(){
   const b=$('#ragaTrackerCount'); if(!b) return;
-  const n=ragaSiteTodo().length;
+  const n=ragaSiteTodo().length + ragaSiteNoCredit().length;   // 'no credits' is just the reason a class isn't scheduled yet, so it counts too
   b.style.display = n ? '' : 'none';
   b.textContent = n;
 }
@@ -6379,38 +6388,73 @@ function rsPanelEntries(){
   const to = rsPanelRange==='7' ? addDaysS(TODAY,8) : rsPanelRange==='30' ? addDaysS(TODAY,31) : '9999-12-31';
   return ragaEntriesBetween(TODAY, to);
 }
+let rsPanelSort = 'student', rsPanelStatus = 'all';
+const rsKey = e => e.v || 'yet';
+const rsNm = e => (sById(e.sid)||{}).name || '';
+function rsRowHTML(e, showName){
+  const c=e.c, v=e.v||'';
+  return '<div style="display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line)" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
+    '<span style="min-width:96px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-size:.78rem;color:var(--muted)">'+fmtTime12(c.time)+'</span></span>'+
+    (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b></span>' : '')+
+    '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+
+    '<button type="button" class="mat-btn'+(v===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
+    '<button type="button" class="mat-btn'+(v==='nocredit'?' on':'')+'" data-rsval="nocredit">No credits</button>'+
+    '<button type="button" class="mat-btn'+(v==='done'?' on':'')+'" data-rsval="done">&#10003; Scheduled</button></span></div>';
+}
 function renderRsPanel(){
   const body=$('#rsPanelBody'); if(!body) return;
   $$('#m-raga-site [data-rsrange]').forEach(b=>b.classList.toggle('gold', b.dataset.rsrange===rsPanelRange));
-  const es=rsPanelEntries();
-  if(!es.length){ body.innerHTML='<div class="empty" style="padding:20px 0">No upcoming Raga Shiksha classes in this range.</div>'; return; }
-  const groups={}; es.forEach(e=>{ (groups[e.sid]=groups[e.sid]||[]).push(e); });
-  const sids=Object.keys(groups).sort((a,b)=>((sById(a)||{}).name||'').localeCompare((sById(b)||{}).name||''));
-  body.innerHTML=sids.map(sid=>{
-    const g=groups[sid], st=sById(sid)||{name:sid};
-    const done=g.filter(e=>e.v==='done').length, no=g.filter(e=>e.v==='nocredit').length, todo=g.length-done-no;
-    return '<div style="border:1px solid var(--line);border-radius:12px;margin:0 0 12px;overflow:hidden">'+
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--paper)">'+
-        '<div style="flex:1 1 150px;min-width:0"><b>'+esc(st.name)+'</b><div class="tiny" style="color:var(--muted)">'+g.length+' class'+(g.length===1?'':'es')+
-          ' &middot; <span style="color:var(--green)">'+done+' scheduled</span> &middot; <span style="color:var(--red)">'+todo+' to schedule</span>'+(no?' &middot; '+no+' no credits':'')+'</div></div>'+
-        ((todo||no) ? '<button type="button" class="btn tiny" data-rsall="'+sid+'">&#10003; Mark all scheduled</button>' : '')+
-      '</div>'+
-      g.map(e=>{
-        const c=e.c, v=e.v||'';
-        return '<div style="display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line)" data-rs-cid="'+c.cid+'" data-rs-sid="'+sid+'">'+
-          '<span style="min-width:96px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-size:.78rem;color:var(--muted)">'+fmtTime12(c.time)+'</span></span>'+
-          '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+
-          '<button type="button" class="mat-btn'+(v===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
-          '<button type="button" class="mat-btn'+(v==='nocredit'?' on':'')+'" data-rsval="nocredit">No credits</button>'+
-          '<button type="button" class="mat-btn'+(v==='done'?' on':'')+'" data-rsval="done">&#10003; Scheduled</button></span></div>';
-      }).join('')+'</div>';
-  }).join('');
+  $$('#m-raga-site [data-rssort]').forEach(b=>b.classList.toggle('gold', b.dataset.rssort===rsPanelSort));
+  $$('#m-raga-site [data-rsstatus]').forEach(b=>b.classList.toggle('gold', b.dataset.rsstatus===rsPanelStatus));
+  const qRaw=$('#rsPanelSearch').value.trim(), q=qRaw.toLowerCase();
+  const nameOk=e=>!q || rsNm(e).toLowerCase().includes(q);
+  const statOk=e=>rsPanelStatus==='all' || rsKey(e)===rsPanelStatus;
+  const byDate=(a,b)=> a.c.date===b.c.date ? ((toMin(a.c.time)-toMin(b.c.time)) || rsNm(a).localeCompare(rsNm(b))) : (a.c.date<b.c.date?-1:1);
+  const card=(head,sub,rowsHtml,borderCol)=>'<div style="border:1px solid '+(borderCol||'var(--line)')+';border-radius:12px;margin:0 0 12px;overflow:hidden"><div style="padding:10px 12px;background:var(--paper)">'+head+(sub?'<div class="tiny" style="color:var(--muted);margin-top:2px">'+sub+'</div>':'')+'</div>'+rowsHtml+'</div>';
+
+  // 1) Needs attention: exactly the classes counted in the badge (next 3 days: yet to schedule + no credits), earliest first
+  const attn=ragaSiteTodo().concat(ragaSiteNoCredit()).filter(e=>nameOk(e)&&statOk(e)).sort(byDate);
+  let html='';
+  if(attn.length) html+=card('<b style="color:var(--red)">&#9888; Needs attention &mdash; '+attn.length+'</b>',
+    'Next '+RS_ALERT_DAYS+' days &middot; not yet scheduled or waiting on credits', attn.map(e=>rsRowHTML(e,true)).join(''), 'var(--red)');
+
+  // 2) Everyone in the chosen range
+  const base=rsPanelEntries().filter(nameOk), shown=base.filter(statOk);
+  if(shown.length){
+    if(rsPanelSort==='date'){
+      html+='<div style="font-weight:700;margin:14px 0 8px">All classes &mdash; earliest first</div>'+
+        card('<span class="tiny" style="color:var(--muted)">'+shown.length+' class'+(shown.length===1?'':'es')+'</span>','',shown.slice().sort(byDate).map(e=>rsRowHTML(e,true)).join(''));
+    } else {
+      html+='<div style="font-weight:700;margin:14px 0 8px">All students</div>';
+      const groups={}; base.forEach(e=>{ (groups[e.sid]=groups[e.sid]||[]).push(e); });
+      const sids=Object.keys(groups).filter(sid=>groups[sid].some(statOk)).sort((a,b)=>rsNm({sid:a}).localeCompare(rsNm({sid:b})));
+      html+=sids.map(sid=>{
+        const g=groups[sid], st=sById(sid)||{name:sid};
+        const done=g.filter(e=>e.v==='done').length, no=g.filter(e=>e.v==='nocredit').length, todo=g.length-done-no;
+        return '<div style="border:1px solid var(--line);border-radius:12px;margin:0 0 12px;overflow:hidden">'+
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--paper)">'+
+            '<div style="flex:1 1 150px;min-width:0"><b>'+esc(st.name)+'</b><div class="tiny" style="color:var(--muted)">'+g.length+' class'+(g.length===1?'':'es')+
+              ' &middot; <span style="color:var(--green)">'+done+' scheduled</span> &middot; <span style="color:var(--red)">'+todo+' to schedule</span>'+(no?' &middot; '+no+' no credits':'')+'</div></div>'+
+            ((todo||no) ? '<button type="button" class="btn tiny" data-rsall="'+sid+'">&#10003; Mark all scheduled</button>' : '')+
+          '</div>'+g.filter(statOk).sort(byDate).map(e=>rsRowHTML(e,false)).join('')+'</div>';
+      }).join('');
+    }
+  }
+  if(!html){
+    html='<div class="empty" style="padding:20px 0">'+(q ? 'No student matches \u201c'+esc(qRaw)+'\u201d with these filters.' : 'No Raga Shiksha classes match these filters in this range.')+'</div>';
+  }
+  body.innerHTML=html;
 }
-$('#btnRagaTracker').addEventListener('click',()=>{ renderRsPanel(); openModal('m-raga-site'); });
+$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus='all'; renderRsPanel(); openModal('m-raga-site'); });
+$('#rsPanelSearch').addEventListener('input', renderRsPanel);
 $('#m-raga-site').addEventListener('click',e=>{
   const keep=fn=>{ const m=$('#m-raga-site .modal'), y=m?m.scrollTop:0; fn(); if(m) m.scrollTop=y; };
   const chip=e.target.closest('[data-rsrange]');
   if(chip){ rsPanelRange=chip.dataset.rsrange; renderRsPanel(); return; }
+  const so=e.target.closest('[data-rssort]');
+  if(so){ rsPanelSort=so.dataset.rssort; renderRsPanel(); return; }
+  const sf=e.target.closest('[data-rsstatus]');
+  if(sf){ rsPanelStatus=sf.dataset.rsstatus; renderRsPanel(); return; }
   const b=e.target.closest('[data-rsval]');
   if(b){ const row=b.closest('[data-rs-cid]'); if(!row) return; setRsStatus(row.dataset.rsCid,row.dataset.rsSid,b.dataset.rsval); renderAll(); keep(renderRsPanel); return; }
   const all=e.target.closest('[data-rsall]');
