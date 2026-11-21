@@ -2902,10 +2902,23 @@ const RAGA_SITE_URL = 'https://ragashiksha.com/dashboard';
 const RS_MARK_DAYS = 7;     // the red warning mark shows on classes up to 7 days ahead
 const RS_ALERT_DAYS = 3;    // the Heads Up pop-up, Dashboard banner and button count only start 3 days before the class
 const rsStatus = (c,sid) => (c.rs && c.rs[sid]) || null;
+// A paired / batch class is booked on the website ONCE, with both students selected, so it is tracked as ONE unit:
+// scheduled only when it has been booked for the whole batch; if either student has no credits it can't be booked at all.
+function ragaUnit(c){
+  if(!c || c.kind==='own-lesson') return null;
+  const sids=c.studentIds.filter(sid=>{ const st=sById(sid); return st && st.cat==='RAGA' && c.att[sid]==='Scheduled'; });
+  if(!sids.length) return null;
+  const vs=sids.map(sid=>rsStatus(c,sid));
+  const v = vs.every(x=>x==='done') ? 'done' : (vs.some(x=>x==='nocredit') ? 'nocredit' : null);
+  return {c, sid:sids[0], sids, v, batch:sids.length>1};
+}
+const rsUnitNames = e => e.sids.map(id=>(sById(id)||{}).name||id).join(' & ');
+const rsBatchTag = e => e.batch ? ' <span class="badge hold" style="margin-left:4px">Batch</span>' : '';
 function setRsStatus(cid, sid, val){
   const cl=S.classes.find(x=>x.cid===cid); if(!cl) return;
+  const u=ragaUnit(cl), targets=(u && u.sids.includes(sid)) ? u.sids : [sid];   // a batch is always set for both students together
   cl.rs ||= {};
-  if(val) cl.rs[sid]=val; else delete cl.rs[sid];
+  targets.forEach(t=>{ if(val) cl.rs[t]=val; else delete cl.rs[t]; });
   cl.updatedAt=Date.now();
 }
 function ragaSiteEntries(days){ return ragaEntriesBetween(TODAY, addDaysS(TODAY, (days==null?RS_ALERT_DAYS:days)+1)); }
@@ -2913,11 +2926,7 @@ function ragaEntriesBetween(from, toExclusive){
   const out=[];
   S.classes.forEach(c=>{
     if(c.kind==='own-lesson' || c.date<from || c.date>=toExclusive) return;
-    c.studentIds.forEach(sid=>{
-      const st=sById(sid);
-      if(!st || st.cat!=='RAGA' || c.att[sid]!=='Scheduled') return;
-      out.push({c,sid,v:rsStatus(c,sid)});
-    });
+    const u=ragaUnit(c); if(u) out.push(u);
   });
   return out.sort((a,b)=> a.c.date===b.c.date ? toMin(a.c.time)-toMin(b.c.time) : (a.c.date<b.c.date?-1:1));
 }
@@ -2929,12 +2938,12 @@ function ragaNextWeekSummary(){
   const mon=mondayOf(1), es=ragaEntriesBetween(mon, addDaysS(mon,7));
   if(!es.length) return null;
   const todo=es.filter(e=>!e.v), no=es.filter(e=>e.v==='nocredit');
-  const by={}; todo.forEach(e=>{ const n=(sById(e.sid)||{}).name||e.sid; by[n]=(by[n]||0)+1; });
+  const by={}; todo.forEach(e=>{ const n=rsUnitNames(e); by[n]=(by[n]||0)+1; });
   return {n:es.length, todo:todo.length, no:no.length, names:Object.keys(by).map(k=>k+' ('+by[k]+')').join(', ')};
 }
 function rsWarn(c){
   if(c.kind==='own-lesson' || c.date<TODAY || c.date>addDaysS(TODAY,RS_MARK_DAYS)) return '';
-  const hit=c.studentIds.some(sid=>{ const st=sById(sid); return st && st.cat==='RAGA' && c.att[sid]==='Scheduled' && !rsStatus(c,sid); });
+  const u=ragaUnit(c), hit=!!(u && !u.v);
   return hit ? ' <span class="rs-warn" data-rs-quick="'+c.cid+'" role="button" title="Not yet scheduled on the Raga Shiksha website — tap to mark as scheduled" style="cursor:pointer;padding:0 4px">&#9888;</span>' : '';
 }
 // Tap the warning mark anywhere (calendar, timeline, upcoming list) to tick the class as scheduled without opening it.
@@ -2942,11 +2951,9 @@ document.addEventListener('click', e=>{
   const w=e.target.closest('[data-rs-quick]'); if(!w) return;
   e.stopPropagation(); e.preventDefault();
   const c=S.classes.find(x=>x.cid===w.dataset.rsQuick); if(!c) return;
-  const sids=c.studentIds.filter(sid=>{ const st=sById(sid); return st && st.cat==='RAGA' && c.att[sid]==='Scheduled' && !rsStatus(c,sid); });
-  if(!sids.length) return;
-  const names=sids.map(sid=>sById(sid).name).join(' & ');
-  if(!confirm('Mark '+names+' ('+rsWhen(c)+', '+fmtTime12(c.time)+') as scheduled on the Raga Shiksha website?')) return;
-  sids.forEach(sid=>setRsStatus(c.cid,sid,'done'));
+  const u=ragaUnit(c); if(!u || u.v) return;
+  if(!confirm('Mark '+rsUnitNames(u)+(u.batch?' (batch class, both students)':'')+' ('+rsWhen(c)+', '+fmtTime12(c.time)+') as scheduled on the Raga Shiksha website?')) return;
+  setRsStatus(c.cid,u.sid,'done');
   renderAll(); toast('Marked as scheduled on the website');
 }, true);
 let rsPick = new Set();   // Heads Up multi-select: 'cid|sid'
@@ -2968,29 +2975,33 @@ function refreshRsBlock(){
   const list = clsKind==='teaching' ? ids.filter(sid=>{ const st=sById(sid); return st && st.cat==='RAGA' && (!c || c.att[sid]==='Scheduled'); }) : [];
   box.style.display = list.length ? '' : 'none';
   rows.innerHTML='';
-  list.forEach(sid=>{
-    const st=sById(sid), cur=rsDraft[sid]||'';
+  // Two RAGA students in one class = a batch: booked once on the website, so it gets ONE row.
+  const groups = list.length>1 ? [list] : list.map(x=>[x]);
+  groups.forEach(g=>{
+    const sid=g[0], batch=g.length>1, names=g.map(id=>sById(id).name).join(' & ');
+    const curOf=()=>{ const vs=g.map(id=>rsDraft[id]||''); return vs.every(x=>x==='done')?'done':(vs.some(x=>x==='nocredit')?'nocredit':''); };
+    const cur=curOf();
     const row=document.createElement('div'); row.className='att-row'; row.style.flexWrap='wrap';
-    row.innerHTML='<div class="who"><b>'+esc(st.name)+'</b><span>RAGA</span></div>'+
+    row.innerHTML='<div class="who"><b>'+esc(names)+'</b><span>'+(batch?'Batch class \u2014 book both students together on the website':'RAGA')+'</span></div>'+
       '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+
       '<button type="button" class="mat-btn'+(cur===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
-      '<button type="button" class="mat-btn'+(cur==='nocredit'?' on':'')+'" data-rsval="nocredit" title="This student has no credits left on Raga Shiksha">No credits</button>'+
+      '<button type="button" class="mat-btn'+(cur==='nocredit'?' on':'')+'" data-rsval="nocredit" title="'+(batch?'One or both students have no credits, so the batch can\'t be booked':'This student has no credits left on Raga Shiksha')+'">No credits</button>'+
       '<button type="button" class="mat-btn'+(cur==='done'?' on':'')+'" data-rsval="done" title="Scheduled on the Raga Shiksha website">&#10003; Scheduled</button>'+
       rsLink('Schedule now')+'</div>';
-    const ser = (c && c.seriesId) ? S.classes.filter(x=>x.cid!==c.cid && x.seriesId===c.seriesId && x.date>=TODAY && x.kind!=='own-lesson' && x.studentIds.includes(sid) && x.att[sid]==='Scheduled') : [];
+    const ser = (c && c.seriesId) ? S.classes.filter(x=>x.cid!==c.cid && x.seriesId===c.seriesId && x.date>=TODAY && x.kind!=='own-lesson' && g.every(id=>x.studentIds.includes(id) && x.att[id]==='Scheduled')) : [];
     if(ser.length){
       const sb=document.createElement('button'); sb.type='button'; sb.className='btn tiny'; sb.textContent='Apply to the '+ser.length+' other upcoming class'+(ser.length===1?'':'es')+' in this series';
       sb.addEventListener('click',()=>{
-        const v=rsDraft[sid]||'', lab=v==='done'?'Scheduled':(v==='nocredit'?'No credits':'Yet to schedule');
-        if(!confirm('Set "'+lab+'" for '+st.name+' on the '+ser.length+' other upcoming class'+(ser.length===1?'':'es')+' in this series?')) return;
+        const v=curOf(), lab=v==='done'?'Scheduled':(v==='nocredit'?'No credits':'Yet to schedule');
+        if(!confirm('Set "'+lab+'" for '+names+' on the '+ser.length+' other upcoming class'+(ser.length===1?'':'es')+' in this series?')) return;
         ser.forEach(x=>setRsStatus(x.cid,sid,v));
         renderAll(); toast('Updated '+ser.length+' class'+(ser.length===1?'':'es'));
       });
       row.lastChild.appendChild(sb);
     }
     row.querySelectorAll('[data-rsval]').forEach(b=>b.addEventListener('click',()=>{
-      rsDraft[sid]=b.dataset.rsval;
-      row.querySelectorAll('[data-rsval]').forEach(x=>x.classList.toggle('on', x.dataset.rsval===rsDraft[sid]));
+      g.forEach(id=>{ rsDraft[id]=b.dataset.rsval; });
+      row.querySelectorAll('[data-rsval]').forEach(x=>x.classList.toggle('on', x.dataset.rsval===b.dataset.rsval));
     }));
     rows.appendChild(row);
   });
@@ -4391,7 +4402,7 @@ const dowName = d => DAYS[parseD(d).getDay()];
 const typeLabelOf = c => { const k=sessionCategory(c); return k==='raga'?'RAGA':(k==='own-lesson'?'My lesson':'Personal'); };
 const fullNamesOf = c => c.kind==='own-lesson' ? ('My lesson \u2014 '+(c.withWhom||'Guru')) : c.studentIds.map(id=>(sById(id)||{}).name||id).join(' & ');
 function mondayOfDate(d){ const t=parseD(d); t.setDate(t.getDate()+(t.getDay()===0?-6:1-t.getDay())); return dstr(t); }
-const rsWebText = (c,sid) => ({done:'Scheduled on website', nocredit:'No credits'}[rsStatus(c,sid)] || 'Yet to schedule');
+const rsWebText = (c,sid) => { const u=ragaUnit(c), v=(u && u.sids.includes(sid)) ? u.v : rsStatus(c,sid); return ({done:'Scheduled on website', nocredit:'No credits'}[v] || 'Yet to schedule'); };
 
 // One entry per seriesId, with its classes in date order.
 function seriesAll(){
@@ -4592,7 +4603,7 @@ function calExportSeriesData(asOf){
     const lastTopic=sr.list.filter(c=>c.date<=asOf && (c.topic||'').trim()).pop();
     const lastHw=sr.list.filter(c=>c.date<=asOf && (c.hw||'').trim()).pop();
     let web='';
-    if(raga){ const dn=rem.filter(c=>c.studentIds.some(id=>rsStatus(c,id)==='done')).length; web=dn+' of '+rem.length+' on website'; }
+    if(raga){ const dn=rem.filter(c=>{ const u=ragaUnit(c); return u && u.v==='done'; }).length; web=dn+' of '+rem.length+' on website'; }
     sum.push([sum.length,fullNamesOf(nx),typeLabelOf(nx),classFormat(nx),dowName(nx.date),timingsOf(nx),nx.dur,nx.mode||'',fee,fmtDMY(sr.first.date),fmtDMY(sr.last.date),rem.length,fmtDMY(nx.date),
       lastTopic?lastTopic.topic+' ('+fmtDMY(lastTopic.date)+')':'', lastHw?lastHw.hw+' ('+fmtDMY(lastHw.date)+')':'', web]);
     rem.forEach(c=>{
@@ -6717,14 +6728,14 @@ function renderRagaTrackerBadge(){
 }
 function ragaSiteSectionHTML(todo, no){
   const row=(e,isTodo)=>{
-    const st=sById(e.sid), c=e.c, key=c.cid+'|'+e.sid;
+    const c=e.c, key=c.cid+'|'+e.sid;
     return '<div class="rem-item" style="flex-wrap:wrap;gap:8px 12px" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
-      '<input type="checkbox" data-rspick="'+key+'" aria-label="Select '+esc(st?st.name:e.sid)+'"'+(rsPick.has(key)?' checked':'')+'>'+
+      '<input type="checkbox" data-rspick="'+key+'" aria-label="Select '+esc(rsUnitNames(e))+'"'+(rsPick.has(key)?' checked':'')+'>'+
       '<span class="t" style="min-width:90px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-weight:400;color:var(--muted);font-size:.78rem">'+fmtTime12(c.time)+'</span></span>'+
-      '<span style="flex:1 1 110px;min-width:0"><b>'+esc(st?st.name:e.sid)+'</b></span>'+
+      '<span style="flex:1 1 110px;min-width:0"><b>'+esc(rsUnitNames(e))+'</b>'+rsBatchTag(e)+'</span>'+
       '<span style="display:flex;gap:5px;flex-wrap:wrap">'+
       '<button type="button" class="mat-btn" data-rsset="done" title="Scheduled on the Raga Shiksha website">&#10003; Scheduled</button>'+
-      (isTodo ? '<button type="button" class="mat-btn" data-rsset="nocredit" title="This student has no credits left">No credits</button>'
+      (isTodo ? '<button type="button" class="mat-btn" data-rsset="nocredit" title="'+(e.batch?'One or both students have no credits':'This student has no credits left')+'">No credits</button>'
               : '<button type="button" class="mat-btn" data-rsset="" title="Back to yet to schedule">Yet to schedule</button>')+
       '</span></div>';
   };
@@ -6742,12 +6753,12 @@ function ragaSiteSectionHTML(todo, no){
   }
   if(todo.length){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px"><label style="color:var(--red);font-weight:700;font-size:.85rem">&#9888; Not yet scheduled on Raga Shiksha website &mdash; '+todo.length+'</label>'+rsLink('Schedule now')+'</div>'+
-      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Students aren&#39;t notified (and can&#39;t attend) until each class is also scheduled on ragashiksha.com. Reminders start 3 days before each class.</div>'+
+      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Students aren&#39;t notified (and can&#39;t attend) until each class is also scheduled on ragashiksha.com. Reminders start 3 days before each class. A batch class counts once &mdash; you book both students together.</div>'+
       '<div class="rem-list">'+todo.map(e=>row(e,true)).join('')+'</div>';
   }
   if(no.length){
     h+='<div style="margin:6px 0 4px"><label style="font-weight:700;font-size:.85rem">&#128179; No credits yet &mdash; '+no.length+'</label></div>'+
-      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Can&#39;t be scheduled on the website until the student has credits.</div>'+
+      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Can&#39;t be scheduled on the website until the student has credits &mdash; for a batch class, until both students do.</div>'+
       '<div class="rem-list">'+no.map(e=>row(e,false)).join('')+'</div>';
   }
   return h;
@@ -6760,12 +6771,13 @@ function rsPanelEntries(){
 }
 let rsPanelSort = 'student', rsPanelStatus = new Set();   // empty set = show all statuses; otherwise any combination of 'yet' | 'nocredit' | 'done'
 const rsKey = e => e.v || 'yet';
-const rsNm = e => (sById(e.sid)||{}).name || '';
+const rsNm = e => rsUnitNames(e);
+const rsGroupKey = e => e.batch ? 'B:'+e.sids.slice().sort().join('+') : 'S:'+e.sid;
 function rsRowHTML(e, showName){
   const c=e.c, v=e.v||'';
   return '<div style="display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line)" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
     '<span style="min-width:96px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-size:.78rem;color:var(--muted)">'+fmtTime12(c.time)+'</span></span>'+
-    (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b></span>' : '')+
+    (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b>'+rsBatchTag(e)+'</span>' : '')+
     '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+
     '<button type="button" class="mat-btn'+(v===''?' on':'')+'" data-rsval="">Yet to schedule</button>'+
     '<button type="button" class="mat-btn'+(v==='nocredit'?' on':'')+'" data-rsval="nocredit">No credits</button>'+
@@ -6795,19 +6807,21 @@ function renderRsPanel(){
       html+='<div style="font-weight:700;margin:14px 0 8px">All classes &mdash; earliest first</div>'+
         card('<span class="tiny" style="color:var(--muted)">'+shown.length+' class'+(shown.length===1?'':'es')+'</span>','',shown.slice().sort(byDate).map(e=>rsRowHTML(e,true)).join(''));
     } else {
-      html+='<div style="font-weight:700;margin:14px 0 8px">All students</div>';
-      const groups={}; base.forEach(e=>{ (groups[e.sid]=groups[e.sid]||[]).push(e); });
-      const sids=Object.keys(groups).filter(sid=>groups[sid].some(statOk)).sort((a,b)=>rsNm({sid:a}).localeCompare(rsNm({sid:b})));
-      html+=sids.map(sid=>{
-        const g=groups[sid], st=sById(sid)||{name:sid};
+      const groups={}; base.forEach(e=>{ (groups[rsGroupKey(e)]=groups[rsGroupKey(e)]||[]).push(e); });
+      const keys=Object.keys(groups).filter(k=>groups[k].some(statOk)).sort((a,b)=>rsNm(groups[a][0]).localeCompare(rsNm(groups[b][0])));
+      const cardFor=k=>{
+        const g=groups[k], first=g[0];
         const done=g.filter(e=>e.v==='done').length, no=g.filter(e=>e.v==='nocredit').length, todo=g.length-done-no;
         return '<div style="border:1px solid var(--line);border-radius:12px;margin:0 0 12px;overflow:hidden">'+
           '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--paper)">'+
-            '<div style="flex:1 1 150px;min-width:0"><b>'+esc(st.name)+'</b><div class="tiny" style="color:var(--muted)">'+g.length+' class'+(g.length===1?'':'es')+
+            '<div style="flex:1 1 150px;min-width:0"><b>'+esc(rsNm(first))+'</b>'+rsBatchTag(first)+'<div class="tiny" style="color:var(--muted)">'+g.length+' class'+(g.length===1?'':'es')+
               ' &middot; <span style="color:var(--green)">'+done+' scheduled</span> &middot; <span style="color:var(--red)">'+todo+' to schedule</span>'+(no?' &middot; '+no+' no credits':'')+'</div></div>'+
-            ((todo||no) ? '<button type="button" class="btn tiny" data-rsall="'+sid+'">&#10003; Mark all scheduled</button>' : '')+
+            ((todo||no) ? '<button type="button" class="btn tiny" data-rsall="'+k+'">&#10003; Mark all scheduled</button>' : '')+
           '</div>'+g.filter(statOk).sort(byDate).map(e=>rsRowHTML(e,false)).join('')+'</div>';
-      }).join('');
+      };
+      const solo=keys.filter(k=>k[0]==='S'), pairs=keys.filter(k=>k[0]==='B');
+      if(solo.length) html+='<div style="font-weight:700;margin:14px 0 8px">All students</div>'+solo.map(cardFor).join('');
+      if(pairs.length) html+='<div style="font-weight:700;margin:14px 0 2px">Paired / batch classes</div><div class="tiny" style="color:var(--muted);margin-bottom:8px">Booked on the website once, with both students together &mdash; if either has no credits the class can&#39;t be scheduled.</div>'+pairs.map(cardFor).join('');
     }
   }
   if(!html){
@@ -6834,10 +6848,10 @@ $('#m-raga-site').addEventListener('click',e=>{
   if(b){ const row=b.closest('[data-rs-cid]'); if(!row) return; setRsStatus(row.dataset.rsCid,row.dataset.rsSid,b.dataset.rsval); renderAll(); keep(renderRsPanel); return; }
   const all=e.target.closest('[data-rsall]');
   if(all){
-    const sid=all.dataset.rsall, list=rsPanelEntries().filter(x=>x.sid===sid && x.v!=='done');
+    const key=all.dataset.rsall, list=rsPanelEntries().filter(x=>rsGroupKey(x)===key && x.v!=='done');
     if(!list.length) return;
-    if(!confirm('Mark all '+list.length+' class'+(list.length===1?'':'es')+' for '+((sById(sid)||{}).name||'this student')+' as scheduled on the Raga Shiksha website?')) return;
-    list.forEach(x=>setRsStatus(x.c.cid,sid,'done'));
+    if(!confirm('Mark all '+list.length+' class'+(list.length===1?'':'es')+' for '+rsNm(list[0])+' as scheduled on the Raga Shiksha website?')) return;
+    list.forEach(x=>setRsStatus(x.c.cid,x.sid,'done'));
     renderAll(); keep(renderRsPanel); toast('Updated '+list.length+' class'+(list.length===1?'':'es'));
   }
 });
