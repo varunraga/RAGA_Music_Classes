@@ -6388,7 +6388,7 @@ function rsPanelEntries(){
   const to = rsPanelRange==='7' ? addDaysS(TODAY,8) : rsPanelRange==='30' ? addDaysS(TODAY,31) : '9999-12-31';
   return ragaEntriesBetween(TODAY, to);
 }
-let rsPanelSort = 'student', rsPanelStatus = 'all';
+let rsPanelSort = 'student', rsPanelStatus = new Set();   // empty set = show all statuses; otherwise any combination of 'yet' | 'nocredit' | 'done'
 const rsKey = e => e.v || 'yet';
 const rsNm = e => (sById(e.sid)||{}).name || '';
 function rsRowHTML(e, showName){
@@ -6405,10 +6405,10 @@ function renderRsPanel(){
   const body=$('#rsPanelBody'); if(!body) return;
   $$('#m-raga-site [data-rsrange]').forEach(b=>b.classList.toggle('gold', b.dataset.rsrange===rsPanelRange));
   $$('#m-raga-site [data-rssort]').forEach(b=>b.classList.toggle('gold', b.dataset.rssort===rsPanelSort));
-  $$('#m-raga-site [data-rsstatus]').forEach(b=>b.classList.toggle('gold', b.dataset.rsstatus===rsPanelStatus));
+  $$('#m-raga-site [data-rsstatus]').forEach(b=>b.classList.toggle('gold', b.dataset.rsstatus==='all' ? rsPanelStatus.size===0 : rsPanelStatus.has(b.dataset.rsstatus)));
   const qRaw=$('#rsPanelSearch').value.trim(), q=qRaw.toLowerCase();
   const nameOk=e=>!q || rsNm(e).toLowerCase().includes(q);
-  const statOk=e=>rsPanelStatus==='all' || rsKey(e)===rsPanelStatus;
+  const statOk=e=>rsPanelStatus.size===0 || rsPanelStatus.has(rsKey(e));
   const byDate=(a,b)=> a.c.date===b.c.date ? ((toMin(a.c.time)-toMin(b.c.time)) || rsNm(a).localeCompare(rsNm(b))) : (a.c.date<b.c.date?-1:1);
   const card=(head,sub,rowsHtml,borderCol)=>'<div style="border:1px solid '+(borderCol||'var(--line)')+';border-radius:12px;margin:0 0 12px;overflow:hidden"><div style="padding:10px 12px;background:var(--paper)">'+head+(sub?'<div class="tiny" style="color:var(--muted);margin-top:2px">'+sub+'</div>':'')+'</div>'+rowsHtml+'</div>';
 
@@ -6445,7 +6445,7 @@ function renderRsPanel(){
   }
   body.innerHTML=html;
 }
-$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus='all'; renderRsPanel(); openModal('m-raga-site'); });
+$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus.clear(); renderRsPanel(); openModal('m-raga-site'); });
 $('#rsPanelSearch').addEventListener('input', renderRsPanel);
 $('#m-raga-site').addEventListener('click',e=>{
   const keep=fn=>{ const m=$('#m-raga-site .modal'), y=m?m.scrollTop:0; fn(); if(m) m.scrollTop=y; };
@@ -6454,7 +6454,12 @@ $('#m-raga-site').addEventListener('click',e=>{
   const so=e.target.closest('[data-rssort]');
   if(so){ rsPanelSort=so.dataset.rssort; renderRsPanel(); return; }
   const sf=e.target.closest('[data-rsstatus]');
-  if(sf){ rsPanelStatus=sf.dataset.rsstatus; renderRsPanel(); return; }
+  if(sf){
+    const k=sf.dataset.rsstatus;
+    if(k==='all') rsPanelStatus.clear();
+    else{ if(rsPanelStatus.has(k)) rsPanelStatus.delete(k); else rsPanelStatus.add(k); if(rsPanelStatus.size===3) rsPanelStatus.clear(); }   // all three ticked = All
+    renderRsPanel(); return;
+  }
   const b=e.target.closest('[data-rsval]');
   if(b){ const row=b.closest('[data-rs-cid]'); if(!row) return; setRsStatus(row.dataset.rsCid,row.dataset.rsSid,b.dataset.rsval); renderAll(); keep(renderRsPanel); return; }
   const all=e.target.closest('[data-rsall]');
