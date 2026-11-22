@@ -4605,7 +4605,7 @@ function calExportRangeData(from, to){
   S.classes.filter(c=>c.date>=from && c.date<end).sort(byDateTime).forEach(c=>{
     if(c.kind==='own-lesson'){
       const stat=c.ownStatus||'Scheduled';
-      aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,fullNamesOf(c),'My lesson','Individual',c.mode||'',c.feeAmount!=null?c.feeAmount:'',stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No','']);
+      aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,fullNamesOf(c),'My lesson','Individual',c.mode||'','',stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No','']);
       n++;   // your own lessons are fees you pay, not fees you collect, so they stay out of the totals
       return;
     }
@@ -4626,8 +4626,9 @@ function calExportRangeData(from, to){
     });
   });
   if(!n) return null;
-  aoa.push(['','','','','','Total collectable \u2014 completed classes ('+nDone+')','','','',collect,'','','','','']);
-  if(nSched) aoa.push(['','','','','','Total expected \u2014 scheduled classes ('+nSched+')','','','',expected,'','','','','']);
+  aoa.push(['','','','','','Total collectable \u2014 completed classes ('+nDone+')','','','',{f:'SUMIFS(J{r1}:J{r2},K{r1}:K{r2},"Completed")',v:collect},'','','','','']);
+  if(nSched) aoa.push(['','','','','','Total expected \u2014 scheduled classes ('+nSched+')','','','',{f:'SUMIFS(J{r1}:J{r2},K{r1}:K{r2},"Scheduled")',v:expected},'','','','','']);
+  const vis=['','','','','','Subtotal \u2014 rows shown (updates when you filter)','','','',{f:'SUBTOTAL(9,J{r1}:J{r2})',v:collect+expected},'','','','','']; vis.excelOnly=true; aoa.push(vis);
   const isWeek = parseD(from).getDay()===1 && to===addDaysS(from,6);   // exactly Monday\u2013Sunday keeps the "Weekly Schedule" wording
   return {name:(isWeek?'raga-week-schedule-'+from:'raga-schedule-'+from+'_to_'+to), title:(isWeek?'Weekly Schedule':'Class Schedule')+' \u2014 '+fmtDFull(from)+' to '+fmtDFull(to), sheets:[{name:isWeek?'Week schedule':'Class schedule', aoa, money:[10]}]};
 }
@@ -4664,7 +4665,8 @@ function calReportHtml(data){
   const tbl=sh=>{
     const head=sh.aoa[0], money=sh.money||[];
     return '<table class="cx"><thead><tr>'+head.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+
-      sh.aoa.slice(1).map(r=>{
+      sh.aoa.slice(1).filter(r=>!r.excelOnly).map(r=>{
+        r=r.map(cellVal);
         const tot=r.some(v=>typeof v==='string' && /^total/i.test(v));
         return '<tr'+(tot?' style="font-weight:700"':'')+'>'+r.map((v,i)=>{
           const num=typeof v==='number' && money.includes(i+1);
@@ -4693,12 +4695,16 @@ function calExportData(){
   const data=calExportSeriesData(a); if(!data){ toast('No repeating classes on or after that date'); return null; }
   return data;
 }
-function calExpPreset(k){
+function calExpPresetRange(k){
   let f,t;
   if(k==='thisweek'){ f=mondayOf(0); t=addDaysS(f,6); }
   else if(k==='nextweek'){ f=mondayOf(1); t=addDaysS(f,6); }
   else if(k==='thismonth'){ const d=parseD(TODAY); f=dstr(new Date(d.getFullYear(),d.getMonth(),1)); t=dstr(new Date(d.getFullYear(),d.getMonth()+1,0)); }
   else { f=TODAY; t=addDaysS(TODAY,29); }
+  return [f,t];
+}
+function calExpPreset(k){
+  const [f,t]=calExpPresetRange(k);
   $('#calExpFrom').value=f; $('#calExpTo').value=t; calExpRefreshHints();
 }
 function calExpRefreshHints(){
@@ -4707,6 +4713,8 @@ function calExpRefreshHints(){
   $('#calExpWeekField').style.display = kind==='range' ? '' : 'none';
   $('#calExpSeriesField').style.display = kind==='series' ? '' : 'none';
   const f=$('#calExpFrom').value, t=$('#calExpTo').value;
+  // highlight the quick button whose dates are currently selected (clears when the dates are edited by hand)
+  $$('#m-cal-export [data-calexprange]').forEach(b=>{ const [pf,pt]=calExpPresetRange(b.dataset.calexprange); b.classList.toggle('gold', pf===f && pt===t); });
   if(f && t && t>=f){
     const n=S.classes.filter(c=>c.date>=f && c.date<=t).length, d=daysBetween(f,t)+1;
     $('#calExpWeekHint').textContent=fmtD(f)+' \u2013 '+fmtD(t)+' \u00b7 '+d+' day'+(d===1?'':'s')+' \u00b7 '+n+' class'+(n===1?'':'es');
@@ -5987,7 +5995,7 @@ function repFYSummary(){
       });
     });
     tP+=inc.p; tR+=inc.r; tPC+=pc; tRC+=rc;
-    aoa.push([monthLabel(mk), inc.p, inc.r, inc.p+inc.r, pc, rc]);
+    aoa.push([monthLabel(mk), inc.p, inc.r, {f:'B{rr}+C{rr}',v:inc.p+inc.r}, pc, rc]);
   }
   aoa.push(['Total', tP, tR, tP+tR, tPC, tRC]);
   return {name:'raga-fy-summary-'+fyStart, title:'Annual Summary \u2014 '+fyLabel(fyStart), sheets:[{name:'FY Summary', aoa, money:[2,3,4]}]};
@@ -6007,6 +6015,14 @@ function renderReports(){
   fillStudentOpts($('#rStmtStudent'), false, false);
   $('#xlsxStatus').textContent = window.ExcelJS ? 'Excel engine ready' : 'Excel engine loading… (CSV fallback available)';
 }
+/* ---------- Excel formulas ----------
+   A cell in an export's data can be {f:'<formula>', v:<value>}. In the formula: {r1}=first data row, {r2}=last data row
+   (the row above the first total), {rr}=this row, {p1}/{p2}=1/2 rows above, {col}=this column's letter.
+   Totals that are plain numbers are turned into live SUBTOTAL(9,...) formulas automatically — only when the number
+   really is that column's sum, so nothing is ever changed to a wrong value. */
+const cellVal = v => (v && typeof v==='object' && 'v' in v) ? v.v : v;
+const colLetter = n => { let t=''; while(n>0){ const m=(n-1)%26; t=String.fromCharCode(65+m)+t; n=Math.floor((n-1)/26); } return t; };
+const isTotalLabel = row => { const first=row.map(cellVal).find(v=>typeof v==='string' && v.trim()!==''); return typeof first==='string' && /^(sub)?total|^outstanding/i.test(first.trim()); };
 function csvEscape(c){ c=(c==null?'':String(c)); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }
 async function aoaDownload(name, title, sheets){
   if(window.ExcelJS){
@@ -6043,12 +6059,25 @@ async function aoaDownload(name, title, sheets){
           c.alignment={vertical:'middle'};
         });
         hr.height=22;
-        s.aoa.slice(1).forEach((row,ri)=>{
-          const r=ws.getRow(4+ri);
-          const isTotal=row.some(v=>typeof v==='string' && /total|outstanding/i.test(v));
-          row.forEach((v,ci)=>{
-            const c=r.getCell(ci+1);
-            c.value=v;
+        const rows=s.aoa.slice(1);
+        const totalIdx=rows.map(isTotalLabel);
+        const ft=totalIdx.indexOf(true);
+        const dataEnd=3+(ft<0 ? rows.length : ft);          // last data row (data starts on row 4)
+        const dataRows=rows.slice(0,dataEnd-3);
+        rows.forEach((row,ri)=>{
+          const rr=4+ri, r=ws.getRow(rr);
+          const isTotal=row.some(x=>{ x=cellVal(x); return typeof x==='string' && /total|outstanding/i.test(x); });
+          row.forEach((raw,ci)=>{
+            const c=r.getCell(ci+1), L=colLetter(ci+1), v=cellVal(raw);
+            let formula=null;
+            if(raw && typeof raw==='object' && raw.f){
+              if(!(dataEnd<4 && /\{r[12]\}/.test(raw.f)))
+                formula=raw.f.replace(/\{r1\}/g,4).replace(/\{r2\}/g,dataEnd).replace(/\{rr\}/g,rr).replace(/\{p1\}/g,rr-1).replace(/\{p2\}/g,rr-2).replace(/\{col\}/g,L);
+            } else if(totalIdx[ri] && typeof v==='number' && dataEnd>=4){
+              const sum=dataRows.reduce((t,rw)=>{ const x=cellVal(rw[ci]); return t+(typeof x==='number'?x:0); },0);
+              if(Math.abs(sum-v)<0.005) formula='SUBTOTAL(9,'+L+'4:'+L+dataEnd+')';
+            }
+            c.value = formula ? {formula, result:v} : v;
             c.border={top:thin,left:thin,right:thin,bottom:thin};
             if(ri%2===1 && !isTotal) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:BAND}};
             if(s.money && s.money.includes(ci+1) && typeof v==='number'){
@@ -6063,9 +6092,11 @@ async function aoaDownload(name, title, sheets){
         });
         for(let ci=1;ci<=cols;ci++){
           let w=String(s.aoa[0][ci-1]||'').length+3;
-          s.aoa.slice(1).forEach(row=>{ w=Math.max(w, String(row[ci-1]==null?'':row[ci-1]).length+3); });
+          s.aoa.slice(1).forEach(row=>{ const x=cellVal(row[ci-1]); w=Math.max(w, String(x==null?'':x).length+3); });
           ws.getColumn(ci).width=Math.min(Math.max(w,11),42);
         }
+        // Filter buttons on the header, so SUBTOTALs follow whatever rows are filtered in
+        if(dataEnd>=4) ws.autoFilter='A3:'+colLetter(cols)+dataEnd;
       });
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
@@ -6078,7 +6109,7 @@ async function aoaDownload(name, title, sheets){
     }catch(e){ toast('Excel generation failed — '+e.message); }
   }else{
     sheets.forEach(s=>{
-      const csv='\ufeff'+s.aoa.map(r=>r.map(csvEscape).join(',')).join('\n');
+      const csv='\ufeff'+s.aoa.filter(r=>!r.excelOnly).map(r=>r.map(x=>csvEscape(cellVal(x))).join(',')).join('\n');
       const blob=new Blob([csv],{type:'text/csv'});
       const a=document.createElement('a');
       a.href=URL.createObjectURL(blob);
@@ -6146,7 +6177,7 @@ function repBilling(){
     const done=completedCount(s.id,mm), billed=sumCompleted(s,mm), paid=paidMonth(s.id,mm);
     if(!done && !paid) return;
     tDone+=done; tBilled+=billed; tPaid+=paid;
-    aoa.push([monthLabel(mm),s.name,done,isUSD(s)?'$'+s.fee:s.fee,billed,paid,billed-paid]);
+    aoa.push([monthLabel(mm),s.name,done,isUSD(s)?'$'+s.fee:s.fee,billed,paid,{f:'E{rr}-F{rr}',v:billed-paid}]);
   }));
   aoa.push(['Total','',tDone,'',tBilled,tPaid,tBilled-tPaid]);
   return {name:'raga-billing-'+(m==='all'?'all':m), title:'Personal Billing Summary — '+mLbl(m),
@@ -6202,7 +6233,7 @@ function repStatement(){
   pay.push(['Total paid','',paidAllTime(st),'','']);
   if(st.cat==='Personal'){
     pay.push(['Total billed','',dueAllTime(st),'','']);
-    pay.push(['Outstanding as on '+fmtDFull(TODAY),'',outstandingFor(st),'','']);
+    pay.push(['Outstanding as on '+fmtDFull(TODAY),'',{f:'{col}{p1}-{col}{p2}',v:outstandingFor(st)},'','']);   // = Total billed \u2212 Total paid
   }
   pay.push(['','','','','']);
   pay.push(['Prepared by','','Varun M Kaginagolli','','']);
