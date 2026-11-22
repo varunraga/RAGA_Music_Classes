@@ -306,6 +306,8 @@
   .rem-list{margin:10px 0 4px}
   .rem-item{display:flex;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;background:var(--paper);font-size:.88rem}
   .rem-item .t{font-weight:700;min-width:62px}
+  .rem-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-weight:800;font-size:1.03rem;letter-spacing:.01em;padding-bottom:4px;margin:20px 0 9px;border-bottom:2px solid currentColor}
+  #remBody > .rem-head:first-child{margin-top:6px}
   .unupd-banner{display:flex;align-items:center;gap:12px;padding:11px 14px;margin:0 0 16px;border:1px solid var(--red);border-radius:11px;background:var(--card);cursor:pointer}
   .unupd-banner .ico{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
   .unupd-banner .txt{flex:1 1 auto;min-width:0;font-size:.9rem}
@@ -2273,6 +2275,7 @@
     <input id="rsPanelSearch" class="search-input" placeholder="Search student…" style="width:100%;margin-top:10px" aria-label="Search students in the Raga Shiksha tracker" autocomplete="off">
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0">
       <button type="button" class="btn tiny" data-rsrange="7">Next 7 days</button>
+      <button type="button" class="btn tiny" data-rsrange="nextweek">Next week</button>
       <button type="button" class="btn tiny" data-rsrange="30">Next 30 days</button>
       <button type="button" class="btn tiny" data-rsrange="all">All upcoming</button>
       <span style="flex:1"></span>
@@ -2294,7 +2297,7 @@
 <div class="modal-backdrop" id="m-reminder">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="remTitle">
     <h3 id="remTitle">Heads Up</h3>
-    <div class="sub">Today, tomorrow, and what's pending.</div>
+    <div class="sub" id="remSub"></div>
     <div id="remBody"></div>
     <div class="modal-foot">
       <div class="right"><button class="btn gold" id="remGotIt">Got it</button></div>
@@ -2954,15 +2957,6 @@ function ragaEntriesBetween(from, toExclusive){
 }
 const ragaSiteTodo = () => ragaSiteEntries().filter(e=>!e.v);
 const ragaSiteNoCredit = () => ragaSiteEntries().filter(e=>e.v==='nocredit');
-// Sunday nudge: how next week's (Mon-Sun) RAGA classes stand on the website, so they can all be done in one sitting.
-function ragaNextWeekSummary(){
-  if(parseD(TODAY).getDay()!==0) return null;
-  const mon=mondayOf(1), es=ragaEntriesBetween(mon, addDaysS(mon,7));
-  if(!es.length) return null;
-  const todo=es.filter(e=>!e.v), no=es.filter(e=>e.v==='nocredit');
-  const by={}; todo.forEach(e=>{ const n=rsUnitNames(e); by[n]=(by[n]||0)+1; });
-  return {n:es.length, todo:todo.length, no:no.length, names:Object.keys(by).map(k=>k+' ('+by[k]+')').join(', ')};
-}
 function rsWarn(c){
   if(c.kind==='own-lesson' || c.date<TODAY || c.date>addDaysS(TODAY,RS_MARK_DAYS)) return '';
   const u=ragaUnit(c), hit=!!(u && !u.v);
@@ -6758,6 +6752,7 @@ function renderRagaTrackerBadge(){
   b.style.display = n ? '' : 'none';
   b.textContent = n;
 }
+const remHead = (txt,color,right)=>'<div class="rem-head" style="color:'+color+'"><span>'+txt+'</span>'+(right||'')+'</div>';
 function ragaSiteSectionHTML(todo, no){
   const row=(e,isTodo)=>{
     const c=e.c, key=c.cid+'|'+e.sid;
@@ -6768,33 +6763,32 @@ function ragaSiteSectionHTML(todo, no){
       '<span style="display:flex;gap:5px;flex-wrap:wrap">'+rsBtnsHTML(e,'data-rsset',isTodo?'todo':'nocr')+
       '</span></div>';
   };
-  let h='';
   const total=todo.length+no.length;
-  if(total){
-    const n=rsPick.size;
-    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">'+
+  const n=rsPick.size;
+  const bar = !total ? '' : '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">'+
       '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:600;cursor:pointer"><input type="checkbox" data-rspickall'+(n===total?' checked':'')+'> Select all</label>'+
       (n ? '<span class="tiny" style="color:var(--muted)">'+n+' selected</span>'+
            '<button type="button" class="mat-btn" data-rsbulk="done">&#10003; Scheduled</button>'+
            '<button type="button" class="mat-btn" data-rsbulk="nocredit">No credits</button>'+
            '<button type="button" class="mat-btn" data-rsbulk="">Yet to schedule</button>' : '')+
       '</div>';
-  }
+  let h='';
   if(todo.length){
-    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px"><label style="color:var(--red);font-weight:700;font-size:.85rem">&#9888; Not yet scheduled on Raga Shiksha website &mdash; '+todo.length+'</label>'+rsLink('Schedule now')+'</div>'+
-      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Students aren&#39;t notified (and can&#39;t attend) until each class is also scheduled on ragashiksha.com. Reminders start 3 days before each class. A batch class counts once &mdash; you book both students together.</div>'+
-      '<div class="rem-list">'+todo.map(e=>row(e,true)).join('')+'</div>';
+    h+=remHead('Not yet scheduled on Raga Shiksha \u2014 '+todo.length,'#C2410C',rsLink('Schedule now'))+
+      '<div class="tiny" style="color:var(--muted);margin-bottom:8px">Students aren&#39;t notified (and can&#39;t attend) until each class is also scheduled on ragashiksha.com. Reminders start 3 days before each class. A batch class counts once &mdash; you book both students together.</div>'+
+      bar+'<div class="rem-list">'+todo.map(e=>row(e,true)).join('')+'</div>';
   }
   if(no.length){
-    h+='<div style="margin:6px 0 4px"><label style="font-weight:700;font-size:.85rem">&#128179; No credits yet &mdash; '+no.length+'</label></div>'+
-      '<div class="tiny" style="color:var(--muted);margin-bottom:6px">Can&#39;t be scheduled on the website until the student has credits &mdash; for a batch class, until both students do.</div>'+
-      '<div class="rem-list">'+no.map(e=>row(e,false)).join('')+'</div>';
+    h+=remHead('No credits yet \u2014 '+no.length,'var(--gold-ink)')+
+      '<div class="tiny" style="color:var(--muted);margin-bottom:8px">Can&#39;t be scheduled on the website until the student has credits &mdash; for a batch class, until both students do.</div>'+
+      (todo.length ? '' : bar)+'<div class="rem-list">'+no.map(e=>row(e,false)).join('')+'</div>';
   }
   return h;
 }
 /* ---------- Raga Shiksha tracker: all upcoming RAGA classes grouped by student ---------- */
 let rsPanelRange = '30';
 function rsPanelEntries(){
+  if(rsPanelRange==='nextweek'){ const mon=mondayOf(1); return ragaEntriesBetween(mon, addDaysS(mon,7)); }   // Monday–Sunday of next week
   const to = rsPanelRange==='7' ? addDaysS(TODAY,8) : rsPanelRange==='30' ? addDaysS(TODAY,31) : '9999-12-31';
   return ragaEntriesBetween(TODAY, to);
 }
@@ -6824,6 +6818,14 @@ function renderRsPanel(){
   // 1) Needs attention: exactly the classes counted in the badge (next 3 days: yet to schedule + no credits), earliest first
   const attn=ragaSiteTodo().concat(ragaSiteNoCredit()).filter(e=>nameOk(e)&&statOk(e)).sort(byDate);
   let html='';
+  // Summary for whichever range is selected (use "Next week" to plan the week ahead in one sitting)
+  const sumBase=rsPanelEntries().filter(nameOk);
+  if(sumBase.length){
+    const cy=sumBase.filter(e=>!e.v).length, cn=sumBase.filter(e=>e.v==='nocredit').length, cd=sumBase.filter(e=>e.v==='done').length;
+    const lbl = rsPanelRange==='nextweek' ? 'Next week ('+fmtD(mondayOf(1))+' \u2013 '+fmtD(addDaysS(mondayOf(1),6))+')' : ({'7':'Next 7 days','30':'Next 30 days',all:'All upcoming'}[rsPanelRange]||'');
+    html+='<div style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.88rem"><b>'+lbl+'</b> \u2014 <b>'+sumBase.length+'</b> class'+(sumBase.length===1?'':'es')+': '+
+      '<span style="color:var(--red);font-weight:700">'+cy+' not yet scheduled</span>'+(cn?' \u00b7 '+cn+' waiting on credits':'')+' \u00b7 <span style="color:var(--green);font-weight:700">'+cd+' scheduled</span></div>';
+  }
   if(attn.length) html+=card('<b style="color:var(--red)">&#9888; Needs attention &mdash; '+attn.length+'</b>',
     'Next '+RS_ALERT_DAYS+' days &middot; not yet scheduled or waiting on credits', attn.map(e=>rsRowHTML(e,true)).join(''), 'var(--red)');
 
@@ -6856,7 +6858,7 @@ function renderRsPanel(){
   }
   body.innerHTML=html;
 }
-$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus.clear(); renderRsPanel(); openModal('m-raga-site'); });
+$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus.clear(); if(parseD(TODAY).getDay()===0) rsPanelRange='nextweek'; renderRsPanel(); openModal('m-raga-site'); });
 $('#rsPanelSearch').addEventListener('input', renderRsPanel);
 $('#m-raga-site').addEventListener('click',e=>{
   const keep=fn=>{ const m=$('#m-raga-site .modal'), y=m?m.scrollTop:0; fn(); if(m) m.scrollTop=y; };
@@ -6891,13 +6893,13 @@ function reminderState(){
   const needCount = dow!==1 ? studentsNeedingSchedule(mon0).length : 0; // quiet Mon only; visible Tue through Sun
   const needUrgent = dow===5||dow===6||dow===0; // Fri, Sat, Sun
   const matP = materialPending();
-  return {t,tm,un,bOver,needCount,needUrgent,matP,rsTodo:ragaSiteTodo(),rsNo:ragaSiteNoCredit(),rsWeek:ragaNextWeekSummary()};
+  return {t,tm,un,bOver,needCount,needUrgent,matP,rsTodo:ragaSiteTodo(),rsNo:ragaSiteNoCredit()};
 }
 // Number on the Dashboard's Heads Up button: how many kinds of thing currently need attention.
 function renderHeadsUpBtn(){
   const b=$('#headsUpCount'); if(!b) return;
   const r=reminderState();
-  const n=(r.un.length?1:0)+(r.bOver?1:0)+(r.needCount?1:0)+((r.matP.overdue||r.matP.today)?1:0)+((r.rsTodo.length||r.rsNo.length||(r.rsWeek&&(r.rsWeek.todo||r.rsWeek.no)))?1:0);
+  const n=(r.un.length?1:0)+(r.bOver?1:0)+(r.needCount?1:0)+((r.matP.overdue||r.matP.today)?1:0)+((r.rsTodo.length||r.rsNo.length)?1:0);
   b.style.display = n ? '' : 'none';
   b.textContent = n;
 }
@@ -6913,54 +6915,52 @@ function maybeShowReminder(manual){
 }
 // Builds the pop-up body. Returns false when there is nothing to show (and it wasn't opened manually).
 function fillReminder(manual){
-  const {t,tm,un,bOver,needCount,needUrgent,matP,rsTodo,rsNo,rsWeek} = reminderState();
-  const weekOpen = !!(rsWeek && (rsWeek.todo || rsWeek.no));
-  const nothing = !t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length && !rsTodo.length && !rsNo.length && !weekOpen;
+  const {t,tm,un,bOver,needCount,needUrgent,matP,rsTodo,rsNo} = reminderState();
+  const nothing = !t.length && !tm.length && !bOver && !needCount && !matP.today && !matP.overdue && !un.length && !rsTodo.length && !rsNo.length;
   if(nothing && !manual) return false;
+  $('#remSub').textContent = fmtDFull(TODAY);
   const item = c => '<div class="rem-item"><span class="t num">'+fmtTime12(c.time)+'</span>'+
     '<span><b>'+esc(sessionNames(c))+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</span>'+
     '<span class="badge '+(c.mode==='Online'?'online':'offline')+'" style="margin-left:auto">'+c.mode+'</span></div>';
   let html='';
-  if(manual && !un.length && !bOver && !needCount && !matP.today && !matP.overdue && !rsTodo.length && !rsNo.length && !weekOpen) html += '<div class="rem-item" style="border-color:var(--green)"><span class="t">&#10003;</span><span><b>All clear</b> \u2014 nothing pending right now.</span></div>';
+  if(manual && !un.length && !bOver && !needCount && !matP.today && !matP.overdue && !rsTodo.length && !rsNo.length)
+    html += '<div class="rem-item" style="border-color:var(--green)"><span class="t">&#10003;</span><span><b>All clear</b> \u2014 nothing pending right now.</span></div>';
+  // Order: what is happening soonest first, then housekeeping, then website scheduling, then the occasional extras.
+  html += remHead('Today\u2019s classes \u2014 '+t.length,'var(--green)');
+  html += t.length ? '<div class="rem-list">'+t.map(item).join('')+'</div>' : '<div class="muted" style="font-size:.85rem">Nothing scheduled today.</div>';
+  html += remHead('Tomorrow\u2019s classes \u2014 '+tm.length,'var(--purple)');
+  html += tm.length ? '<div class="rem-list">'+tm.map(item).join('')+'</div>' : '<div class="muted" style="font-size:.85rem">Nothing scheduled tomorrow.</div>';
   if(un.length){
     const shown=un.slice(0,4);
-    html += '<div class="field" style="margin-bottom:4px"><label style="color:var(--red)">&#9888; Status not updated · '+un.length+' class'+(un.length===1?'':'es')+'</label></div>'+
+    html += remHead('Status not updated \u2014 '+un.length+' class'+(un.length===1?'':'es'),'var(--red)')+
       '<div class="rem-list" id="remUnupd">'+shown.map(c=>unupdatedItemHTML(c)).join('')+'</div>'+
-      '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:12px">'+(un.length>shown.length ? '+ '+(un.length-shown.length)+' more — view all &amp; ' : '')+'Update in bulk</button>';
+      '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:4px">'+(un.length>shown.length ? '+ '+(un.length-shown.length)+' more \u2014 view all &amp; ' : '')+'Update in bulk</button>';
   }
-  if(rsWeek){
-    html += '<div class="rem-item" style="flex-wrap:wrap;gap:8px 12px"><span class="t" style="min-width:90px">Next week</span>'+
-      '<span style="flex:1 1 170px;min-width:0"><b>'+rsWeek.n+' Raga Shiksha class'+(rsWeek.n===1?'':'es')+'</b> &mdash; '+
-      (rsWeek.todo ? '<span style="color:var(--red);font-weight:700">'+rsWeek.todo+' not yet scheduled on the website</span>' : '<span style="color:var(--green);font-weight:700">all scheduled &#10003;</span>')+
-      (rsWeek.no ? ' &middot; '+rsWeek.no+' waiting on credits' : '')+
-      (rsWeek.names ? '<div class="tiny" style="color:var(--muted);margin-top:2px">'+esc(rsWeek.names)+'</div>' : '')+'</span>'+
-      (rsWeek.todo ? rsLink('Schedule now') : '')+'</div>';
+  if(matP.overdue){
+    html += remHead('Material pending to send','#0E7490')+
+      '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
+      '<span><b>'+matP.overdue+' class'+(matP.overdue===1?'':'es')+' overdue for material</b> \u2014 recording/notation not yet sent</span>'+
+      '<button class="btn tiny" style="margin-left:auto" id="remGoMat">Review</button></div>';
+  } else if(matP.today){
+    html += remHead('Material pending to send','#0E7490')+
+      '<div class="rem-item" style="border-color:var(--gold)"><span class="t">&#9834;</span>'+
+      '<span><b>'+matP.today+' class'+(matP.today===1?'':'es')+' today still need material sent</b></span>'+
+      '<button class="btn tiny" style="margin-left:auto" id="remGoMat">Review</button></div>';
   }
   html += ragaSiteSectionHTML(rsTodo, rsNo);
   if(bOver){
     const bd=backupDays();
-    html += '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
-      '<span><b>Backup overdue</b> — '+(bd===null?'never backed up':'last export '+bd+' days ago')+'</span>'+
+    html += remHead('Data backup','var(--red)')+
+      '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
+      '<span><b>Backup overdue</b> \u2014 '+(bd===null?'never backed up':'last export '+bd+' days ago')+'</span>'+
       '<button class="btn tiny" style="margin-left:auto" id="remBackup">Back up now</button></div>';
   }
   if(needCount){
-    html += '<div class="rem-item" style="border-color:'+(needUrgent?'var(--red)':'var(--gold)')+'"><span class="t">'+(needUrgent?'!':'&#128197;')+'</span>'+
-      '<span><b>'+needCount+' student'+(needCount===1?'':'s')+' not yet scheduled this week</b>'+(needUrgent?' — week closes Sunday':'')+'</span>'+
+    html += remHead('This week\u2019s scheduling','var(--purple)')+
+      '<div class="rem-item" style="border-color:'+(needUrgent?'var(--red)':'var(--gold)')+'"><span class="t">'+(needUrgent?'!':'&#128197;')+'</span>'+
+      '<span><b>'+needCount+' student'+(needCount===1?'':'s')+' not yet scheduled this week</b>'+(needUrgent?' \u2014 week closes Sunday':'')+'</span>'+
       '<button class="btn tiny" style="margin-left:auto" id="remGoWeek">Review</button></div>';
   }
-  if(matP.overdue){
-    html += '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
-      '<span><b>'+matP.overdue+' class'+(matP.overdue===1?'':'es')+' overdue for material</b> — recording/notation not yet sent</span>'+
-      '<button class="btn tiny" style="margin-left:auto" id="remGoMat">Review</button></div>';
-  } else if(matP.today){
-    html += '<div class="rem-item" style="border-color:var(--gold)"><span class="t">&#9834;</span>'+
-      '<span><b>'+matP.today+' class'+(matP.today===1?'':'es')+' today still need material sent</b></span>'+
-      '<button class="btn tiny" style="margin-left:auto" id="remGoMat">Review</button></div>';
-  }
-  html += '<div class="field" style="margin-bottom:4px"><label>Today · '+t.length+' class'+(t.length===1?'':'es')+'</label></div>';
-  html += t.length ? '<div class="rem-list">'+t.map(item).join('')+'</div>' : '<div class="muted" style="font-size:.85rem;margin-bottom:10px">Nothing scheduled today.</div>';
-  html += '<div class="field" style="margin:10px 0 4px"><label>Tomorrow · '+tm.length+' class'+(tm.length===1?'':'es')+'</label></div>';
-  html += tm.length ? '<div class="rem-list">'+tm.map(item).join('')+'</div>' : '<div class="muted" style="font-size:.85rem">Nothing scheduled tomorrow.</div>';
   $('#remBody').innerHTML=html;
   const gw=$('#remGoWeek'); if(gw) gw.addEventListener('click',()=>{ closeModal('m-reminder'); goAndHighlight('calendar','#weekCheckPanel'); });
   const gm=$('#remGoMat'); if(gm) gm.addEventListener('click',()=>{ closeModal('m-reminder'); openAllCompleted('pending'); });
