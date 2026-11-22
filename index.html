@@ -2223,11 +2223,23 @@
     <div class="sub">Same style as your other reports &mdash; download as Excel, or open a print-ready page to save as PDF.</div>
     <div class="field" style="margin-top:12px"><label>What to export</label>
       <div id="calExpKindWrap" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
-        <button type="button" class="exp-opt on" data-calexp="week"><span class="exp-ico">&#128197;</span><b>A week&#39;s classes</b><span class="exp-sub">Every class scheduled in a week you pick</span></button>
+        <button type="button" class="exp-opt on" data-calexp="range"><span class="exp-ico">&#128197;</span><b>Classes by date</b><span class="exp-sub">A week, a month or any date range</span></button>
         <button type="button" class="exp-opt" data-calexp="series"><span class="exp-ico">&#128257;</span><b>Repeating classes</b><span class="exp-sub">All weekly series, as of a date</span></button>
       </div>
     </div>
-    <div class="field" id="calExpWeekField"><label for="calExpDate">Pick any date in the week</label><input id="calExpDate" type="date"><div class="tiny" id="calExpWeekHint" style="color:var(--muted);margin-top:4px"></div></div>
+    <div class="field" id="calExpWeekField">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label for="calExpFrom">From</label><input id="calExpFrom" type="date"></div>
+        <div><label for="calExpTo">To</label><input id="calExpTo" type="date"></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+        <button type="button" class="btn tiny" data-calexprange="thisweek">This week</button>
+        <button type="button" class="btn tiny" data-calexprange="nextweek">Next week</button>
+        <button type="button" class="btn tiny" data-calexprange="thismonth">This month</button>
+        <button type="button" class="btn tiny" data-calexprange="next30">Next 30 days</button>
+      </div>
+      <div class="tiny" id="calExpWeekHint" style="color:var(--muted);margin-top:8px"></div>
+    </div>
     <div class="field" id="calExpSeriesField" style="display:none"><label for="calExpAsOf">As of</label><input id="calExpAsOf" type="date"><div class="tiny" id="calExpSeriesHint" style="color:var(--muted);margin-top:4px"></div></div>
     <div class="modal-foot">
       <button class="btn" data-close="m-cal-export">Cancel</button>
@@ -4586,31 +4598,38 @@ $('#btnSeriesMgr').addEventListener('click',()=>{ $('#serSearch').value=''; serB
 
 /* ---------- Schedule exports (Excel + PDF) ---------- */
 const classFormat = c => (c.kind!=='own-lesson' && c.studentIds.length>1) ? 'Paired (batch)' : 'Individual';
-function calExportWeekData(anyDate){
-  const mon=mondayOfDate(anyDate), end=addDaysS(mon,7);
+function calExportRangeData(from, to){
+  const end=addDaysS(to,1);
   const aoa=[['S.No','Date','Day','Timings','Duration (min)','Student','Type','Class format','Mode','Fee per class (\u20B9)','Status','Lesson details (topic)','Revision / homework','Repeats weekly','Raga Shiksha website']];
-  let n=0, fees=0;
-  S.classes.filter(c=>c.date>=mon && c.date<end).sort(byDateTime).forEach(c=>{
+  let n=0, collect=0, nDone=0, expected=0, nSched=0;   // collectable = Completed classes only; expected = still-scheduled classes
+  S.classes.filter(c=>c.date>=from && c.date<end).sort(byDateTime).forEach(c=>{
     if(c.kind==='own-lesson'){
       const stat=c.ownStatus||'Scheduled';
       aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,fullNamesOf(c),'My lesson','Individual',c.mode||'',c.feeAmount!=null?c.feeAmount:'',stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No','']);
-      n++; if(typeof c.feeAmount==='number' && stat!=='Cancelled') fees+=c.feeAmount;
+      n++;   // your own lessons are fees you pay, not fees you collect, so they stay out of the totals
       return;
     }
     c.studentIds.forEach(sid=>{
       const st=sById(sid); if(!st) return;
       const partner=c.studentIds.filter(x=>x!==sid).map(firstName).join(', ');
       const stat=c.att[sid]||'Scheduled';
-      const actual=stat==='Completed' ? classINR(c,sid) : null;
-      const fee = actual!=null ? actual : (isUSD(st) ? '$'+unitFee(st,c.mode) : unitFee(st,c.mode));
+      // Only Completed classes are billed. Scheduled ones show the expected rate; Absent / Cancelled show 0 (not billed).
+      const rate = isUSD(st) ? '$'+unitFee(st,c.mode) : unitFee(st,c.mode);
+      let fee;
+      if(stat==='Completed'){ const actual=classINR(c,sid); fee = actual!=null ? actual : rate; }
+      else if(stat==='Scheduled') fee = rate;
+      else fee = 0;
       aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,st.name+(partner?' (with '+partner+')':''),st.cat==='RAGA'?'RAGA':'Personal',classFormat(c),c.mode||'',fee,stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No',
         (st.cat==='RAGA' && stat==='Scheduled') ? rsWebText(c,sid) : '']);
-      n++; if(typeof fee==='number' && !CANC.includes(stat)) fees+=fee;
+      n++;
+      if(typeof fee==='number'){ if(stat==='Completed'){ collect+=fee; nDone++; } else if(stat==='Scheduled'){ expected+=fee; nSched++; } }
     });
   });
   if(!n) return null;
-  aoa.push(['','','','','','Total ('+n+' entr'+(n===1?'y':'ies')+')','','','',fees,'','','','','']);
-  return {name:'raga-week-schedule-'+mon, title:'Weekly Schedule \u2014 '+fmtDFull(mon)+' to '+fmtDFull(addDaysS(mon,6)), sheets:[{name:'Week schedule', aoa, money:[10]}]};
+  aoa.push(['','','','','','Total collectable \u2014 completed classes ('+nDone+')','','','',collect,'','','','','']);
+  if(nSched) aoa.push(['','','','','','Total expected \u2014 scheduled classes ('+nSched+')','','','',expected,'','','','','']);
+  const isWeek = parseD(from).getDay()===1 && to===addDaysS(from,6);   // exactly Monday\u2013Sunday keeps the "Weekly Schedule" wording
+  return {name:(isWeek?'raga-week-schedule-'+from:'raga-schedule-'+from+'_to_'+to), title:(isWeek?'Weekly Schedule':'Class Schedule')+' \u2014 '+fmtDFull(from)+' to '+fmtDFull(to), sheets:[{name:isWeek?'Week schedule':'Class schedule', aoa, money:[10]}]};
 }
 function calExportSeriesData(asOf){
   const sum=[['S.No','Student(s)','Type','Class format','Day','Timings','Duration (min)','Mode','Fee per class (\u20B9)','Started on','Repeats until','Classes remaining','Next class','Last lesson covered','Revision / homework given','Raga Shiksha website']];
@@ -4659,40 +4678,54 @@ function calReportHtml(data){
     data.sheets.map(sh=>(data.sheets.length>1?'<h3 style="margin:12px 0 4px;font-family:Marcellus,serif;color:#0D3B2B">'+esc(sh.name)+'</h3>':'')+tbl(sh)).join('')+
     '<div class="sig-block"><div class="sig-name">Varun M Kaginagolli</div><div class="sig-label">For RAGA Music Classes</div></div>';
 }
-let calExpKind = 'week';
+let calExpKind = 'range';
+const daysBetween = (f,t) => Math.round((parseD(t)-parseD(f))/86400000);
 function calExportData(){
-  const kind=calExpKind;
-  if(kind==='week'){
-    const d=$('#calExpDate').value; if(!d){ toast('Pick a date in the week'); return null; }
-    const data=calExportWeekData(d); if(!data){ toast('No classes scheduled in that week'); return null; }
+  if(calExpKind==='range'){
+    const f=$('#calExpFrom').value, t=$('#calExpTo').value;
+    if(!f || !t){ toast('Pick both the From and To dates'); return null; }
+    if(t<f){ toast('The To date must be on or after the From date'); return null; }
+    if(daysBetween(f,t)>366){ toast('Pick a range of up to 12 months'); return null; }
+    const data=calExportRangeData(f,t); if(!data){ toast('No classes scheduled in that period'); return null; }
     return data;
   }
   const a=$('#calExpAsOf').value; if(!a){ toast('Pick an \u201cas of\u201d date'); return null; }
   const data=calExportSeriesData(a); if(!data){ toast('No repeating classes on or after that date'); return null; }
   return data;
 }
+function calExpPreset(k){
+  let f,t;
+  if(k==='thisweek'){ f=mondayOf(0); t=addDaysS(f,6); }
+  else if(k==='nextweek'){ f=mondayOf(1); t=addDaysS(f,6); }
+  else if(k==='thismonth'){ const d=parseD(TODAY); f=dstr(new Date(d.getFullYear(),d.getMonth(),1)); t=dstr(new Date(d.getFullYear(),d.getMonth()+1,0)); }
+  else { f=TODAY; t=addDaysS(TODAY,29); }
+  $('#calExpFrom').value=f; $('#calExpTo').value=t; calExpRefreshHints();
+}
 function calExpRefreshHints(){
   const kind=calExpKind;
   $$('#m-cal-export [data-calexp]').forEach(b=>b.classList.toggle('on', b.dataset.calexp===kind));
-  $('#calExpWeekField').style.display = kind==='week' ? '' : 'none';
+  $('#calExpWeekField').style.display = kind==='range' ? '' : 'none';
   $('#calExpSeriesField').style.display = kind==='series' ? '' : 'none';
-  const d=$('#calExpDate').value;
-  if(d){
-    const mon=mondayOfDate(d), end=addDaysS(mon,7), n=S.classes.filter(c=>c.date>=mon && c.date<end).length;
-    $('#calExpWeekHint').textContent='Week: '+fmtD(mon)+' \u2013 '+fmtD(addDaysS(mon,6))+' \u00b7 '+n+' class'+(n===1?'':'es');
-  } else $('#calExpWeekHint').textContent='';
+  const f=$('#calExpFrom').value, t=$('#calExpTo').value;
+  if(f && t && t>=f){
+    const n=S.classes.filter(c=>c.date>=f && c.date<=t).length, d=daysBetween(f,t)+1;
+    $('#calExpWeekHint').textContent=fmtD(f)+' \u2013 '+fmtD(t)+' \u00b7 '+d+' day'+(d===1?'':'s')+' \u00b7 '+n+' class'+(n===1?'':'es');
+  } else $('#calExpWeekHint').textContent = (f && t) ? 'The To date must be on or after the From date.' : '';
   const a=$('#calExpAsOf').value;
   if(a){ const n=seriesAll().filter(sr=>sr.list.some(c=>c.date>=a)).length; $('#calExpSeriesHint').textContent=n+' repeating series on or after this date.'; }
   else $('#calExpSeriesHint').textContent='';
 }
 $('#btnCalExport').addEventListener('click',()=>{
-  $('#calExpDate').value = mondayOf(weekOffset);      // the week currently shown on the calendar
+  const mon=mondayOf(weekOffset);                      // start with the week currently shown on the calendar
+  $('#calExpFrom').value=mon; $('#calExpTo').value=addDaysS(mon,6);
   $('#calExpAsOf').value = TODAY;
-  calExpKind = 'week';
+  calExpKind = 'range';
   calExpRefreshHints(); openModal('m-cal-export');
 });
 $$('#m-cal-export [data-calexp]').forEach(b=>b.addEventListener('click',()=>{ calExpKind=b.dataset.calexp; calExpRefreshHints(); }));
-$('#calExpDate').addEventListener('input',calExpRefreshHints);
+$$('#m-cal-export [data-calexprange]').forEach(b=>b.addEventListener('click',()=>calExpPreset(b.dataset.calexprange)));
+$('#calExpFrom').addEventListener('input',()=>{ const f=$('#calExpFrom').value, t=$('#calExpTo').value; if(f && (!t || t<f)) $('#calExpTo').value=f; calExpRefreshHints(); });
+$('#calExpTo').addEventListener('input',calExpRefreshHints);
 $('#calExpAsOf').addEventListener('input',calExpRefreshHints);
 $('#calExpXlsx').addEventListener('click',()=>{
   const data=calExportData(); if(!data) return;
@@ -6826,15 +6859,18 @@ function renderRsPanel(){
     html+='<div style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.88rem"><b>'+lbl+'</b> \u2014 <b>'+sumBase.length+'</b> class'+(sumBase.length===1?'':'es')+': '+
       '<span style="color:var(--red);font-weight:700">'+cy+' not yet scheduled</span>'+(cn?' \u00b7 '+cn+' waiting on credits':'')+' \u00b7 <span style="color:var(--green);font-weight:700">'+cd+' scheduled</span></div>';
   }
-  if(attn.length) html+=card('<b style="color:var(--red)">&#9888; Needs attention &mdash; '+attn.length+'</b>',
-    'Next '+RS_ALERT_DAYS+' days &middot; not yet scheduled or waiting on credits', attn.map(e=>rsRowHTML(e,true)).join(''), 'var(--red)');
+  const rowsBox=(rows,col)=>'<div style="border:1px solid '+col+';border-radius:12px;margin:0 0 12px;overflow:hidden"><div style="margin-top:-1px">'+rows+'</div></div>';
+  if(attn.length) html+=remHead('Needs attention \u2014 '+attn.length,'#C2410C')+
+    '<div class="tiny" style="color:var(--muted);margin-bottom:8px">Next '+RS_ALERT_DAYS+' days &middot; not yet scheduled or waiting on credits</div>'+
+    rowsBox(attn.map(e=>rsRowHTML(e,true)).join(''),'#C2410C');
 
   // 2) Everyone in the chosen range
   const base=rsPanelEntries().filter(nameOk), shown=base.filter(statOk);
   if(shown.length){
     if(rsPanelSort==='date'){
-      html+='<div style="font-weight:700;margin:14px 0 8px">All classes &mdash; earliest first</div>'+
-        card('<span class="tiny" style="color:var(--muted)">'+shown.length+' class'+(shown.length===1?'':'es')+'</span>','',shown.slice().sort(byDate).map(e=>rsRowHTML(e,true)).join(''));
+      html+=remHead('All classes \u2014 earliest first','var(--purple)')+
+        '<div class="tiny" style="color:var(--muted);margin-bottom:8px">'+shown.length+' class'+(shown.length===1?'':'es')+'</div>'+
+        rowsBox(shown.slice().sort(byDate).map(e=>rsRowHTML(e,true)).join(''),'var(--line)');
     } else {
       const groups={}; base.forEach(e=>{ (groups[rsGroupKey(e)]=groups[rsGroupKey(e)]||[]).push(e); });
       const keys=Object.keys(groups).filter(k=>groups[k].some(statOk)).sort((a,b)=>rsNm(groups[a][0]).localeCompare(rsNm(groups[b][0])));
@@ -6849,8 +6885,8 @@ function renderRsPanel(){
           '</div>'+g.filter(statOk).sort(byDate).map(e=>rsRowHTML(e,false)).join('')+'</div>';
       };
       const solo=keys.filter(k=>k[0]==='S'), pairs=keys.filter(k=>k[0]==='B');
-      if(solo.length) html+='<div style="font-weight:700;margin:14px 0 8px">All students</div>'+solo.map(cardFor).join('');
-      if(pairs.length) html+='<div style="font-weight:700;margin:14px 0 2px">Paired / batch classes</div><div class="tiny" style="color:var(--muted);margin-bottom:8px">Booked on the website once, with both students together &mdash; if either has no credits the class can&#39;t be scheduled.</div>'+pairs.map(cardFor).join('');
+      if(solo.length) html+=remHead('All students','var(--purple)')+solo.map(cardFor).join('');
+      if(pairs.length) html+=remHead('Paired / batch classes','#0E7490')+'<div class="tiny" style="color:var(--muted);margin-bottom:8px">Booked on the website once, with both students together &mdash; if either has no credits the class can&#39;t be scheduled.</div>'+pairs.map(cardFor).join('');
     }
   }
   if(!html){
