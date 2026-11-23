@@ -566,6 +566,17 @@
   .rs-warn{color:var(--red);font-weight:800}
   .cal-ev .rs-warn,.tl-block .rs-warn{position:absolute;top:2px;right:3px;z-index:4;font-size:.8rem;line-height:1;padding:1px 2px!important;border-radius:4px;background:rgba(255,255,255,.88)}
   .cal-ev.has-rs b,.tl-block.has-rs b{padding-right:20px}
+  .cal-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0 0 14px}
+  .cal-summary .cs-title{grid-column:1/-1;font-weight:700;font-size:.85rem;color:var(--muted)}
+  .cs-tile{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px}
+  .cs-label{font-size:.66rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+  .cs-val{font-size:1.5rem;font-weight:800;line-height:1.25;color:var(--ink)}
+  .cs-sub{font-size:.76rem;color:var(--muted);line-height:1.4}
+  .cal-ghost{position:fixed!important;right:auto!important;bottom:auto!important;z-index:9999;pointer-events:none;opacity:.93;margin:0;box-shadow:0 10px 26px rgba(0,0,0,.28)}
+  .cal-drop{position:fixed;z-index:9998;pointer-events:none;box-sizing:border-box;border:2px dashed var(--gold);background:rgba(200,150,40,.15);border-radius:7px;font-size:.68rem;font-weight:800;color:var(--gold-ink);padding:2px 6px;overflow:hidden;line-height:1.2}
+  .cal-drop.bad{border-color:var(--red);background:rgba(201,76,76,.13);color:var(--red)}
+  body.cal-dragging{user-select:none;-webkit-user-select:none;cursor:grabbing}
+  body.cal-dragging .cal-ev{cursor:grabbing}
   #btnSeriesMgr .badge.hold{background:#fff!important;color:#B45309!important;border:none!important;font-weight:800;min-width:22px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.18)}
   #calExpWeekField,#calExpSeriesField{margin-top:20px}
   .exp-opt{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
@@ -976,13 +987,14 @@
           <div class="panel-head"><h3>This week\'s scheduling</h3><span class="hint" id="weekCheckHint"></span></div>
           <div class="wchk-body" id="weekCheckList"></div>
         </div>
+        <div class="cal-summary" id="calSummary"></div>
         <div class="cal-swipe-hint">&harr; Swipe sideways to see more days</div>
         <div class="cal-scroll">
           <div class="cal-grid" id="calGrid"></div>
           <div class="mcal" id="mcalGrid" style="display:none"></div>
         </div>
         <div class="empty" id="calEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="12" cy="15.5" r="1.7" fill="currentColor" stroke="none"/></svg>Nothing on the calendar yet — click "Schedule class" to book the first one.</div>
-        <div class="note">Click any class to edit it, change attendance, or cancel. Batch classes show both students in one block.</div>
+        <div class="note">Click any class to edit it, change attendance, or cancel. Batch classes show both students in one block. Drag a scheduled class (press and hold on a phone) to move it \u2014 in month view it keeps its time and moves to the day you drop it on.</div>
       </div>
     </section>
 
@@ -1555,6 +1567,18 @@
         <input id="fTime" type="time" value="17:00">
       </div>
       <div class="field"><label for="fDur">Duration (min)</label><select id="fDur"><option>30</option><option>45</option><option selected>60</option><option>90</option></select></div>
+      <div class="field span2" id="slotFinderWrap">
+        <button type="button" class="btn small" id="slotFinderBtn">&#128269; Find free slots in my week</button>
+        <div id="slotFinderPanel" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.82rem;margin-bottom:6px">
+            <span>Between</span><input type="time" id="slotFrom" style="width:auto"><span>and</span><input type="time" id="slotTo" style="width:auto">
+            <span>&middot; gap between classes</span>
+            <select id="slotGap" style="width:auto"><option value="0">none</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option></select>
+          </div>
+          <div class="tiny" id="slotFinderNote" style="color:var(--muted);margin-bottom:6px"></div>
+          <div id="slotFinderList"></div>
+        </div>
+      </div>
       <div class="field"><label for="fCurrency">Fee currency</label><select id="fCurrency"><option value="INR">₹ INR</option><option value="USD">$ USD</option></select></div>
       <div class="field" id="feeField"><label for="fFee">Offline fee per class (₹) *</label><input id="fFee" type="number" min="0" placeholder="e.g. 800"></div>
       <div class="field" id="feeOnlineField"><label for="fFeeOnline">Online fee per class (₹)</label><input id="fFeeOnline" type="number" min="0" placeholder="same as offline if left blank"></div>
@@ -3502,6 +3526,72 @@ function refreshCountryDatalist(){
   const vals = Array.from(new Set(S.students.map(s=>s.country).filter(Boolean)));
   $('#dlCountry').innerHTML = vals.map(v=>'<option value="'+esc(v)+'">').join('');
 }
+/* ---------- Free-slot finder (Add / Edit student) ---------- */
+// A weekly slot counts as free only if nothing is booked in it on ANY of the next 4 weeks (one-off classes block it too).
+function slotBusyByDay(){
+  const end=addDaysS(TODAY,28), busy={0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+  S.classes.forEach(c=>{
+    if(c.date<TODAY || c.date>=end || sessionStatus(c)==='cancelled') return;
+    if(editingStudentId && c.kind!=='own-lesson' && c.studentIds.includes(editingStudentId)) return;   // editing: their own slot counts as free
+    const a=toMin(c.time); busy[parseD(c.date).getDay()].push([a,a+c.dur]);
+  });
+  return busy;
+}
+function computeFreeSlots(dur,from,to,gap){
+  const busy=slotBusyByDay(), out={};
+  for(let d=0;d<7;d++){
+    const iv=busy[d].map(([a,b])=>[a-gap,b+gap]).sort((x,y)=>x[0]-y[0]), merged=[];
+    iv.forEach(x=>{ const l=merged[merged.length-1]; if(l && x[0]<=l[1]) l[1]=Math.max(l[1],x[1]); else merged.push(x.slice()); });
+    let cur=from; const free=[];
+    const push=(a,b)=>{ const st=Math.ceil(a/15)*15; if(b-st>=dur) free.push([st,b]); };
+    merged.forEach(([a,b])=>{ if(a>cur) push(cur,Math.min(a,to)); cur=Math.max(cur,b); });
+    if(to>cur) push(cur,to);
+    out[d]=free;
+  }
+  return out;
+}
+function renderSlotFinder(){
+  const list=$('#slotFinderList'); if(!list) return;
+  const dur=+$('#fDur').value||60, from=toMin($('#slotFrom').value||'06:00'), to=toMin($('#slotTo').value||'21:30'), gap=+$('#slotGap').value||0;
+  if(to-from<dur){ list.innerHTML='<div class="tiny" style="color:var(--red)">The time window is shorter than one class.</div>'; return; }
+  const free=computeFreeSlots(dur,from,to,gap);
+  const curDay=+$('#fDay').value, curT=$('#fTimeMode').value==='specific' ? toMin($('#fTime').value||'00:00') : -1;
+  const hm=m=>pad(Math.floor(m/60))+':'+pad(m%60);
+  let total=0;
+  list.innerHTML=[1,2,3,4,5,6,0].map(d=>{
+    const w=free[d]; total+=w.length;
+    const chips=w.length ? w.map(([a,b])=>{
+      const on = d===curDay && curT>=a && curT+dur<=b;
+      return '<button type="button" class="btn tiny'+(on?' gold':'')+'" data-slotday="'+d+'" data-slotstart="'+a+'" title="Starts at '+fmtTime12(hm(a))+' \u2014 a '+dur+'-minute class fits until '+fmtTime12(hm(b))+'">'+fmtTime12(hm(a))+' \u2013 '+fmtTime12(hm(b))+'</button>';
+    }).join('') : '<span class="tiny" style="color:var(--muted)">Fully booked</span>';
+    return '<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line)"><b style="width:40px;flex:0 0 auto;padding-top:3px">'+DAYS[d].slice(0,3)+'</b><div style="display:flex;flex-wrap:wrap;gap:6px">'+chips+'</div></div>';
+  }).join('');
+  $('#slotFinderNote').textContent='Free windows for a '+dur+'-minute class, checked against every class in the next 4 weeks. Tap a window to set the day and start time.';
+}
+function slotFinderSyncInputs(){
+  $('#slotFrom').value = S.meta.slotFrom || '06:00';
+  $('#slotTo').value   = S.meta.slotTo   || '21:30';
+  $('#slotGap').value  = String(S.meta.slotGap || 0);
+}
+$('#slotFinderBtn').addEventListener('click',()=>{
+  const panel=$('#slotFinderPanel'), open=panel.style.display==='none';
+  panel.style.display = open ? '' : 'none';
+  $('#slotFinderBtn').innerHTML = open ? '&#128269; Hide free slots' : '&#128269; Find free slots in my week';
+  if(open){ slotFinderSyncInputs(); renderSlotFinder(); }
+});
+['slotFrom','slotTo','slotGap'].forEach(id=>$('#'+id).addEventListener('change',()=>{
+  S.meta.slotFrom=$('#slotFrom').value||'06:00'; S.meta.slotTo=$('#slotTo').value||'21:30'; S.meta.slotGap=+$('#slotGap').value||0;
+  persist(); renderSlotFinder();
+}));
+['fDur','fDay','fTime','fTimeMode'].forEach(id=>$('#'+id).addEventListener('change',()=>{ if($('#slotFinderPanel').style.display!=='none') renderSlotFinder(); }));
+$('#slotFinderList').addEventListener('click',e=>{
+  const b=e.target.closest('[data-slotday]'); if(!b) return;
+  const d=b.dataset.slotday, a=+b.dataset.slotstart;
+  $('#fDay').value=d; $('#fTimeMode').value='specific'; toggleTimeMode();
+  $('#fTime').value=pad(Math.floor(a/60))+':'+pad(a%60);
+  renderSlotFinder();
+  toast(DAYS[+d]+' '+fmtTime12($('#fTime').value)+' selected');
+});
 function openStudentModal(id){
   editingStudentId = id || null;
   const st = id ? sById(id) : null;
@@ -3531,6 +3621,7 @@ function openStudentModal(id){
   $('#fPartner').value = st ? (st.partnerId||'') : '';
   updateFeeLabels();
   toggleTimeMode();
+  $('#slotFinderPanel').style.display='none'; $('#slotFinderBtn').innerHTML='&#128269; Find free slots in my week';
   openModal('m-student');
   $('#fName').focus();
 }
@@ -5244,8 +5335,148 @@ function weekOffsetForDate(dateStr){
   const days = Math.round((parseD(dateStr) - parseD(mondayOf(0))) / 86400000);
   return Math.floor(days/7);
 }
+/* ---------- Drag a class to move it (week view) ----------
+   Mouse: press and drag. Phone: press and hold ~0.35s, then drag. Dropping runs the clash check and, for a RAGA class
+   that was ticked as scheduled on the website, un-ticks it so it shows up again as "needs updating". */
+let calDrag=null, calDragSuppressUntil=0;
+const calCanDrag = c => sessionStatus(c)==='scheduled' && c.date>=TODAY;
+function calPointerDown(e,ev,c){
+  if(e.button>0 || e.target.closest('[data-rs-quick]') || calDrag) return;
+  const st={ev,c,id:e.pointerId,sx:e.clientX,sy:e.clientY,x:e.clientX,y:e.clientY,touch:e.pointerType==='touch',active:false,timer:null,target:null,raf:0};
+  calDrag=st;
+  if(st.touch) st.timer=setTimeout(()=>{ if(calDrag===st && !st.active) calBeginDrag(st); },350);
+  document.addEventListener('pointermove',calPointerMove,{passive:false});
+  document.addEventListener('pointerup',calPointerUp);
+  document.addEventListener('pointercancel',calPointerCancel);
+}
+function calPointerMove(e){
+  const st=calDrag; if(!st || e.pointerId!==st.id) return;
+  st.x=e.clientX; st.y=e.clientY;
+  if(!st.active){
+    const dist=Math.hypot(e.clientX-st.sx,e.clientY-st.sy);
+    if(st.touch){ if(dist>10) calDragCleanup(); return; }      // finger moved before the long-press: it's a normal scroll
+    if(dist<=5) return;
+    calBeginDrag(st);
+  }
+  e.preventDefault(); calDragUpdate();
+}
+function calBeginDrag(st){
+  const r=st.ev.getBoundingClientRect();
+  st.active=true; st.grab={x:st.sx-r.left, y:st.sy-r.top};
+  const g=st.ev.cloneNode(true); g.classList.add('cal-ghost'); g.style.width=r.width+'px'; g.style.height=r.height+'px'; g.removeAttribute('title');
+  document.body.appendChild(g); st.ghost=g;
+  const ind=document.createElement('div'); ind.className='cal-drop'; ind.style.display='none'; document.body.appendChild(ind); st.ind=ind;
+  st.ev.style.opacity='.3'; document.body.classList.add('cal-dragging');
+  if(navigator.vibrate) try{ navigator.vibrate(15); }catch(e){}
+  const tick=()=>{ if(calDrag!==st || !st.active) return;
+    const h=window.innerHeight, dy = st.y<80 ? -14 : (st.y>h-80 ? 14 : 0);
+    if(dy){ window.scrollBy(0,dy); calDragUpdate(); }
+    st.raf=requestAnimationFrame(tick); };
+  st.raf=requestAnimationFrame(tick);
+  calDragUpdate();
+}
+function calDragUpdate(){
+  const st=calDrag; if(!st || !st.active) return;
+  const topY=st.y-st.grab.y;
+  st.ghost.style.left=(st.x-st.grab.x)+'px'; st.ghost.style.top=topY+'px';
+  if(st.ev.classList.contains('chip')){      // month view: only the DAY changes, the class keeps its time
+    const mc=document.elementsFromPoint(st.x,st.y).find(el=>el.classList && el.classList.contains('mcell') && el.dataset.date);
+    if(!mc){ st.target=null; st.ind.style.display='none'; return; }
+    const r=mc.getBoundingClientRect(), date=mc.dataset.date, time=st.c.time;
+    const clash=overlapWarning(date,time,st.c.dur,st.c.cid), past=date<TODAY;
+    st.target={date,time,clash,past};
+    const ind=st.ind; ind.style.display='block'; ind.className='cal-drop'+((clash||past)?' bad':'');
+    ind.style.left=r.left+'px'; ind.style.top=r.top+'px'; ind.style.width=r.width+'px'; ind.style.height=r.height+'px';
+    ind.textContent=fmtD(date)+' \u00b7 '+fmtTime12(time)+(past?' \u2014 past':(clash?' \u2014 clash':''));
+    return;
+  }
+  const cell=document.elementsFromPoint(st.x,topY+3).find(el=>el.classList && el.classList.contains('cal-cell') && el.dataset.date);
+  if(!cell){ st.target=null; st.ind.style.display='none'; return; }
+  const r=cell.getBoundingClientRect();
+  const mins=Math.max(0,Math.min(59,Math.floor((topY-r.top)/r.height*60)));
+  const snapped=Math.floor(mins/15)*15, total=(+cell.dataset.hour)*60+snapped;
+  const time=pad(Math.floor(total/60))+':'+pad(total%60), date=cell.dataset.date;
+  const clash=overlapWarning(date,time,st.c.dur,st.c.cid), past=date<TODAY;
+  st.target={date,time,clash,past};
+  const ind=st.ind; ind.style.display='block'; ind.className='cal-drop'+((clash||past)?' bad':'');
+  ind.style.left=(r.left+3)+'px'; ind.style.width=(r.width-6)+'px';
+  ind.style.top=(r.top+snapped/60*r.height)+'px'; ind.style.height=Math.max(st.c.dur/60*r.height-4,22)+'px';
+  ind.textContent=dowName(date).slice(0,3)+' '+fmtTime12(time)+(past?' \u2014 past':(clash?' \u2014 clash':''));
+}
+function calPointerUp(e){
+  const st=calDrag; if(!st || e.pointerId!==st.id) return;
+  const wasActive=st.active; if(wasActive) calDragSuppressUntil=Date.now()+350;
+  const t=st.target, c=st.c;
+  calDragCleanup();
+  if(wasActive && t) calDropOn(c,t);
+}
+function calPointerCancel(e){ if(calDrag && e.pointerId===calDrag.id) calDragCleanup(); }
+function calDragCleanup(){
+  const st=calDrag; if(!st) return;
+  clearTimeout(st.timer); cancelAnimationFrame(st.raf);
+  if(st.ghost) st.ghost.remove(); if(st.ind) st.ind.remove();
+  st.ev.style.opacity=''; document.body.classList.remove('cal-dragging');
+  document.removeEventListener('pointermove',calPointerMove); document.removeEventListener('pointerup',calPointerUp); document.removeEventListener('pointercancel',calPointerCancel);
+  calDrag=null;
+}
+document.addEventListener('touchmove',e=>{ if(calDrag && calDrag.active && e.cancelable) e.preventDefault(); },{passive:false});   // no page scroll while a held class is being dragged
+function calDropOn(c,t){
+  if(t.date===c.date && t.time===c.time) return;
+  if(t.past){ toast("A class can't be moved into the past"); return; }
+  if(t.clash && !confirm('Time clash with '+t.clash+'.\n\nMove the class here anyway?')) return;
+  const from=rsWhen(c)+' '+fmtTime12(c.time), wasInSeries=!!c.seriesId;
+  let resets=0;
+  if(c.rs) Object.keys(c.rs).forEach(k=>{ if(c.rs[k]==='done'){ delete c.rs[k]; resets++; } });   // booked on the website at the OLD time
+  const isRaga=!!ragaUnit(c);
+  c.date=t.date; c.time=t.time; c.updatedAt=Date.now();
+  if(wasInSeries) c.seriesId=null;     // this one class is now a one-off; the weekly series carries on without it
+  renderAll();
+  toast('Moved from '+from+' to '+rsWhen(c)+' '+fmtTime12(c.time)+
+    (resets ? ' \u00b7 Raga Shiksha: update the booking on the website' : (isRaga ? ' \u00b7 remember to schedule it on the Raga Shiksha website' : ''))+
+    (wasInSeries ? ' \u00b7 this class only' : ''));
+}
+/* ---------- Calendar summary strip: classes, hours taught, expected income for the week / month on screen ---------- */
+function calPeriod(){
+  if(calMode==='week'){ const f=mondayOf(weekOffset); return {from:f, to:addDaysS(f,7), label:'Week of '+fmtD(f)+' \u2013 '+fmtD(addDaysS(f,6))}; }
+  const b=parseD(TODAY); b.setDate(1); b.setMonth(b.getMonth()+monthOffset);
+  return {from:dstr(b), to:dstr(new Date(b.getFullYear(),b.getMonth()+1,1)), label:b.toLocaleDateString('en-IN',{month:'long',year:'numeric'})};
+}
+const fmtHrs = m => (Math.round(m/60*10)/10).toString().replace(/\.0$/,'')+' h';
+function calPeriodStats(from,to){
+  const r={done:0,left:0,off:0,minDone:0,minLeft:0,earned:{p:0,r:0},toCome:{p:0,r:0},usd:0};
+  S.classes.forEach(c=>{
+    if(c.kind==='own-lesson' || c.date<from || c.date>=to || !calEventVisible(c)) return;   // your own lessons aren't teaching; legend filters apply
+    const st=sessionStatus(c);
+    if(st==='cancelled' || isAbsentClass(c)){ r.off++; return; }            // not taught, not billed
+    if(st==='completed'){ r.done++; r.minDone+=c.dur; } else { r.left++; r.minLeft+=c.dur; }
+    c.studentIds.forEach(sid=>{
+      const stu=sById(sid); if(!stu) return;
+      const a=c.att[sid], k=stu.cat==='RAGA'?'r':'p', rate=isUSD(stu)?null:unitFee(stu,c.mode);
+      if(a==='Completed'){ const v=classINR(c,sid), amt=(v!=null?v:rate); if(amt==null) r.usd++; else r.earned[k]+=amt; }
+      else if(a==='Scheduled'){ if(rate==null) r.usd++; else r.toCome[k]+=rate; }
+    });
+  });
+  return r;
+}
+function renderCalSummary(){
+  const el=$('#calSummary'); if(!el) return;
+  const per=calPeriod(), x=calPeriodStats(per.from,per.to);
+  const earned=x.earned.p+x.earned.r, toCome=x.toCome.p+x.toCome.r, filt=calCatFilter.size||calStatusFilter.size;
+  const raga=x.earned.r+x.toCome.r;
+  el.innerHTML=
+    '<div class="cs-title">'+esc(per.label)+(filt?' \u00b7 filtered by the legend':'')+'</div>'+
+    '<div class="cs-tile"><div class="cs-label">Classes</div><div class="cs-val num">'+(x.done+x.left)+'</div>'+
+      '<div class="cs-sub">'+x.done+' done \u00b7 '+x.left+' to go'+(x.off?' \u00b7 '+x.off+' cancelled / absent':'')+'</div></div>'+
+    '<div class="cs-tile"><div class="cs-label">Hours taught</div><div class="cs-val num">'+fmtHrs(x.minDone)+'</div>'+
+      '<div class="cs-sub">+ '+fmtHrs(x.minLeft)+' still to teach</div></div>'+
+    '<div class="cs-tile" title="Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga)+'"><div class="cs-label">Expected income</div><div class="cs-val num">'+RUPEE.format(earned+toCome)+'</div>'+
+      '<div class="cs-sub">'+RUPEE.format(earned)+' earned \u00b7 '+RUPEE.format(toCome)+' to come'+
+      (raga ? '<br>Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga) : '')+
+      (x.usd ? '<br>'+x.usd+' USD class'+(x.usd===1?'':'es')+' not counted yet' : '')+'</div></div>';
+}
 function renderCalendar(){
   renderCalLegend();
+  renderCalSummary();
   $('#calWeekBtn').classList.toggle('on', calMode==='week');
   $('#calWeekBtn').setAttribute('aria-pressed', calMode==='week');
   $('#calMonthBtn').classList.toggle('on', calMode==='month');
@@ -5269,7 +5500,7 @@ function renderCalendar(){
     grid.insertAdjacentHTML('beforeend','<div class="hour-label num">'+fmtTime12(pad(h)+':00')+'</div>');
     for(let i=0;i<7;i++){
       const d=addDaysS(mon,i);
-      const cell=document.createElement('div'); cell.className='cal-cell'+(d===TODAY?' today':'');
+      const cell=document.createElement('div'); cell.className='cal-cell'+(d===TODAY?' today':''); cell.dataset.date=d; cell.dataset.hour=h;
       cell.title='Click to schedule at '+fmtTime12(pad(h)+':00');
       cell.addEventListener('dblclick',()=>{ openClassModal(null,d); $('#cTime').value=pad(h)+':00'; });
       S.classes.filter(c=>c.date===d && Math.floor(toMin(c.time)/60)===h && calEventVisible(c)).forEach(c=>{
@@ -5281,7 +5512,8 @@ function renderCalendar(){
         ev.innerHTML=statusBadgeHTML(status,c)+'<b>'+esc(sessionNames(c))+'</b>'+fmtTime12(c.time)+rsWarn(c);
         if(ev.querySelector('.rs-warn')) ev.classList.add('has-rs');
         ev.title=sessionNames(c)+' · click to manage';
-        ev.addEventListener('click',e=>{ e.stopPropagation(); openClassModal(c.cid); });
+        ev.addEventListener('click',e=>{ e.stopPropagation(); if(Date.now()<calDragSuppressUntil) return; openClassModal(c.cid); });
+        if(calCanDrag(c)){ ev.title=sessionNames(c)+' \u00b7 click to manage \u00b7 drag to move'; ev.addEventListener('pointerdown',e=>calPointerDown(e,ev,c)); }
         cell.appendChild(ev);
       });
       grid.appendChild(cell);
@@ -5303,7 +5535,7 @@ function renderMonthCal(){
     const d=cur;
     const inMonth = d.slice(0,7)===mkey;
     const cell=document.createElement('div');
-    cell.className='mcell'+(inMonth?'':' out')+(d===TODAY?' today':'');
+    cell.className='mcell'+(inMonth?'':' out')+(d===TODAY?' today':''); cell.dataset.date=d;
     cell.innerHTML='<div class="d num">'+parseD(d).getDate()+'</div>';
     cell.title='Double-click to schedule on '+fmtD(d);
     S.classes.filter(c=>c.date===d && calEventVisible(c)).sort((a,b)=>toMin(a.time)-toMin(b.time)).forEach(c=>{
@@ -5312,7 +5544,8 @@ function renderMonthCal(){
       chip.className='chip '+sessionCategory(c)+' status-'+status;
       chip.textContent=(status==='completed'?'✓ ':(status==='cancelled'?'× ':''))+fmtTime12(c.time)+' '+sessionNames(c);
       chip.title=sessionNames(c)+' · click to manage';
-      chip.addEventListener('click',e=>{ e.stopPropagation(); openClassModal(c.cid); });
+      chip.addEventListener('click',e=>{ e.stopPropagation(); if(Date.now()<calDragSuppressUntil) return; openClassModal(c.cid); });
+      if(calCanDrag(c)){ chip.title=sessionNames(c)+' \u00b7 click to manage \u00b7 drag to another day'; chip.addEventListener('pointerdown',e=>calPointerDown(e,chip,c)); }
       cell.appendChild(chip);
     });
     cell.addEventListener('dblclick',()=>openClassModal(null,d));
