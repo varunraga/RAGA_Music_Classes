@@ -210,6 +210,7 @@
   .status-badge{position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;line-height:1;z-index:3;box-shadow:0 0 0 1.5px var(--card)}
   .status-badge.completed{background:var(--grey)}
   .status-badge.cancelled{background:var(--red)}
+  .status-badge.absent{background:#D97706}
   .status-badge.legend{position:static;box-shadow:none;margin-right:6px;vertical-align:-2px}
   .two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:22px;align-items:start}
 
@@ -267,6 +268,7 @@
   .legend{display:flex;gap:16px;font-size:.78rem;color:var(--muted);flex-wrap:wrap;align-items:center}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
   .legend .sep{width:1px;height:14px;background:var(--line);display:inline-block}
+  .legend-key{padding:4px 8px}
   .legend-item{cursor:pointer;padding:4px 8px;border-radius:7px;border:1px solid transparent;transition:background .12s,border-color .12s}
   .legend-item:hover{background:var(--paper)}
   .legend-item.on{background:var(--gold-bg);border-color:var(--gold);color:var(--gold-ink);font-weight:700}
@@ -562,6 +564,8 @@
   .mat-btn.on[data-rsval^="nocredit"]{background:rgba(200,150,40,.16);color:var(--ink);border-color:var(--gold);font-weight:700}
   .mat-btn.on[data-rsval="done"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
   .rs-warn{color:var(--red);font-weight:800}
+  .cal-ev .rs-warn,.tl-block .rs-warn{position:absolute;top:2px;right:3px;z-index:4;font-size:.8rem;line-height:1;padding:1px 2px!important;border-radius:4px;background:rgba(255,255,255,.88)}
+  .cal-ev.has-rs b,.tl-block.has-rs b{padding-right:20px}
   #btnSeriesMgr .badge.hold{background:#fff!important;color:#B45309!important;border:none!important;font-weight:800;min-width:22px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.18)}
   #calExpWeekField,#calExpSeriesField{margin-top:20px}
   .exp-opt{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
@@ -945,7 +949,10 @@
               <span class="legend-item" data-cat="own-lesson"><i style="background:var(--yellow)"></i>My lesson</span>
               <span class="sep"></span>
               <span class="legend-item" data-status="completed"><span class="status-badge legend completed">✓</span>Completed</span>
+              <span class="legend-item" data-status="absent"><span class="status-badge legend absent">A</span>Absent</span>
               <span class="legend-item" data-status="cancelled"><span class="status-badge legend cancelled">×</span>Cancelled</span>
+              <span class="sep"></span>
+              <span class="legend-key" title="Shown on a RAGA class within 7 days that is not yet scheduled on the Raga Shiksha website (including when a student has no credits). Tap the sign to mark it scheduled."><span class="rs-warn" style="margin-right:6px">&#9888;</span>Not scheduled on Raga Shiksha website</span>
             </div>
             <button class="btn small seg on" id="calWeekBtn" aria-pressed="true">Week</button>
             <button class="btn small seg" id="calMonthBtn" aria-pressed="false">Month</button>
@@ -2868,7 +2875,11 @@ function sessionStatus(c){
   if(sts.length && sts.every(x=>x!=='Scheduled')) return 'completed';
   return 'scheduled';
 }
-function statusBadgeHTML(status){
+// Every student marked Absent (nobody attended) — behaves like 'completed' for logic, but is shown with its own sign.
+const isAbsentClass = c => c.kind!=='own-lesson' && c.studentIds.length>0 && c.studentIds.every(id=>c.att[id]==='Absent');
+const sessionStatusKey = c => { const st=sessionStatus(c); return (st==='completed' && isAbsentClass(c)) ? 'absent' : st; };
+function statusBadgeHTML(status,c){
+  if(status==='completed' && c && isAbsentClass(c)) return '<span class="status-badge absent" title="Absent">A</span>';
   if(status==='completed') return '<span class="status-badge completed" title="Completed">✓</span>';
   if(status==='cancelled') return '<span class="status-badge cancelled" title="Cancelled">×</span>';
   return '';
@@ -2971,16 +2982,20 @@ const ragaSiteTodo = () => ragaSiteEntries().filter(e=>!e.v);
 const ragaSiteNoCredit = () => ragaSiteEntries().filter(e=>e.v==='nocredit');
 function rsWarn(c){
   if(c.kind==='own-lesson' || c.date<TODAY || c.date>addDaysS(TODAY,RS_MARK_DAYS)) return '';
-  const u=ragaUnit(c), hit=!!(u && !u.v);
-  return hit ? ' <span class="rs-warn" data-rs-quick="'+c.cid+'" role="button" title="Not yet scheduled on the Raga Shiksha website — tap to mark as scheduled" style="cursor:pointer;padding:0 4px">&#9888;</span>' : '';
+  const u=ragaUnit(c); if(!u || u.v==='done') return '';
+  const note=rsNoCreditNote(u);
+  const tip = u.v==='nocredit'
+    ? 'Not scheduled on the Raga Shiksha website \u2014 '+(note||'no credits')+'. Tap to mark as scheduled once done.'
+    : 'Not yet scheduled on the Raga Shiksha website \u2014 tap to mark as scheduled';
+  return ' <span class="rs-warn" data-rs-quick="'+c.cid+'" role="button" title="'+esc(tip)+'" style="cursor:pointer;padding:0 4px">&#9888;</span>';
 }
 // Tap the warning mark anywhere (calendar, timeline, upcoming list) to tick the class as scheduled without opening it.
 document.addEventListener('click', e=>{
   const w=e.target.closest('[data-rs-quick]'); if(!w) return;
   e.stopPropagation(); e.preventDefault();
   const c=S.classes.find(x=>x.cid===w.dataset.rsQuick); if(!c) return;
-  const u=ragaUnit(c); if(!u || u.v) return;
-  if(!confirm('Mark '+rsUnitNames(u)+(u.batch?' (batch class, both students)':'')+' ('+rsWhen(c)+', '+fmtTime12(c.time)+') as scheduled on the Raga Shiksha website?')) return;
+  const u=ragaUnit(c); if(!u || u.v==='done') return;
+  if(!confirm('Mark '+rsUnitNames(u)+(u.batch?' (batch class, both students)':'')+' ('+rsWhen(c)+', '+fmtTime12(c.time)+') as scheduled on the Raga Shiksha website?'+(u.v==='nocredit'?'\n\nNote: it is currently marked as having no credits ('+(rsNoCreditNote(u)||'student')+').':''))) return;
   setRsStatus(c.cid,u.sid,'done');
   renderAll(); toast('Marked as scheduled on the website');
 }, true);
@@ -4839,8 +4854,9 @@ function renderTimeline(){
     b.style.width=Math.max(w/span*100,8)+'%';
     b.style.bottom=(34+laneOf.get(c.cid)*62)+'px';
     const showQuick = status==='scheduled';
-    b.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+rsWarn(c)+'</b>'+fmtTime12(c.time)+' · '+c.mode+
+    b.innerHTML=statusBadgeHTML(status,c)+'<b>'+esc(sessionNames(c))+'</b>'+rsWarn(c)+fmtTime12(c.time)+' · '+c.mode+
       (showQuick ? '<span class="tl-actions"><button data-qc="'+c.cid+'" title="Mark completed">✓</button><button data-qx="'+c.cid+'" title="Cancelled by student">✗</button></span>' : '');
+    if(b.querySelector('.rs-warn')) b.classList.add('has-rs');
     b.title='Click to manage';
     b.addEventListener('click',()=>openClassModal(c.cid));
     el.appendChild(b);
@@ -5197,7 +5213,7 @@ $('#pendPickClear').addEventListener('click',()=>{
 let weekOffset = 0, monthOffset = 0, calMode = 'week';
 let calCatFilter = new Set(), calStatusFilter = new Set(); // legend filters — empty set means "show all" for that dimension
 function calEventVisible(c){
-  const cat = sessionCategory(c), status = sessionStatus(c);
+  const cat = sessionCategory(c), status = sessionStatusKey(c);
   if(calCatFilter.size && !calCatFilter.has(cat)) return false;
   if(calStatusFilter.size && !calStatusFilter.has(status)) return false;
   return true;
@@ -5262,7 +5278,8 @@ function renderCalendar(){
         ev.className='cal-ev '+cat+' status-'+status;
         ev.style.top=(toMin(c.time)%60/60*52)+'px';
         ev.style.height=Math.max(c.dur/60*52-4,22)+'px';
-        ev.innerHTML=statusBadgeHTML(status)+'<b>'+esc(sessionNames(c))+rsWarn(c)+'</b>'+fmtTime12(c.time);
+        ev.innerHTML=statusBadgeHTML(status,c)+'<b>'+esc(sessionNames(c))+'</b>'+fmtTime12(c.time)+rsWarn(c);
+        if(ev.querySelector('.rs-warn')) ev.classList.add('has-rs');
         ev.title=sessionNames(c)+' · click to manage';
         ev.addEventListener('click',e=>{ e.stopPropagation(); openClassModal(c.cid); });
         cell.appendChild(ev);
