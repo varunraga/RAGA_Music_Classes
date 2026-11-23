@@ -6029,6 +6029,7 @@ async function aoaDownload(name, title, sheets){
     try{
       const wb=new ExcelJS.Workbook();
       wb.creator='RAGA Music Classes';
+      wb.calcProperties={fullCalcOnLoad:true};   // Excel recalculates every formula when the file opens
       const GREEN='FF0D3B2B', CREAM='FFF6ECD2', PARCH='FFF7EFDC', BAND='FFF3EAD0', GOLD='FFB8892E', BORD='FFC9B078', MAROON='FF6E2F14';
       const thin={style:'thin',color:{argb:BORD}};
       sheets.forEach(s=>{
@@ -6073,7 +6074,7 @@ async function aoaDownload(name, title, sheets){
             if(raw && typeof raw==='object' && raw.f){
               if(!(dataEnd<4 && /\{r[12]\}/.test(raw.f)))
                 formula=raw.f.replace(/\{r1\}/g,4).replace(/\{r2\}/g,dataEnd).replace(/\{rr\}/g,rr).replace(/\{p1\}/g,rr-1).replace(/\{p2\}/g,rr-2).replace(/\{col\}/g,L);
-            } else if(totalIdx[ri] && typeof v==='number' && dataEnd>=4){
+            } else if(totalIdx[ri] && typeof v==='number' && dataEnd>=4 && !(raw && raw.keep)){
               const sum=dataRows.reduce((t,rw)=>{ const x=cellVal(rw[ci]); return t+(typeof x==='number'?x:0); },0);
               if(Math.abs(sum-v)<0.005) formula='SUBTOTAL(9,'+L+'4:'+L+dataEnd+')';
             }
@@ -6232,7 +6233,9 @@ function repStatement(){
     .forEach(p=>pay.push([monthLabel(p.month),fmtDMY(p.date),p.amount,p.mode,p.ref||'']));
   pay.push(['Total paid','',paidAllTime(st),'','']);
   if(st.cat==='Personal'){
-    pay.push(['Total billed','',dueAllTime(st),'','']);
+    // Total billed = the Class History total (same workbook) — linked by formula when they agree, otherwise left as a plain number
+    const billed=dueAllTime(st), clsTotRow=cls.length+2;
+    pay.push(['Total billed','',(Math.abs(billed-clsTot)<0.005 ? {f:'Classes!D'+clsTotRow, v:billed} : {v:billed, keep:true}),'','']);
     pay.push(['Outstanding as on '+fmtDFull(TODAY),'',{f:'{col}{p1}-{col}{p2}',v:outstandingFor(st)},'','']);   // = Total billed \u2212 Total paid
   }
   pay.push(['','','','','']);
