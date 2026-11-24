@@ -568,12 +568,9 @@
   .mat-btn[data-rsremind]:hover{background:rgba(37,211,102,.14)}
   .cal-ev .rs-warn,.tl-block .rs-warn{position:absolute;top:2px;right:3px;z-index:4;font-size:.8rem;line-height:1;padding:1px 2px!important;border-radius:4px;background:rgba(255,255,255,.88)}
   .cal-ev.has-rs b,.tl-block.has-rs b{padding-right:20px}
-  .mf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-  .mf-bar{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--line);margin:16px 0 8px}
-  .mf-bar span{display:block;height:100%}
-  .mf-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
-  .cal-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 12px 16px}
-  @media (max-width:700px){ .cal-summary{grid-template-columns:1fr} }
+  .cal-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 12px 16px}
+  @media (max-width:1000px){ .cal-summary{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  @media (max-width:560px){ .cal-summary{grid-template-columns:1fr} }
   .cal-summary .cs-title{grid-column:1/-1;font-weight:700;font-size:.9rem;color:var(--ink);padding:2px 2px 0}
   .cs-tile{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px}
   .cs-label{font-size:.66rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
@@ -615,7 +612,7 @@
   #personalCards .stat{border-top:3px solid var(--green)}
   #ragaCards .stat{border-top:3px solid var(--purple)}
   #myLessonsCards .stat{border-top:3px solid var(--yellow)}
-  .stat-row .stat:nth-child(5){border-left:3px solid var(--gold);background:linear-gradient(135deg,rgba(214,158,32,.09),transparent 55%),var(--card)}
+  .stat-row .stat:nth-child(4){border-left:3px solid var(--gold);background:linear-gradient(135deg,rgba(214,158,32,.09),transparent 55%),var(--card)}
   .badge.hold{background:rgba(184,134,11,.16)!important;color:var(--gold-ink)!important;border:1px solid rgba(184,134,11,.42);font-weight:700}
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   @media (max-width:760px){
@@ -844,20 +841,11 @@
         <button type="button" class="btn" id="btnHeadsUp" title="Reopen the Heads Up pop-up: today, tomorrow, pending status, material, backup and unscheduled students">&#128276; Heads Up <span class="badge hold" id="headsUpCount" style="display:none;margin-left:4px"></span></button>
       </div>
       <div class="stat-row">
-        <div class="stat clickable" data-goto="students"><div class="label">Active students</div><div class="value num" id="statStudents">0</div><div class="sub"><span class="dot" style="background:var(--green)"></span><b id="statPersonal">0</b> Personal · <span class="dot" style="background:var(--purple)"></span><b id="statRaga">0</b> RAGA</div></div>
-        <div class="stat money clickable" data-goto="earnings"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
+        <div class="stat money clickable" data-goto="earnings" title="Money actually received this month"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
         <div class="stat alert clickable" data-goto="personal"><div class="label">PERSONAL outstanding</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
         <div class="stat clickable" id="statRagaCard" data-goto="raga"><div class="label">RAGA withdrawable</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
-        <div class="stat clickable" data-goto="earnings"><div class="label">Total receivable</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
-      </div>
-
-      <div class="panel" id="monthForecastPanel">
-        <div class="panel-head"><h3 id="mfTitle">Month forecast</h3><span class="hint" id="mfHint"></span></div>
-        <div class="panel-body">
-          <div class="mf-grid" id="mfGrid"></div>
-          <div class="mf-bar" id="mfBar"></div>
-          <div class="tiny" id="mfNote" style="color:var(--muted);line-height:1.5"></div>
-        </div>
+        <div class="stat clickable" data-goto="earnings" title="Everything earned from completed classes and not yet received, including dues carried forward from earlier months"><div class="label">Total outstanding</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
+        <div class="stat clickable" data-goto="calendar" title="Fees for classes still marked Scheduled for the rest of this month (USD students: the rupee amount of their last class)"><div class="label">Expected this month</div><div class="value num" id="statExpected" style="color:var(--purple)">–</div><div class="sub" id="statExpectedSub"></div></div>
       </div>
 
       <div class="panel">
@@ -4986,29 +4974,16 @@ function forecastScheduled(){
   });
   return r;
 }
-function renderMonthForecast(v){
-  const grid=$('#mfGrid'); if(!grid) return;
-  const f=forecastScheduled(), collected=v.pInc+v.rInc, collectable=v.outT+v.relig+v.bankPending, expected=f.p+f.r, total=collected+collectable+expected;
-  const left=daysBetween(TODAY,f.end)+1;
-  $('#mfTitle').textContent='Month forecast \u2014 '+monthLabel(CURM);
-  $('#mfHint').textContent=left+' day'+(left===1?'':'s')+' left this month';
-  const tile=(dot,label,val,sub,tip)=>'<div class="cs-tile"'+(tip?' title="'+esc(tip)+'"':'')+'><div class="cs-label">'+(dot?'<span class="mf-dot" style="background:'+dot+'"></span>':'')+label+'</div><div class="cs-val num">'+RUPEE.format(val)+'</div><div class="cs-sub">'+sub+'</div></div>';
-  grid.innerHTML=
-    tile('var(--green)','Collected so far',collected,'Personal '+RUPEE.format(v.pInc)+' \u00b7 RAGA '+RUPEE.format(v.rInc),'Money actually received this month')+
-    tile('var(--gold)','Still collectable',collectable,'Personal due '+RUPEE.format(v.outT)+' \u00b7 RAGA withdrawable '+RUPEE.format(v.relig)+(v.bankPending?' \u00b7 in transit '+RUPEE.format(v.bankPending):''),'From classes already completed (includes dues from earlier months)')+
-    tile('var(--purple)','Expected from scheduled',expected,f.n+' scheduled class'+(f.n===1?'':'es')+' this month'+(expected?'<br>Personal '+RUPEE.format(f.p)+' \u00b7 RAGA '+RUPEE.format(f.r):'')+(f.unmarked?'<br>'+f.unmarked+' already held but not marked Completed':'')+(f.est?'<br>'+f.est+' USD class'+(f.est===1?'':'es')+' estimated at the last class\u2019s rupee amount':'')+(f.usd?'<br>'+f.usd+' USD class'+(f.usd===1?'':'es')+' not counted (no earlier class to estimate from)':''),'Fees for classes still marked Scheduled this month, at today\u2019s rates (USD students: the rupee amount of their last class)')+
-    tile('','Forecast for the month',total,'if everything is collected and every scheduled class happens','Collected + still collectable + expected');
-  const pct=x=>total>0 ? (x/total*100) : 0;
-  $('#mfBar').innerHTML=total>0
-    ? '<span style="width:'+pct(collected)+'%;background:var(--green)" title="Collected"></span><span style="width:'+pct(collectable)+'%;background:var(--gold)" title="Still collectable"></span><span style="width:'+pct(expected)+'%;background:var(--purple)" title="Expected"></span>'
-    : '';
-  $('#mfNote').innerHTML=(total>0 ? '<span class="mf-dot" style="background:var(--green)"></span>collected &nbsp; <span class="mf-dot" style="background:var(--gold)"></span>still collectable &nbsp; <span class="mf-dot" style="background:var(--purple)"></span>expected &nbsp;\u00b7&nbsp; ' : '')+'&ldquo;Still collectable&rdquo; includes dues carried over from earlier months, so it can be more than this month&#39;s classes alone.';
+function renderExpectedCard(){
+  const f=forecastScheduled(), expected=f.p+f.r, left=daysBetween(TODAY,f.end)+1;
+  $('#statExpected').textContent=RUPEE.format(expected);
+  $('#statExpectedSub').innerHTML='<b>'+f.n+'</b> scheduled class'+(f.n===1?'':'es')+' \u00b7 '+left+' day'+(left===1?'':'s')+' left'+
+    (expected ? '<br>Personal <b>'+RUPEE.format(f.p)+'</b> + RAGA <b>'+RUPEE.format(f.r)+'</b>' : '')+
+    (f.unmarked ? '<br>'+f.unmarked+' held, not marked Completed' : '')+
+    (f.est ? '<br>'+f.est+' USD class'+(f.est===1?'':'es')+' estimated at the last class\u2019s rupee amount' : '')+
+    (f.usd ? '<br>'+f.usd+' USD class'+(f.usd===1?'':'es')+' not counted (no earlier class)' : '');
 }
 function renderStats(){
-  const act = S.students.filter(s=>!s.archived);
-  $('#statStudents').textContent = act.length;
-  $('#statPersonal').textContent = act.filter(s=>s.cat==='Personal').length;
-  $('#statRaga').textContent = act.filter(s=>s.cat==='RAGA').length;
   const pInc = S.payments.filter(p=>monthKey(p.date)===CURM).reduce((t,p)=>t+p.amount,0);
   const rInc = ragaReceivedInMonth(CURM);
   $('#statIncome').textContent = RUPEE.format(pInc+rInc);
@@ -5035,8 +5010,8 @@ function renderStats(){
   if(pendD) $('#statRagaEligSub').innerHTML += ' · <b>'+pendD+'</b> ₹ pending';
   const bankPending = ragaBankPending();
   $('#statReceivable').textContent = RUPEE.format(outT + relig + bankPending);
-  $('#statReceivableSub').innerHTML = '<b>'+RUPEE.format(outT)+'</b> Personal + <b>'+RUPEE.format(relig)+'</b> RAGA'+(bankPending?' + <b>'+RUPEE.format(bankPending)+'</b> in transit':'');
-  renderMonthForecast({pInc,rInc,outT,relig,bankPending});
+  $('#statReceivableSub').innerHTML = '<b>'+RUPEE.format(outT)+'</b> Personal + <b>'+RUPEE.format(relig)+'</b> RAGA'+(bankPending?' + <b>'+RUPEE.format(bankPending)+'</b> in transit':'')+'<br>incl. dues carried forward from earlier months';
+  renderExpectedCard();
 }
 function renderTimeline(){
   const el=$('#timeline'); el.innerHTML='';
@@ -5573,12 +5548,13 @@ function calPeriod(){
 }
 const fmtHrs = m => (Math.round(m/60*10)/10).toString().replace(/\.0$/,'')+' h';
 function calPeriodStats(from,to){
-  const r={done:0,left:0,off:0,minDone:0,minLeft:0,earned:{p:0,r:0},toCome:{p:0,r:0},usd:0,est:0}, estC=makeEstCache();
+  const r={done:0,left:0,off:0,minDone:0,minLeft:0,earned:{p:0,r:0},toCome:{p:0,r:0},usd:0,est:0,stu:new Set()}, estC=makeEstCache();
   S.classes.forEach(c=>{
     if(c.kind==='own-lesson' || c.date<from || c.date>=to || !calEventVisible(c)) return;   // your own lessons aren't teaching; legend filters apply
     const st=sessionStatus(c);
     if(st==='cancelled' || isAbsentClass(c)){ r.off++; return; }            // not taught, not billed
     if(st==='completed'){ r.done++; r.minDone+=c.dur; } else { r.left++; r.minLeft+=c.dur; }
+    c.studentIds.forEach(id=>r.stu.add(id));      // who has a class in this period
     c.studentIds.forEach(sid=>{
       const stu=sById(sid); if(!stu) return;
       const a=c.att[sid], k=stu.cat==='RAGA'?'r':'p', rate=isUSD(stu)?null:unitFee(stu,c.mode);
@@ -5595,6 +5571,9 @@ function renderCalSummary(){
   const raga=x.earned.r+x.toCome.r;
   el.innerHTML=
     '<div class="cs-title">'+esc(per.label)+(filt?' \u00b7 filtered by the legend':'')+'</div>'+
+    (()=>{ const act=S.students.filter(s=>!s.archived), nP=act.filter(s=>s.cat==='Personal').length, nR=act.filter(s=>s.cat==='RAGA').length;
+      return '<div class="cs-tile" title="Students who are not archived"><div class="cs-label">Active students</div><div class="cs-val num">'+act.length+'</div>'+
+        '<div class="cs-sub"><span class="dot" style="background:var(--green)"></span>'+nP+' Personal \u00b7 <span class="dot" style="background:var(--purple)"></span>'+nR+' RAGA<br>'+x.stu.size+' with classes '+(calMode==='week'?'this week':'this month')+'</div></div>'; })()+
     '<div class="cs-tile"><div class="cs-label">Classes</div><div class="cs-val num">'+(x.done+x.left)+'</div>'+
       '<div class="cs-sub">'+x.done+' done \u00b7 '+x.left+' to go'+(x.off?' \u00b7 '+x.off+' cancelled / absent':'')+'</div></div>'+
     '<div class="cs-tile"><div class="cs-label">Hours taught</div><div class="cs-val num">'+fmtHrs(x.minDone)+'</div>'+
