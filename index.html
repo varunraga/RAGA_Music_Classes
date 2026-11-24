@@ -564,11 +564,14 @@
   .mat-btn.on[data-rsval^="nocredit"]{background:rgba(200,150,40,.16);color:var(--ink);border-color:var(--gold);font-weight:700}
   .mat-btn.on[data-rsval="done"]{background:rgba(46,139,103,.14);color:var(--green);border-color:var(--green);font-weight:700}
   .rs-warn{color:var(--red);font-weight:800}
+  .mat-btn[data-rsremind]{border-color:#25D366;color:#0B7A4B;font-weight:700}
+  .mat-btn[data-rsremind]:hover{background:rgba(37,211,102,.14)}
   .cal-ev .rs-warn,.tl-block .rs-warn{position:absolute;top:2px;right:3px;z-index:4;font-size:.8rem;line-height:1;padding:1px 2px!important;border-radius:4px;background:rgba(255,255,255,.88)}
   .cal-ev.has-rs b,.tl-block.has-rs b{padding-right:20px}
-  .cal-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0 0 14px}
-  .cal-summary .cs-title{grid-column:1/-1;font-weight:700;font-size:.85rem;color:var(--muted)}
-  .cs-tile{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px}
+  .cal-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 12px 16px}
+  @media (max-width:700px){ .cal-summary{grid-template-columns:1fr} }
+  .cal-summary .cs-title{grid-column:1/-1;font-weight:700;font-size:.9rem;color:var(--ink);padding:2px 2px 0}
+  .cs-tile{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px}
   .cs-label{font-size:.66rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
   .cs-val{font-size:1.5rem;font-weight:800;line-height:1.25;color:var(--ink)}
   .cs-sub{font-size:.76rem;color:var(--muted);line-height:1.4}
@@ -984,7 +987,7 @@
         </div>
         <div class="unupd-banner" id="calUnupdated" style="display:none" role="button" tabindex="0" title="Show the classes still waiting for a status"></div>
         <div class="panel" id="weekCheckPanel" style="margin:0 0 16px">
-          <div class="panel-head"><h3>This week\'s scheduling</h3><span class="hint" id="weekCheckHint"></span></div>
+          <div class="panel-head"><h3>This week&#39;s scheduling</h3><span class="hint" id="weekCheckHint"></span></div>
           <div class="wchk-body" id="weekCheckList"></div>
         </div>
         <div class="cal-summary" id="calSummary"></div>
@@ -2192,8 +2195,10 @@
     </div>
     <div id="topicHwBlock" style="margin-top:14px;display:none">
       <div class="form-grid2">
-        <div class="field span2"><label for="cTopic">Topic covered</label><input id="cTopic" placeholder="e.g. Sarali Varisai, speed 2"></div>
-        <div class="field span2"><label for="cHw" id="cHwLabel">Homework</label><input id="cHw" placeholder="e.g. Practice at both speeds daily"></div>
+        <div class="field span2"><label for="cTopic">Topic covered</label><input id="cTopic" placeholder="e.g. Sarali Varisai, speed 2">
+          <div class="tiny" id="cTopicLast" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted)"></div></div>
+        <div class="field span2"><label for="cHw" id="cHwLabel">Homework</label><input id="cHw" placeholder="e.g. Practice at both speeds daily">
+          <div class="tiny" id="cHwLast" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted)"></div></div>
       </div>
     </div>
     <div id="cSeriesBlock" style="margin-top:14px;display:none">
@@ -2977,6 +2982,38 @@ function rsBtnsHTML(e, attr, mode){
     : b('nocredit','No credits',e.v==='nocredit','This student has no credits left');
   return mode==='todo' ? done+nocr : (mode==='nocr' ? done+yet : yet+nocr+done);
 }
+/* ---------- "Please buy a credit" WhatsApp reminder (students marked No credits) ---------- */
+function rsCreditMessage(sid){
+  const c0=S.classes.filter(c=>c.kind!=='own-lesson' && c.date>=TODAY && c.att[sid]==='Scheduled' && rsStatus(c,sid)==='nocredit').sort(byDateTime)[0];
+  const L=['Hello '+firstName(sid)+' \u{1F64F}',''];
+  L.push(c0
+    ? 'Your class on '+fmtD(c0.date)+' at '+fmtTime12(c0.time)+' can\u2019t be scheduled yet as you have no credits left on Raga Shiksha. Please buy at least 1 credit.'
+    : 'Your upcoming class can\u2019t be scheduled yet as you have no credits left on Raga Shiksha. Please buy at least 1 credit.');
+  L.push('','Let me know once it\u2019s done so that I can schedule the class accordingly.','','Thank you!');
+  return L.join('\n');
+}
+function rsRemindBtns(e){
+  const ids=e.sids.filter(id=>rsStatus(e.c,id)==='nocredit'); if(!ids.length) return '';
+  return ids.map(id=>{
+    const st=sById(id)||{}, at=st.creditRemindedAt;
+    const tip=at ? 'Last reminded '+fmtDMY(dstr(new Date(at)))+' \u2014 tap to send again' : 'Opens WhatsApp with a ready message asking '+(st.name||'the student')+' to buy a credit';
+    return '<button type="button" class="mat-btn" data-rsremind="'+id+'" title="'+esc(tip)+'">&#128172; '+(e.batch?esc(firstName(id))+': ':'')+(at?'Remind again':'Remind')+'</button>';
+  }).join('');
+}
+function rsSendCreditReminder(sid){
+  const st=sById(sid); if(!st) return;
+  const num=waDigits(st.mobile);
+  if(!num){ toast(st.name+' has no mobile number saved'); return; }
+  window.open('https://wa.me/'+num+'?text='+encodeURIComponent(rsCreditMessage(sid)), '_blank');
+  st.creditRemindedAt=Date.now(); st.updatedAt=Date.now(); persist();
+  toast('WhatsApp opened for '+st.name+' \u2014 press send');
+  if($('#m-raga-site').classList.contains('open')) renderRsPanel();
+  if($('#m-reminder').classList.contains('open')) fillReminder(true);
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-rsremind]'); if(!b) return;
+  e.preventDefault(); e.stopPropagation(); rsSendCreditReminder(b.dataset.rsremind);
+});
 const rsBatchTag = e => e.batch ? ' <span class="badge hold" style="margin-left:4px">Batch</span>' : '';
 function setRsStatus(cid, sid, val){
   const cl=S.classes.find(x=>x.cid===cid); if(!cl) return;
@@ -4120,6 +4157,36 @@ function applyToFutureSeries(c, fields){
   });
   return targets.length;
 }
+/* ---------- "Last lesson covered" + "Same as last class" (class dialog, existing classes) ---------- */
+// The most recent EARLIER class with this field filled in: same batch if there is one, otherwise any class with the same
+// (first) student; for your own lessons, the same Guru.
+function lastClassWith(c, field){
+  const key=x=>x.studentIds.slice().sort().join('+');
+  const before=x=>x.cid!==c.cid && (x.kind||'teaching')===(c.kind||'teaching') && (x.date<c.date || (x.date===c.date && toMin(x.time)<toMin(c.time))) && (x[field]||'').trim();
+  let cands;
+  if(c.kind==='own-lesson') cands=S.classes.filter(x=>before(x) && x.withWhom===c.withWhom);
+  else{
+    const exact=S.classes.filter(x=>before(x) && key(x)===key(c));
+    cands=exact.length ? exact : S.classes.filter(x=>before(x) && x.studentIds.includes(c.studentIds[0]));
+  }
+  return cands.sort(byDateTime).pop() || null;
+}
+function refreshLastLesson(c){
+  [['topic','cTopicLast','Last lesson covered'], ['hw','cHwLast', (c && c.kind==='own-lesson') ? 'Last notes' : 'Last homework']].forEach(([f,box,label])=>{
+    const el=$('#'+box); if(!el) return;
+    const l = c ? lastClassWith(c,f) : null;
+    el.dataset.last = l ? l[f] : '';
+    el.innerHTML = !c ? '' : (l
+      ? '<span>'+label+' <span style="opacity:.8">('+esc(fmtD(l.date))+')</span>: <b style="color:var(--ink)">'+esc(l[f])+'</b></span><button type="button" class="btn tiny" data-samelast="'+f+'">Same as last class</button>'
+      : '<span>No earlier '+(f==='topic' ? 'lesson' : label.replace('Last ','').toLowerCase())+' recorded yet.</span>');
+  });
+}
+$('#topicHwBlock').addEventListener('click',e=>{
+  const b=e.target.closest('[data-samelast]'); if(!b) return;
+  const f=b.dataset.samelast, input=$(f==='topic'?'#cTopic':'#cHw'), last=$(f==='topic'?'#cTopicLast':'#cHwLast').dataset.last||'';
+  if(input.value.trim() && input.value.trim()!==last && !confirm('Replace what is already written here with the last class\u2019s text?')) return;
+  input.value=last; input.focus();
+});
 function openClassModal(cid, presetDate, presetStu){
   editingClassId = cid || null;
   const c = cid ? S.classes.find(x=>x.cid===cid) : null;
@@ -4153,6 +4220,7 @@ function openClassModal(cid, presetDate, presetStu){
   $('#cLink').value = c ? (c.link||'') : '';
   $('#cTopic').value = c ? (c.topic||'') : '';
   $('#cHw').value = c ? (c.hw||'') : '';
+  refreshLastLesson(c);
   $('#cRepeat').value='none'; $('#cWeeks').value='4'; $('#cUntil').value='';
   // New classes always get the Repeat controls. An existing class gets them too as long as it isn't
   // already part of a series — that's how a one-off class is turned into a repeating one later.
@@ -7077,7 +7145,7 @@ function ragaSiteSectionHTML(todo, no){
       '<input type="checkbox" data-rspick="'+key+'" aria-label="Select '+esc(rsUnitNames(e))+'"'+(rsPick.has(key)?' checked':'')+'>'+
       '<span class="t" style="min-width:90px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-weight:400;color:var(--muted);font-size:.78rem">'+fmtTime12(c.time)+'</span></span>'+
       '<span style="flex:1 1 110px;min-width:0"><b>'+esc(rsUnitNames(e))+'</b>'+rsBatchTag(e)+(rsNoCreditNote(e)?'<div class="tiny" style="color:var(--gold-ink)">'+esc(rsNoCreditNote(e))+'</div>':'')+'</span>'+
-      '<span style="display:flex;gap:5px;flex-wrap:wrap">'+rsBtnsHTML(e,'data-rsset',isTodo?'todo':'nocr')+
+      '<span style="display:flex;gap:5px;flex-wrap:wrap">'+rsBtnsHTML(e,'data-rsset',isTodo?'todo':'nocr')+rsRemindBtns(e)+
       '</span></div>';
   };
   const total=todo.length+no.length;
@@ -7119,7 +7187,7 @@ function rsRowHTML(e, showName){
   return '<div style="display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line)" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
     '<span style="min-width:96px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-size:.78rem;color:var(--muted)">'+fmtTime12(c.time)+'</span></span>'+
     (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b>'+rsBatchTag(e)+noteHtml+'</span>' : (note ? '<span style="flex:1 1 100px;min-width:0">'+noteHtml+'</span>' : ''))+
-    '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+rsBtnsHTML(e,'data-rsval','full')+'</span></div>';
+    '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+rsBtnsHTML(e,'data-rsval','full')+rsRemindBtns(e)+'</span></div>';
 }
 function renderRsPanel(){
   const body=$('#rsPanelBody'); if(!body) return;
