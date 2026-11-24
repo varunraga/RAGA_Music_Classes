@@ -568,6 +568,10 @@
   .mat-btn[data-rsremind]:hover{background:rgba(37,211,102,.14)}
   .cal-ev .rs-warn,.tl-block .rs-warn{position:absolute;top:2px;right:3px;z-index:4;font-size:.8rem;line-height:1;padding:1px 2px!important;border-radius:4px;background:rgba(255,255,255,.88)}
   .cal-ev.has-rs b,.tl-block.has-rs b{padding-right:20px}
+  .mf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .mf-bar{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--line);margin:16px 0 8px}
+  .mf-bar span{display:block;height:100%}
+  .mf-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
   .cal-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 12px 16px}
   @media (max-width:700px){ .cal-summary{grid-template-columns:1fr} }
   .cal-summary .cs-title{grid-column:1/-1;font-weight:700;font-size:.9rem;color:var(--ink);padding:2px 2px 0}
@@ -845,6 +849,15 @@
         <div class="stat alert clickable" data-goto="personal"><div class="label">PERSONAL outstanding</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
         <div class="stat clickable" id="statRagaCard" data-goto="raga"><div class="label">RAGA withdrawable</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
         <div class="stat clickable" data-goto="earnings"><div class="label">Total receivable</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
+      </div>
+
+      <div class="panel" id="monthForecastPanel">
+        <div class="panel-head"><h3 id="mfTitle">Month forecast</h3><span class="hint" id="mfHint"></span></div>
+        <div class="panel-body">
+          <div class="mf-grid" id="mfGrid"></div>
+          <div class="mf-bar" id="mfBar"></div>
+          <div class="tiny" id="mfNote" style="color:var(--muted);line-height:1.5"></div>
+        </div>
       </div>
 
       <div class="panel">
@@ -3155,6 +3168,18 @@ const unitFee = (st, mode) => {
 };
 const fmtFee = (st,amt) => isUSD(st) ? '$'+amt : RUPEE.format(amt);
 const classINR = (c,sid) => (c.inr && typeof c.inr[sid]==='number') ? c.inr[sid] : null;
+// ESTIMATES ONLY (future classes): a USD student's fee is taken as the rupee amount of their most recent completed class.
+// Returns null when they have no earlier completed class with a rupee amount yet.
+const usdEstimateINR = sid => {
+  let best=null;
+  S.classes.forEach(c=>{
+    if(c.kind==='own-lesson' || c.att[sid]!=='Completed') return;
+    const v=classINR(c,sid); if(v==null) return;
+    if(!best || c.date>best.date || (c.date===best.date && c.time>best.time)) best={date:c.date,time:c.time,v};
+  });
+  return best ? best.v : null;
+};
+const makeEstCache = () => { const m={}; return sid => (sid in m) ? m[sid] : (m[sid]=usdEstimateINR(sid)); };
 const classAmount = (st,c) => { const v=classINR(c,st.id); return v!=null ? v : (isUSD(st) ? 0 : unitFee(st,c.mode)); };
 function stampFees(d){
   (d.classes||[]).forEach(cl=>{
@@ -4775,7 +4800,7 @@ const classFormat = c => (c.kind!=='own-lesson' && c.studentIds.length>1) ? 'Pai
 function calExportRangeData(from, to){
   const end=addDaysS(to,1);
   const aoa=[['S.No','Date','Day','Timings','Duration (min)','Student','Type','Class format','Mode','Fee per class (\u20B9)','Status','Lesson details (topic)','Revision / homework','Repeats weekly','Raga Shiksha website']];
-  let n=0, collect=0, nDone=0, expected=0, nSched=0;   // collectable = Completed classes only; expected = still-scheduled classes
+  let n=0, collect=0, nDone=0, expected=0, nSched=0, nEst=0; const estX=makeEstCache();   // collectable = Completed classes only; expected = still-scheduled classes
   S.classes.filter(c=>c.date>=from && c.date<end).sort(byDateTime).forEach(c=>{
     if(c.kind==='own-lesson'){
       const stat=c.ownStatus||'Scheduled';
@@ -4791,7 +4816,7 @@ function calExportRangeData(from, to){
       const rate = isUSD(st) ? '$'+unitFee(st,c.mode) : unitFee(st,c.mode);
       let fee;
       if(stat==='Completed'){ const actual=classINR(c,sid); fee = actual!=null ? actual : rate; }
-      else if(stat==='Scheduled') fee = rate;
+      else if(stat==='Scheduled'){ const e = isUSD(st) ? estX(sid) : null; if(e!=null){ fee=e; nEst++; } else fee = rate; }   // USD: estimated from their last class
       else fee = 0;
       aoa.push([aoa.length,fmtDMY(c.date),dowName(c.date),timingsOf(c),c.dur,st.name+(partner?' (with '+partner+')':''),st.cat==='RAGA'?'RAGA':'Personal',classFormat(c),c.mode||'',fee,stat,c.topic||'',c.hw||'',c.seriesId?'Yes':'No',
         (st.cat==='RAGA' && stat==='Scheduled') ? rsWebText(c,sid) : '']);
@@ -4801,7 +4826,7 @@ function calExportRangeData(from, to){
   });
   if(!n) return null;
   aoa.push(['','','','','','Total collectable \u2014 completed classes ('+nDone+')','','','',{f:'SUMIFS(J{r1}:J{r2},K{r1}:K{r2},"Completed")',v:collect},'','','','','']);
-  if(nSched) aoa.push(['','','','','','Total expected \u2014 scheduled classes ('+nSched+')','','','',{f:'SUMIFS(J{r1}:J{r2},K{r1}:K{r2},"Scheduled")',v:expected},'','','','','']);
+  if(nSched) aoa.push(['','','','','','Total expected \u2014 scheduled classes ('+nSched+')'+(nEst?' \u00b7 '+nEst+' USD class'+(nEst===1?'':'es')+' estimated at the last class\u2019s rupee amount':''),'','','',{f:'SUMIFS(J{r1}:J{r2},K{r1}:K{r2},"Scheduled")',v:expected},'','','','','']);
   const vis=['','','','','','Subtotal \u2014 rows shown (updates when you filter)','','','',{f:'SUBTOTAL(9,J{r1}:J{r2})',v:collect+expected},'','','','','']; vis.excelOnly=true; aoa.push(vis);
   const isWeek = parseD(from).getDay()===1 && to===addDaysS(from,6);   // exactly Monday\u2013Sunday keeps the "Weekly Schedule" wording
   return {name:(isWeek?'raga-week-schedule-'+from:'raga-schedule-'+from+'_to_'+to), title:(isWeek?'Weekly Schedule':'Class Schedule')+' \u2014 '+fmtDFull(from)+' to '+fmtDFull(to), sheets:[{name:isWeek?'Week schedule':'Class schedule', aoa, money:[10]}]};
@@ -4810,6 +4835,7 @@ function calExportSeriesData(asOf){
   const sum=[['S.No','Student(s)','Type','Class format','Day','Timings','Duration (min)','Mode','Fee per class (\u20B9)','Started on','Repeats until','Classes remaining','Next class','Last lesson covered','Revision / homework given','Raga Shiksha website']];
   const dates=[['S.No','Student(s)','Type','Class format','Date','Day','Timings','Status','Lesson details (topic)','Revision / homework','Raga Shiksha website']];
   const dowKey = r => ((parseD(r.date).getDay()+6)%7)*10000 + toMin(r.time);
+  const estS=makeEstCache();
   const list=seriesAll().map(sr=>({sr, rem:sr.list.filter(c=>c.date>=asOf)})).filter(x=>x.rem.length)
     .sort((a,b)=> dowKey(a.rem[0])-dowKey(b.rem[0]) || fullNamesOf(a.rem[0]).localeCompare(fullNamesOf(b.rem[0])));
   if(!list.length) return null;
@@ -4817,7 +4843,7 @@ function calExportSeriesData(asOf){
     const nx=rem[0], isOwn=nx.kind==='own-lesson', raga=sessionCategory(nx)==='raga';
     let fee='';
     if(!isOwn){
-      const parts=nx.studentIds.map(id=>{ const st=sById(id); return st ? {usd:isUSD(st), v:unitFee(st,nx.mode)} : null; }).filter(Boolean);
+      const parts=nx.studentIds.map(id=>{ const st=sById(id); if(!st) return null; if(!isUSD(st)) return {usd:false, v:unitFee(st,nx.mode)}; const e=estS(id); return e!=null ? {usd:false, v:e} : {usd:true, v:unitFee(st,nx.mode)}; }).filter(Boolean);   // USD: rupee amount of their last class
       fee = (parts.length===1 && !parts[0].usd) ? parts[0].v : parts.map(x=>x.usd?'$'+x.v:RUPEE.format(x.v)).join(' + ');
     }
     const lastTopic=sr.list.filter(c=>c.date<=asOf && (c.topic||'').trim()).pop();
@@ -4943,6 +4969,41 @@ $('#clsDelete').addEventListener('click',()=>{
 /* =====================================================
    RENDER — DASHBOARD
    ===================================================== */
+/* ---------- Dashboard: month forecast (collected / still collectable / expected from scheduled) ---------- */
+function forecastScheduled(){
+  const y=+CURM.slice(0,4), m=+CURM.slice(5,7), from=CURM+'-01', end=dstr(new Date(y,m,0));   // last day of this month
+  const r={p:0,r:0,n:0,unmarked:0,usd:0,est:0,end}, est=makeEstCache();
+  S.classes.forEach(c=>{
+    if(c.kind==='own-lesson' || c.date<from || c.date>end || sessionStatus(c)!=='scheduled') return;
+    r.n++; if(c.date<TODAY) r.unmarked++;     // happened already but not marked Completed yet
+    c.studentIds.forEach(sid=>{
+      const stu=sById(sid); if(!stu || c.att[sid]!=='Scheduled') return;
+      const amt = isUSD(stu) ? est(sid) : unitFee(stu,c.mode);          // USD: same rupee amount as their last class
+      if(amt==null){ r.usd++; return; }
+      if(isUSD(stu)) r.est++;
+      r[stu.cat==='RAGA'?'r':'p']+=amt;
+    });
+  });
+  return r;
+}
+function renderMonthForecast(v){
+  const grid=$('#mfGrid'); if(!grid) return;
+  const f=forecastScheduled(), collected=v.pInc+v.rInc, collectable=v.outT+v.relig+v.bankPending, expected=f.p+f.r, total=collected+collectable+expected;
+  const left=daysBetween(TODAY,f.end)+1;
+  $('#mfTitle').textContent='Month forecast \u2014 '+monthLabel(CURM);
+  $('#mfHint').textContent=left+' day'+(left===1?'':'s')+' left this month';
+  const tile=(dot,label,val,sub,tip)=>'<div class="cs-tile"'+(tip?' title="'+esc(tip)+'"':'')+'><div class="cs-label">'+(dot?'<span class="mf-dot" style="background:'+dot+'"></span>':'')+label+'</div><div class="cs-val num">'+RUPEE.format(val)+'</div><div class="cs-sub">'+sub+'</div></div>';
+  grid.innerHTML=
+    tile('var(--green)','Collected so far',collected,'Personal '+RUPEE.format(v.pInc)+' \u00b7 RAGA '+RUPEE.format(v.rInc),'Money actually received this month')+
+    tile('var(--gold)','Still collectable',collectable,'Personal due '+RUPEE.format(v.outT)+' \u00b7 RAGA withdrawable '+RUPEE.format(v.relig)+(v.bankPending?' \u00b7 in transit '+RUPEE.format(v.bankPending):''),'From classes already completed (includes dues from earlier months)')+
+    tile('var(--purple)','Expected from scheduled',expected,f.n+' scheduled class'+(f.n===1?'':'es')+' this month'+(expected?'<br>Personal '+RUPEE.format(f.p)+' \u00b7 RAGA '+RUPEE.format(f.r):'')+(f.unmarked?'<br>'+f.unmarked+' already held but not marked Completed':'')+(f.est?'<br>'+f.est+' USD class'+(f.est===1?'':'es')+' estimated at the last class\u2019s rupee amount':'')+(f.usd?'<br>'+f.usd+' USD class'+(f.usd===1?'':'es')+' not counted (no earlier class to estimate from)':''),'Fees for classes still marked Scheduled this month, at today\u2019s rates (USD students: the rupee amount of their last class)')+
+    tile('','Forecast for the month',total,'if everything is collected and every scheduled class happens','Collected + still collectable + expected');
+  const pct=x=>total>0 ? (x/total*100) : 0;
+  $('#mfBar').innerHTML=total>0
+    ? '<span style="width:'+pct(collected)+'%;background:var(--green)" title="Collected"></span><span style="width:'+pct(collectable)+'%;background:var(--gold)" title="Still collectable"></span><span style="width:'+pct(expected)+'%;background:var(--purple)" title="Expected"></span>'
+    : '';
+  $('#mfNote').innerHTML=(total>0 ? '<span class="mf-dot" style="background:var(--green)"></span>collected &nbsp; <span class="mf-dot" style="background:var(--gold)"></span>still collectable &nbsp; <span class="mf-dot" style="background:var(--purple)"></span>expected &nbsp;\u00b7&nbsp; ' : '')+'&ldquo;Still collectable&rdquo; includes dues carried over from earlier months, so it can be more than this month&#39;s classes alone.';
+}
 function renderStats(){
   const act = S.students.filter(s=>!s.archived);
   $('#statStudents').textContent = act.length;
@@ -4975,6 +5036,7 @@ function renderStats(){
   const bankPending = ragaBankPending();
   $('#statReceivable').textContent = RUPEE.format(outT + relig + bankPending);
   $('#statReceivableSub').innerHTML = '<b>'+RUPEE.format(outT)+'</b> Personal + <b>'+RUPEE.format(relig)+'</b> RAGA'+(bankPending?' + <b>'+RUPEE.format(bankPending)+'</b> in transit':'');
+  renderMonthForecast({pInc,rInc,outT,relig,bankPending});
 }
 function renderTimeline(){
   const el=$('#timeline'); el.innerHTML='';
@@ -5511,7 +5573,7 @@ function calPeriod(){
 }
 const fmtHrs = m => (Math.round(m/60*10)/10).toString().replace(/\.0$/,'')+' h';
 function calPeriodStats(from,to){
-  const r={done:0,left:0,off:0,minDone:0,minLeft:0,earned:{p:0,r:0},toCome:{p:0,r:0},usd:0};
+  const r={done:0,left:0,off:0,minDone:0,minLeft:0,earned:{p:0,r:0},toCome:{p:0,r:0},usd:0,est:0}, estC=makeEstCache();
   S.classes.forEach(c=>{
     if(c.kind==='own-lesson' || c.date<from || c.date>=to || !calEventVisible(c)) return;   // your own lessons aren't teaching; legend filters apply
     const st=sessionStatus(c);
@@ -5521,7 +5583,7 @@ function calPeriodStats(from,to){
       const stu=sById(sid); if(!stu) return;
       const a=c.att[sid], k=stu.cat==='RAGA'?'r':'p', rate=isUSD(stu)?null:unitFee(stu,c.mode);
       if(a==='Completed'){ const v=classINR(c,sid), amt=(v!=null?v:rate); if(amt==null) r.usd++; else r.earned[k]+=amt; }
-      else if(a==='Scheduled'){ if(rate==null) r.usd++; else r.toCome[k]+=rate; }
+      else if(a==='Scheduled'){ const e = isUSD(stu) ? estC(sid) : rate; if(e==null) r.usd++; else { r.toCome[k]+=e; if(isUSD(stu)) r.est++; } }
     });
   });
   return r;
@@ -5540,7 +5602,7 @@ function renderCalSummary(){
     '<div class="cs-tile" title="Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga)+'"><div class="cs-label">Expected income</div><div class="cs-val num">'+RUPEE.format(earned+toCome)+'</div>'+
       '<div class="cs-sub">'+RUPEE.format(earned)+' earned \u00b7 '+RUPEE.format(toCome)+' to come'+
       (raga ? '<br>Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga) : '')+
-      (x.usd ? '<br>'+x.usd+' USD class'+(x.usd===1?'':'es')+' not counted yet' : '')+'</div></div>';
+      (x.est ? '<br>'+x.est+' USD class'+(x.est===1?'':'es')+' estimated at the last class\u2019s rupee amount' : '')+(x.usd ? '<br>'+x.usd+' USD class'+(x.usd===1?'':'es')+' not counted (no earlier class)' : '')+'</div></div>';
 }
 function renderCalendar(){
   renderCalLegend();
