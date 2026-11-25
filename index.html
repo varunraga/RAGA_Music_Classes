@@ -166,6 +166,10 @@
 
   /* ---------- cards / panels ---------- */
   .stat-note{margin:-14px 2px 22px;font-size:.68rem;line-height:1.5;color:var(--muted)}
+  .has-export{position:relative}
+  .has-export .sub,.has-export .cs-sub{padding-right:30px}
+  .box-export{position:absolute;right:9px;bottom:9px;width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;font-size:.92rem;line-height:1;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:8px;cursor:pointer}
+  .box-export:hover{color:var(--ink);border-color:var(--gold);background:rgba(200,150,40,.14)}
   .month-head{font-family:'Marcellus',serif;font-size:1.45rem;color:var(--ink);margin:2px 0 12px;padding-bottom:4px;border-bottom:2px solid var(--gold);display:inline-block}
   .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px;box-shadow:var(--shadow);min-width:0}
@@ -850,8 +854,8 @@
         <div class="stat alert clickable" data-goto="personal"><div class="label">Outstanding from Personal Students</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
         <div class="stat clickable" id="statRagaCard" data-goto="raga"><div class="label">Withdrawable from Raga Shiksha</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
         <div class="stat clickable" data-goto="earnings" title="Everything earned from completed classes and not yet received, including dues carried forward from earlier months"><div class="label">Total outstanding</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
-        <div class="stat clickable" data-goto="calendar" title="Fees for classes still marked Scheduled for the rest of this month (USD students: the rupee amount of their last class)"><div class="label">Expected from Upcoming Classes</div><div class="value num" id="statExpected" style="color:var(--purple)">–</div><div class="sub" id="statExpectedSub"></div></div>
-        <div class="stat clickable" data-goto="earnings" title="Total outstanding + Expected from upcoming classes (money already received this month is not included)"><div class="label">Income Forecast for the Month</div><div class="value num" id="statForecast">–</div><div class="sub" id="statForecastSub"></div></div>
+        <div class="stat clickable has-export" data-goto="calendar" title="Fees for classes still marked Scheduled for the rest of this month (USD students: the rupee amount of their last class)"><div class="label">Expected from Upcoming Classes</div><div class="value num" id="statExpected" style="color:var(--purple)">–</div><div class="sub" id="statExpectedSub"></div><button type="button" class="box-export" data-boxexport="expected" title="Download the workings in Excel" aria-label="Download the workings in Excel">&#11015;</button></div>
+        <div class="stat clickable has-export" data-goto="earnings" title="Total outstanding + Expected from upcoming classes (money already received this month is not included)"><div class="label">Income Forecast for the Month</div><div class="value num" id="statForecast">–</div><div class="sub" id="statForecastSub"></div><button type="button" class="box-export" data-boxexport="forecast" title="Download the workings in Excel" aria-label="Download the workings in Excel">&#11015;</button></div>
       </div>
       <div class="stat-note" id="statNote" style="display:none"></div>
 
@@ -4984,6 +4988,120 @@ function forecastScheduled(){
   });
   return r;
 }
+/* ---------- Excel "workings" behind the Expected / Forecast / Calendar income boxes ---------- */
+// One row per student per class, valued exactly the way the boxes value them, so the sheet's total equals the box.
+function incomeWorkingRows(mode, from, toExcl, useFilter){
+  const est=makeEstCache(), rows=[];
+  S.classes.forEach(c=>{
+    if(c.kind==='own-lesson' || c.date<from || c.date>=toExcl) return;
+    if(useFilter && !calEventVisible(c)) return;
+    const st=sessionStatus(c);
+    if(mode==='dash'){ if(st!=='scheduled') return; }
+    else if(st==='cancelled' || isAbsentClass(c)) return;
+    c.studentIds.forEach(sid=>{
+      const stu=sById(sid); if(!stu) return;
+      const a=c.att[sid]; let fee=null, basis='';
+      if(a==='Completed' && mode==='cal'){
+        const v=classINR(c,sid), rate=isUSD(stu)?null:unitFee(stu,c.mode);
+        fee = v!=null ? v : rate;
+        basis = v!=null ? 'Billed amount' : (rate!=null ? 'Rate (amount not recorded yet)' : 'Pending \u2014 rupee amount not entered yet');
+      } else if(a==='Scheduled'){
+        if(isUSD(stu)){ const e=est(sid); fee=e; basis = e!=null ? 'USD student \u2014 rupee amount of their last class' : 'Not counted \u2014 no earlier class to estimate from'; }
+        else { fee=unitFee(stu,c.mode); basis='Rate'; }
+        if(c.date<TODAY) basis+=' \u00b7 held, not marked Completed';
+      } else return;
+      rows.push({c,sid,stu,status:a,fee,basis});
+    });
+  });
+  return rows.sort((x,y)=> x.c.date===y.c.date ? (toMin(x.c.time)-toMin(y.c.time) || x.stu.name.localeCompare(y.stu.name)) : (x.c.date<y.c.date?-1:1));
+}
+function incomeWorkingsSheet(name, mode, rows){
+  const aoa=[['S.No','Date','Day','Timings','Student','Type','Class format','Mode','Status','Fee (\u20B9)','Basis']];
+  rows.forEach((r,i)=>{
+    const c=r.c, partner=c.studentIds.filter(x=>x!==r.sid).map(firstName).join(', ');
+    aoa.push([i+1,fmtDMY(c.date),dowName(c.date),timingsOf(c),r.stu.name+(partner?' (with '+partner+')':''),r.stu.cat==='RAGA'?'RAGA':'Personal',classFormat(c),c.mode||'',r.status,r.fee==null?'':r.fee,r.basis]);
+  });
+  const sum=f=>rows.filter(f).reduce((t,r)=>t+(r.fee||0),0), blank=['','','','','','','','','','',''];
+  const T=(label,f,v)=>{ const row=blank.slice(); row[4]=label; row[9]={f,v}; aoa.push(row); };
+  if(mode==='dash'){
+    T('Total \u2014 Personal','SUMIFS(J{r1}:J{r2},F{r1}:F{r2},"Personal")',sum(r=>r.stu.cat!=='RAGA'));
+    T('Total \u2014 RAGA','SUMIFS(J{r1}:J{r2},F{r1}:F{r2},"RAGA")',sum(r=>r.stu.cat==='RAGA'));
+    T('Total expected from upcoming classes','SUBTOTAL(9,J{r1}:J{r2})',sum(()=>true));
+  } else {
+    T('Total earned \u2014 completed classes','SUMIFS(J{r1}:J{r2},I{r1}:I{r2},"Completed")',sum(r=>r.status==='Completed'));
+    T('Total to come \u2014 scheduled classes','SUMIFS(J{r1}:J{r2},I{r1}:I{r2},"Scheduled")',sum(r=>r.status==='Scheduled'));
+    T('Total expected income','SUBTOTAL(9,J{r1}:J{r2})',sum(()=>true));
+  }
+  const note=t=>{ const row=blank.slice(); row[1]=t; aoa.push(row); };
+  note(''); note('Notes');
+  note('Each line is one student in one class, valued at that student\u2019s rate for the class mode.');
+  note('USD students are valued at the rupee amount of their last completed class; with no earlier class they are left out.');
+  note('Cancelled and absent classes, and your own lessons, are never counted.');
+  return {name, aoa, money:[10]};
+}
+function exportExpectedWorkings(){
+  const f=forecastScheduled(), rows=incomeWorkingRows('dash', CURM+'-01', addDaysS(f.end,1), false);
+  if(!rows.length){ toast('No scheduled classes left this month'); return; }
+  const sh=incomeWorkingsSheet('Upcoming classes','dash',rows);
+  aoaDownload('raga-expected-from-upcoming-classes-'+CURM,'Expected from Upcoming Classes \u2014 '+monthLabel(CURM),[sh]);
+}
+function exportCalendarIncomeWorkings(){
+  const per=calPeriod(), rows=incomeWorkingRows('cal', per.from, per.to, true);
+  if(!rows.length){ toast('No classes to work out in this period'); return; }
+  const filt=calCatFilter.size||calStatusFilter.size;
+  const sh=incomeWorkingsSheet('Expected income','cal',rows);
+  aoaDownload('raga-calendar-expected-income-'+per.from+'_to_'+addDaysS(per.to,-1),'Expected Income \u2014 '+per.label+(filt?' (legend filter on)':''),[sh]);
+}
+function exportForecastWorkings(){
+  const f=forecastScheduled(), rows=incomeWorkingRows('dash', CURM+'-01', addDaysS(f.end,1), false);
+  // --- Personal outstanding, student by student ---
+  const debtors=S.students.filter(s=>s.cat==='Personal' && outstandingFor(s)>0).sort((a,b)=>outstandingFor(b)-outstandingFor(a));
+  const po=[['S.No','Student','Level','Billed (\u20B9)','Paid (\u20B9)','Outstanding (\u20B9)']];
+  debtors.forEach((s,i)=>po.push([i+1,s.name,s.level||'',dueAllTime(s),paidAllTime(s),{f:'D{rr}-E{rr}',v:outstandingFor(s)}]));
+  po.push(['','Total','',debtors.reduce((t,s)=>t+dueAllTime(s),0),debtors.reduce((t,s)=>t+paidAllTime(s),0),debtors.reduce((t,s)=>t+outstandingFor(s),0)]);
+  const outT=debtors.reduce((t,s)=>t+outstandingFor(s),0);
+  // --- RAGA earnings by student, then the balance ---
+  const rs=ragaStudents().filter(s=>sumCompleted(s,null)>0 || ragaCompletedAll(s)>0);
+  const re=[['S.No','Student','Completed classes','Rate (\u20B9)','Earned (\u20B9)']];
+  rs.forEach((s,i)=>re.push([i+1,s.name,ragaCompletedAll(s),ragaRate(s),sumCompleted(s,null)]));
+  re.push(['','Total',rs.reduce((t,s)=>t+ragaCompletedAll(s),0),'',rs.reduce((t,s)=>t+sumCompleted(s,null),0)]);
+  const accrued=ragaAccruedAll(), wdn=ragaWithdrawnAll(), relig=ragaEligible(), bank=ragaBankPending();
+  const rb=[['S.No','Item','Amount (\u20B9)','Note'],
+    [1,'Earned from completed RAGA classes (all time)',{f:"'RAGA earnings'!E"+(4+rs.length),v:accrued},'Sheet: RAGA earnings'],
+    [2,'Already withdrawn',wdn,'From the Earnings page'],
+    [3,'Withdrawable from Raga Shiksha',{f:'C{p2}-C{p1}',v:relig},'Earned minus withdrawn'],
+    [4,'In transit to bank (withdrawn, not received yet)',bank,'Still receivable']];
+  // --- Expected from upcoming classes ---
+  const up=incomeWorkingsSheet('Upcoming classes','dash',rows), m=rows.length;
+  const expP=rows.filter(r=>r.stu.cat!=='RAGA').reduce((t,r)=>t+(r.fee||0),0), expR=rows.filter(r=>r.stu.cat==='RAGA').reduce((t,r)=>t+(r.fee||0),0);
+  const upRef=cat=> m ? {f:"SUMIFS('Upcoming classes'!J4:J"+(3+m)+",'Upcoming classes'!F4:F"+(3+m)+',"'+cat+'")',v:cat==='RAGA'?expR:expP} : 0;
+  const total=outT+relig+bank+expP+expR;
+  const received=S.payments.filter(p=>monthKey(p.date)===CURM).reduce((t,p)=>t+p.amount,0)+ragaReceivedInMonth(CURM);
+  // (S.No is written as text on this sheet so a line that starts with the word "Outstanding" isn't mistaken for a total row)
+  const sm=[['S.No','Component','Amount (\u20B9)','Where it comes from'],
+    ['1','Outstanding from Personal Students',{f:"'Personal outstanding'!F"+(4+debtors.length),v:outT},'Sheet: Personal outstanding'],
+    ['2','Withdrawable from Raga Shiksha',{f:"'RAGA balance'!C6",v:relig},'Sheet: RAGA balance'],
+    ['3','In transit to bank (RAGA)',{f:"'RAGA balance'!C7",v:bank},'Sheet: RAGA balance'],
+    ['4','Expected from upcoming classes \u2014 Personal',upRef('Personal'),'Sheet: Upcoming classes'],
+    ['5','Expected from upcoming classes \u2014 RAGA',upRef('RAGA'),'Sheet: Upcoming classes'],
+    ['','Total income forecast for the month',total,''],
+    ['','','',''],
+    ['','Dues carried forward from earlier months are part of the first three lines.','',''],
+    ['','Money already received this month ('+RUPEE.format(received)+') is not included in this forecast.','','']];
+  aoaDownload('raga-income-forecast-'+CURM,'Income Forecast for the Month \u2014 '+monthLabel(CURM),[
+    {name:'Forecast',aoa:sm,money:[3]},
+    {name:'Personal outstanding',aoa:po,money:[4,5,6]},
+    {name:'RAGA earnings',aoa:re,money:[4,5]},
+    {name:'RAGA balance',aoa:rb,money:[3]},
+    up]);
+}
+// capture phase: the box itself is clickable (it opens another page), so the download symbol must win
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-boxexport]'); if(!b) return;
+  e.stopPropagation(); e.preventDefault();
+  const k=b.dataset.boxexport;
+  if(k==='expected') exportExpectedWorkings(); else if(k==='forecast') exportForecastWorkings(); else if(k==='cal') exportCalendarIncomeWorkings();
+},true);
 function renderExpectedCard(totalOutstanding){
   const f=forecastScheduled(), expected=f.p+f.r, left=daysBetween(TODAY,f.end)+1;
   $('#monthHeading').textContent='Month of '+parseD(TODAY).toLocaleDateString('en-IN',{month:'long'});
@@ -5594,10 +5712,11 @@ function renderCalSummary(){
       '<div class="cs-sub">'+x.done+' done \u00b7 '+x.left+' to go'+(x.off?' \u00b7 '+x.off+' cancelled / absent':'')+'</div></div>'+
     '<div class="cs-tile"><div class="cs-label">Hours taught</div><div class="cs-val num">'+fmtHrs(x.minDone)+'</div>'+
       '<div class="cs-sub">+ '+fmtHrs(x.minLeft)+' still to teach</div></div>'+
-    '<div class="cs-tile" title="Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga)+'"><div class="cs-label">Expected income</div><div class="cs-val num">'+RUPEE.format(earned+toCome)+'</div>'+
+    '<div class="cs-tile has-export" title="Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga)+'"><div class="cs-label">Expected income</div><div class="cs-val num">'+RUPEE.format(earned+toCome)+'</div>'+
       '<div class="cs-sub">'+RUPEE.format(earned)+' earned \u00b7 '+RUPEE.format(toCome)+' to come'+
       (raga ? '<br>Personal '+RUPEE.format(x.earned.p+x.toCome.p)+' \u00b7 RAGA '+RUPEE.format(raga) : '')+
-      (x.est ? '<br>'+x.est+' USD class'+(x.est===1?'':'es')+' estimated at the last class\u2019s rupee amount' : '')+(x.usd ? '<br>'+x.usd+' USD class'+(x.usd===1?'':'es')+' not counted (no earlier class)' : '')+'</div></div>';
+      (x.est ? '<br>'+x.est+' USD class'+(x.est===1?'':'es')+' estimated at the last class\u2019s rupee amount' : '')+(x.usd ? '<br>'+x.usd+' USD class'+(x.usd===1?'':'es')+' not counted (no earlier class)' : '')+'</div>'+
+      '<button type="button" class="box-export" data-boxexport="cal" title="Download the workings in Excel" aria-label="Download the workings in Excel">&#11015;</button></div>';
 }
 function renderCalendar(){
   renderCalLegend();
