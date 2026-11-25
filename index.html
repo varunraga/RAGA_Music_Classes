@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-14 -->
+<!-- Build: 2026-10-17 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -1763,6 +1763,9 @@
     <div class="data-backup-row"><a href="#" class="foot-link" id="lnkRecentlyDeleted">Recently deleted</a><div class="tiny" style="color:var(--muted)">Restore a recording, composition, or tala video deleted in the last 30 days.</div></div>
     <div class="data-backup-row"><a href="#" class="foot-link" id="lnkSnapshots">Snapshots</a><div class="tiny" style="color:var(--muted)">Automatic daily save points in Google Drive — roll back to an earlier day if needed.</div></div>
 
+    <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">WHATSAPP</div>
+    <div class="data-backup-row"><a href="#" class="foot-link" id="lnkWaTest">Test WhatsApp</a><div class="tiny" style="color:var(--muted)">Messages and reminders open in your regular WhatsApp (never WhatsApp Business) and go out from whichever account is signed in there — it should be <b>+91 94827 42848</b>. This opens a chat with that number so you can check. Audio and PDFs use your phone's share sheet: pick WhatsApp (green), not Business.</div></div>
+
     <div class="tiny" style="font-weight:700;color:var(--muted);margin:16px 0 4px;letter-spacing:.03em">TOOLS</div>
     <div class="data-backup-row"><a href="#" class="foot-link" id="lnkDetectSeries">Group recurring classes</a><div class="tiny" style="color:var(--muted)">One-time scan for weekly classes scheduled before series grouping existed, so they can be bulk-edited too.</div></div>
 
@@ -3012,7 +3015,7 @@ function rsSendCreditReminder(sid){
   const st=sById(sid); if(!st) return;
   const num=waDigits(st.mobile);
   if(!num){ toast(st.name+' has no mobile number saved'); return; }
-  window.open('https://wa.me/'+num+'?text='+encodeURIComponent(rsCreditMessage(sid)), '_blank');
+  openWhatsApp(num, rsCreditMessage(sid));
   st.creditRemindedAt=Date.now(); st.updatedAt=Date.now(); persist();
   toast('WhatsApp opened for '+st.name+' \u2014 press send');
   if($('#m-raga-site').classList.contains('open')) renderRsPanel();
@@ -7788,7 +7791,7 @@ $('#libActShare').addEventListener('click', async ()=>{
   const btn=$('#libActShare');
   if(libPreparedShare){                       // second tap after the files were prepared: a fresh gesture
     const d=libPreparedShare; libPreparedShare=null; btn.textContent='Share';
-    try{ await navigator.share(d); }catch(e){ if(!e || e.name!=='AbortError') toast('Could not open the share sheet'); }
+    try{ waShareHint(); await navigator.share(d); }catch(e){ if(!e || e.name!=='AbortError') toast('Could not open the share sheet'); }
     return;
   }
   const items=libSelectedItems(kind); if(!items.length) return;
@@ -7808,9 +7811,10 @@ $('#libActShare').addEventListener('click', async ()=>{
     const data={title: items.length+' '+LIB[kind].many};
     if(files.length) data.files=files;
     if(texts.length) data.text=texts.join('\n\n————————\n\n');
+    if(!files.length && texts.length){ openWhatsApp(null, data.text); return; }   // text only: regular WhatsApp
     const canShareFiles = !files.length || (navigator.canShare ? navigator.canShare({files}) : true);
     if(navigator.share && canShareFiles){
-      try{ await navigator.share(data); if(missing) toast(missing+' could not be read and were left out'); return; }
+      try{ waShareHint(); await navigator.share(data); if(missing) toast(missing+' could not be read and were left out'); return; }
       catch(e){
         if(e && e.name==='AbortError') return;
         if(e && e.name==='NotAllowedError'){      // the preparing took too long and the browser dropped the gesture
@@ -8057,6 +8061,10 @@ trashWire('items','trashBar-items','recentlyDeletedList',{
   noun:'item', render:renderRecentlyDeletedList, keys:()=>getRecentlyDeletedItems().map(rdKey),
   restore:async ks=>{ ks.forEach(k=>{ const [kind,...r]=k.split('|'); restoreDeletedItem(kind, r.join('|')); }); },
   purge:async ks=>{ for(const k of ks){ const [kind,...r]=k.split('|'); await purgeDeletedItem(kind, r.join('|')); } renderRecordingsFilters(); renderRecordingsList(); renderNotationFilters(); renderNotationList(); renderTalaVideoList(); renderTalaSavedRow(); }
+});
+$('#lnkWaTest').addEventListener('click', e=>{
+  e.preventDefault();
+  openWhatsApp(WA_MY_NUMBER, 'Test from the RAGA Music Classes app \u2705 \u2014 if you can read this in your regular WhatsApp (not WhatsApp Business), everything is set up correctly.');
 });
 $('#lnkRecentlyDeleted').addEventListener('click', e=>{ e.preventDefault(); trashSel.items.on=false; trashSel.items.set.clear(); closeModal('m-data-backup'); renderRecentlyDeletedList(); openModal('m-recently-deleted'); });
 
@@ -9998,6 +10006,36 @@ function waDigits(mobile){
   if(!d) return null;
   return d.length===10 ? '91'+d : d;
 }
+/* ---------- WhatsApp: always the regular WhatsApp app, never WhatsApp Business ----------
+   A plain wa.me link lets the phone choose between WhatsApp and WhatsApp Business when both are
+   installed (and a web page can't make that choice itself). So on Android we open it as an intent
+   pinned to regular WhatsApp's package (Business is com.whatsapp.w4b), and on iPhone we use the
+   whatsapp:// scheme (Business uses whatsapp-business://). Everywhere else wa.me is fine.
+   Which ACCOUNT sends is whatever number is signed in to that app — it should be WA_MY_NUMBER. */
+const WA_MY_NUMBER = '919482742848';
+const WA_PACKAGE = 'com.whatsapp';
+function waLinks(num, text){
+  const enc=encodeURIComponent(text||''), n=num||'';
+  const web='https://wa.me/'+n+'?text='+enc;
+  const q=(n?'phone='+n+'&':'')+'text='+enc;
+  const ua=(typeof navigator!=='undefined' && navigator.userAgent)||'';
+  if(/Android/i.test(ua)) return {kind:'android', web, url:'intent://send/?'+q+'#Intent;scheme=whatsapp;package='+WA_PACKAGE+';S.browser_fallback_url='+encodeURIComponent(web)+';end'};
+  if(/iPhone|iPad|iPod/i.test(ua)) return {kind:'ios', web, url:'whatsapp://send?'+q};
+  return {kind:'web', web, url:web};
+}
+// num: digits with country code, or null/'' to let the person pick the contact inside WhatsApp.
+function openWhatsApp(num, text){
+  const l=waLinks(num,text);
+  if(l.kind==='web') window.open(l.url,'_blank');
+  else window.location.href=l.url;            // an intent:// / whatsapp:// link has to be navigated to
+  return l;
+}
+// Files (audio, PDF) go through the phone's own share sheet, which lists both WhatsApp apps and can't be
+// pre-selected from a web page — so say which one to pick, once per session.
+function waShareHint(){
+  try{ if(sessionStorage.getItem('waShareHint')) return; sessionStorage.setItem('waShareHint','1'); }catch(e){}
+  toast('In the share sheet pick WhatsApp (the green icon) — not WhatsApp Business');
+}
 function notationShareText(n){
   const lines = [n.title || '(untitled)'];
   const tagBits = [];
@@ -10581,16 +10619,11 @@ $('#notMsgBtn').addEventListener('click', ()=>{
   const st = sById(sid); if(!st){ toast('Could not find that student'); return; }
   const num = waDigits(st.mobile);
   if(!num){ toast(st.name+' has no mobile number saved'); return; }
-  window.open('https://wa.me/'+num+'?text='+encodeURIComponent(notationShareText(n)), '_blank');
+  openWhatsApp(num, notationShareText(n));
 });
 $('#notShareBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
-  const text = notationShareText(n);
-  if(navigator.share){ try{ await navigator.share({text}); }catch(e){} }
-  else{
-    try{ await navigator.clipboard.writeText(text); toast('Copied — paste it wherever you like'); }
-    catch(e){ toast('Could not share automatically on this browser'); }
-  }
+  openWhatsApp(null, notationShareText(n));      // regular WhatsApp, pick the contact there
 });
 $('#notSharePdfBtn').addEventListener('click', async ()=>{
   const n = S.notations.find(x=>x.id===viewingNotationId); if(!n) return;
@@ -10609,7 +10642,7 @@ $('#notSharePdfBtn').addEventListener('click', async ()=>{
   let shared = false;
   if(navigator.share){
     try{
-      await navigator.share({files:[file], title:n.title});
+      waShareHint(); await navigator.share({files:[file], title:n.title});
       shared = true;
     }catch(e){
       if(e && e.name==='AbortError') return;
@@ -12314,7 +12347,7 @@ $('#recMsgBtn').addEventListener('click', ()=>{
   const num = waDigits(st.mobile);
   if(!num){ toast(st.name+' has no mobile number saved'); return; }
   const text = 'Sharing a recording: '+(r.title||'(untitled)')+' — attaching the audio now.';
-  window.open('https://wa.me/'+num+'?text='+encodeURIComponent(text), '_blank');
+  openWhatsApp(num, text);
   toast('Chat opened — attach the audio file from there');
 });
 $('#recDownloadBtn').addEventListener('click', async ()=>{
@@ -12355,7 +12388,7 @@ $('#recShareBtn').addEventListener('click', async ()=>{
   let shared = false;
   if(navigator.share){
     try{
-      await navigator.share({files:[file], title:r.title});
+      waShareHint(); await navigator.share({files:[file], title:r.title});
       shared = true;
     }catch(e){
       if(e && e.name==='AbortError') return; // user cancelled
@@ -12457,9 +12490,7 @@ async function confirmSharePick(itemId){
     if(!n.hasPdf){
       // No PDF on this composition — share the lyrics/meaning as text instead, since there's no
       // file to attach. Falls back to copying to the clipboard on browsers without a share sheet.
-      const text = notationShareText(n);
-      if(navigator.share){ try{ await navigator.share({text, title:n.title}); }catch(e){ if(e && e.name==='AbortError') return; } }
-      else{ try{ await navigator.clipboard.writeText(text); toast('Copied — paste it wherever you like'); }catch(e){ toast('Could not share automatically on this browser'); return; } }
+      openWhatsApp(null, notationShareText(n));    // regular WhatsApp, pick the contact there
       if(sharePickerOnShared) sharePickerOnShared();
       return;
     }
@@ -12471,7 +12502,7 @@ async function confirmSharePick(itemId){
     const file = new File([rec.blob], n.pdfName||'notation.pdf', {type:'application/pdf'});
     let shared = false;
     if(navigator.share){
-      try{ await navigator.share({files:[file], title:n.title}); shared = true; }
+      try{ waShareHint(); await navigator.share({files:[file], title:n.title}); shared = true; }
       catch(e){ if(e && e.name==='AbortError') return; console.warn('Share failed:', e.name, e.message); }
     }
     if(!shared){
@@ -12495,7 +12526,7 @@ async function confirmSharePick(itemId){
     const file = new File([rec.blob], (r.title||'recording').replace(/[^\w\-]+/g,'_')+'.'+ext, {type: mime});
     let shared = false;
     if(navigator.share){
-      try{ await navigator.share({files:[file], title:r.title}); shared = true; }
+      try{ waShareHint(); await navigator.share({files:[file], title:r.title}); shared = true; }
       catch(e){ if(e && e.name==='AbortError') return; console.warn('Share failed:', e.name, e.message); }
     }
     if(!shared){
@@ -13205,7 +13236,7 @@ $('#talaVideoShareBtn').addEventListener('click', async ()=>{
   if(navigator.share){
     const canCheck = navigator.canShare ? navigator.canShare({files:[file]}) : true;
     if(canCheck){
-      try{ await navigator.share({files:[file], title:v.title}); shared = true; }
+      try{ waShareHint(); await navigator.share({files:[file], title:v.title}); shared = true; }
       catch(e){ if(e && e.name==='AbortError') return; }
     }
   }
@@ -13513,7 +13544,7 @@ $('#talaExportShareBtn').addEventListener('click', async ()=>{
   if(navigator.share){
     const canCheck = navigator.canShare ? navigator.canShare({files:[file]}) : true;
     if(canCheck){
-      try{ await navigator.share({files:[file], title:titleForShare}); shared = true; }
+      try{ waShareHint(); await navigator.share({files:[file], title:titleForShare}); shared = true; }
       catch(e){ if(e && e.name==='AbortError') return; }
     }
   }
