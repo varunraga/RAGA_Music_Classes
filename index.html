@@ -5060,17 +5060,35 @@ function exportForecastWorkings(){
   debtors.forEach((s,i)=>po.push([i+1,s.name,s.level||'',dueAllTime(s),paidAllTime(s),{f:'D{rr}-E{rr}',v:outstandingFor(s)}]));
   po.push(['','Total','',debtors.reduce((t,s)=>t+dueAllTime(s),0),debtors.reduce((t,s)=>t+paidAllTime(s),0),debtors.reduce((t,s)=>t+outstandingFor(s),0)]);
   const outT=debtors.reduce((t,s)=>t+outstandingFor(s),0);
-  // --- RAGA earnings by student, then the balance ---
-  const rs=ragaStudents().filter(s=>sumCompleted(s,null)>0 || ragaCompletedAll(s)>0);
-  const re=[['S.No','Student','Completed classes','Rate (\u20B9)','Earned (\u20B9)']];
-  rs.forEach((s,i)=>re.push([i+1,s.name,ragaCompletedAll(s),ragaRate(s),sumCompleted(s,null)]));
-  re.push(['','Total',rs.reduce((t,s)=>t+ragaCompletedAll(s),0),'',rs.reduce((t,s)=>t+sumCompleted(s,null),0)]);
+  // --- RAGA: class by class, less what has been withdrawn ---
+  // Withdrawals are one lump sum, not tied to particular classes, so they are applied to the OLDEST completed classes first.
+  // Classes whose earnings are fully withdrawn drop off; what's left (class by class) is what is still withdrawable.
+  const rItems=[];
+  S.classes.forEach(c=>{
+    if(c.kind==='own-lesson') return;
+    c.studentIds.forEach(sid=>{ const stu=sById(sid); if(!stu || stu.cat!=='RAGA' || c.att[sid]!=='Completed') return; rItems.push({c,sid,stu,amt:classAmount(stu,c)}); });
+  });
+  rItems.sort((x,y)=> x.c.date===y.c.date ? (toMin(x.c.time)-toMin(y.c.time) || x.stu.name.localeCompare(y.stu.name)) : (x.c.date<y.c.date?-1:1));
   const accrued=ragaAccruedAll(), wdn=ragaWithdrawnAll(), relig=ragaEligible(), bank=ragaBankPending();
+  let left=wdn; rItems.forEach(it=>{ const used=Math.min(left,it.amt); it.wd=used; it.rem=it.amt-used; left-=used; });
+  const rOpen=rItems.filter(it=>it.rem>0.005);
+  const re=[['S.No','Date','Day','Timings','Student','Class format','Earned (\u20B9)','Withdrawn against it (\u20B9)','Withdrawable (\u20B9)']];
+  rOpen.forEach((it,i)=>{
+    const c=it.c, partner=c.studentIds.filter(x=>x!==it.sid).map(firstName).join(', ');
+    re.push([i+1,fmtDMY(c.date),dowName(c.date),timingsOf(c),it.stu.name+(partner?' (with '+partner+')':''),classFormat(c),it.amt,it.wd,{f:'G{rr}-H{rr}',v:it.rem}]);
+  });
+  re.push(['','','','','Total','','',rOpen.reduce((t,it)=>t+it.amt,0),rOpen.reduce((t,it)=>t+it.wd,0),rOpen.reduce((t,it)=>t+it.rem,0)]);
+  const reNote=t=>re.push(['',t,'','','','','','','']);
+  reNote(''); reNote('Notes');
+  reNote('Withdrawals are not recorded against individual classes, so they are applied to the oldest completed classes first.');
+  reNote('Classes whose earnings are fully withdrawn are not listed. Withdrawn so far: '+RUPEE.format(wdn)+' of '+RUPEE.format(accrued)+' earned since the start.');
+  if(left>0.005) reNote('Withdrawals exceed the earnings recorded by '+RUPEE.format(left)+', so nothing is withdrawable right now.');
   const rb=[['S.No','Item','Amount (\u20B9)','Note'],
-    [1,'Earned from completed RAGA classes (all time)',{f:"'RAGA earnings'!E"+(4+rs.length),v:accrued},'Sheet: RAGA earnings'],
+    [1,'Earned from all completed RAGA classes (since the start)',accrued,'Every completed RAGA class'],
     [2,'Already withdrawn',wdn,'From the Earnings page'],
     [3,'Withdrawable from Raga Shiksha',{f:'C{p2}-C{p1}',v:relig},'Earned minus withdrawn'],
-    [4,'In transit to bank (withdrawn, not received yet)',bank,'Still receivable']];
+    [4,'In transit to bank (withdrawn, not received yet)',bank,'Still receivable'],
+    [5,'Listed class by class (sheet: RAGA withdrawable)',{f:"'RAGA withdrawable'!I"+(4+rOpen.length),v:rOpen.reduce((t,it)=>t+it.rem,0)},'Matches line 3 unless withdrawals exceed earnings']];
   // --- Expected from upcoming classes ---
   const up=incomeWorkingsSheet('Upcoming classes','dash',rows), m=rows.length;
   const expP=rows.filter(r=>r.stu.cat!=='RAGA').reduce((t,r)=>t+(r.fee||0),0), expR=rows.filter(r=>r.stu.cat==='RAGA').reduce((t,r)=>t+(r.fee||0),0);
@@ -5080,7 +5098,7 @@ function exportForecastWorkings(){
   // (S.No is written as text on this sheet so a line that starts with the word "Outstanding" isn't mistaken for a total row)
   const sm=[['S.No','Component','Amount (\u20B9)','Where it comes from'],
     ['1','Outstanding from Personal Students',{f:"'Personal outstanding'!F"+(4+debtors.length),v:outT},'Sheet: Personal outstanding'],
-    ['2','Withdrawable from Raga Shiksha',{f:"'RAGA balance'!C6",v:relig},'Sheet: RAGA balance'],
+    ['2','Withdrawable from Raga Shiksha',{f:"'RAGA balance'!C6",v:relig},'Sheets: RAGA withdrawable (class by class), RAGA balance'],
     ['3','In transit to bank (RAGA)',{f:"'RAGA balance'!C7",v:bank},'Sheet: RAGA balance'],
     ['4','Expected from upcoming classes \u2014 Personal',upRef('Personal'),'Sheet: Upcoming classes'],
     ['5','Expected from upcoming classes \u2014 RAGA',upRef('RAGA'),'Sheet: Upcoming classes'],
@@ -5091,7 +5109,7 @@ function exportForecastWorkings(){
   aoaDownload('raga-income-forecast-'+CURM,'Income Forecast for the Month \u2014 '+monthLabel(CURM),[
     {name:'Forecast',aoa:sm,money:[3]},
     {name:'Personal outstanding',aoa:po,money:[4,5,6]},
-    {name:'RAGA earnings',aoa:re,money:[4,5]},
+    {name:'RAGA withdrawable',aoa:re,money:[7,8,9]},
     {name:'RAGA balance',aoa:rb,money:[3]},
     up]);
 }
