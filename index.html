@@ -165,7 +165,9 @@
   .icon-btn{width:38px;height:38px;display:grid;place-items:center;padding:0}
 
   /* ---------- cards / panels ---------- */
-  .stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:26px}
+  .stat-note{margin:-14px 2px 22px;font-size:.68rem;line-height:1.5;color:var(--muted)}
+  .month-head{font-family:'Marcellus',serif;font-size:1.45rem;color:var(--ink);margin:2px 0 12px;padding-bottom:4px;border-bottom:2px solid var(--gold);display:inline-block}
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px;box-shadow:var(--shadow);min-width:0}
   .stat.clickable{cursor:pointer;transition:border-color .15s,transform .15s}
   .stat.clickable:hover{border-color:var(--gold);transform:translateY(-1px)}
@@ -612,6 +614,8 @@
   #personalCards .stat{border-top:3px solid var(--green)}
   #ragaCards .stat{border-top:3px solid var(--purple)}
   #myLessonsCards .stat{border-top:3px solid var(--yellow)}
+  .stat-row .stat:nth-child(6){border-left:3px solid var(--green);background:linear-gradient(135deg,rgba(46,139,103,.09),transparent 55%),var(--card)}
+  .stat-row .stat:nth-child(6) .value{color:var(--green)}
   .stat-row .stat:nth-child(4){border-left:3px solid var(--gold);background:linear-gradient(135deg,rgba(214,158,32,.09),transparent 55%),var(--card)}
   .badge.hold{background:rgba(184,134,11,.16)!important;color:var(--gold-ink)!important;border:1px solid rgba(184,134,11,.42);font-weight:700}
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -840,13 +844,16 @@
         <button type="button" class="btn" id="btnRagaTracker" title="All upcoming Raga Shiksha classes by student. The number shows classes not yet scheduled on the website, including those waiting on student credits.">&#127760; Raga Shiksha tracker <span class="badge hold" id="ragaTrackerCount" style="display:none;margin-left:4px"></span></button>
         <button type="button" class="btn" id="btnHeadsUp" title="Reopen the Heads Up pop-up: today, tomorrow, pending status, material, backup and unscheduled students">&#128276; Heads Up <span class="badge hold" id="headsUpCount" style="display:none;margin-left:4px"></span></button>
       </div>
+      <div class="month-head" id="monthHeading">Month of</div>
       <div class="stat-row">
-        <div class="stat money clickable" data-goto="earnings" title="Money actually received this month"><div class="label">Income this month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
-        <div class="stat alert clickable" data-goto="personal"><div class="label">PERSONAL outstanding</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
-        <div class="stat clickable" id="statRagaCard" data-goto="raga"><div class="label">RAGA withdrawable</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
+        <div class="stat money clickable" data-goto="earnings" title="Money actually received this month"><div class="label">Income Received during the month</div><div class="value num" id="statIncome">–</div><div class="sub" id="statIncomeSub"></div></div>
+        <div class="stat alert clickable" data-goto="personal"><div class="label">Outstanding from Personal Students</div><div class="value num" id="statOutstanding">–</div><div class="sub"><b id="statPendingCount">0</b> students with pending fees</div></div>
+        <div class="stat clickable" id="statRagaCard" data-goto="raga"><div class="label">Withdrawable from Raga Shiksha</div><div class="value num" id="statRagaElig" style="color:var(--purple)">–</div><div class="sub" id="statRagaEligSub"></div></div>
         <div class="stat clickable" data-goto="earnings" title="Everything earned from completed classes and not yet received, including dues carried forward from earlier months"><div class="label">Total outstanding</div><div class="value num" id="statReceivable" style="color:var(--gold-ink)">–</div><div class="sub" id="statReceivableSub"></div></div>
-        <div class="stat clickable" data-goto="calendar" title="Fees for classes still marked Scheduled for the rest of this month (USD students: the rupee amount of their last class)"><div class="label">Expected this month</div><div class="value num" id="statExpected" style="color:var(--purple)">–</div><div class="sub" id="statExpectedSub"></div></div>
+        <div class="stat clickable" data-goto="calendar" title="Fees for classes still marked Scheduled for the rest of this month (USD students: the rupee amount of their last class)"><div class="label">Expected from Upcoming Classes</div><div class="value num" id="statExpected" style="color:var(--purple)">–</div><div class="sub" id="statExpectedSub"></div></div>
+        <div class="stat clickable" data-goto="earnings" title="Total outstanding + Expected from upcoming classes (money already received this month is not included)"><div class="label">Income Forecast for the Month</div><div class="value num" id="statForecast">–</div><div class="sub" id="statForecastSub"></div></div>
       </div>
+      <div class="stat-note" id="statNote" style="display:none"></div>
 
       <div class="panel">
         <div class="panel-head"><h3>Today's schedule</h3><div style="display:flex;gap:10px;align-items:center"><button class="btn tiny" id="btnAllDone" title="Mark every remaining scheduled attendance today as Completed">✓ Mark all completed</button><span class="hint" id="tlHint">8:00 – 20:00</span></div></div>
@@ -4974,14 +4981,20 @@ function forecastScheduled(){
   });
   return r;
 }
-function renderExpectedCard(){
+function renderExpectedCard(totalOutstanding){
   const f=forecastScheduled(), expected=f.p+f.r, left=daysBetween(TODAY,f.end)+1;
+  $('#monthHeading').textContent='Month of '+parseD(TODAY).toLocaleDateString('en-IN',{month:'long'});
+  $('#statForecast').textContent=RUPEE.format(totalOutstanding+expected);
+  $('#statForecastSub').innerHTML='Outstanding <b>'+RUPEE.format(totalOutstanding)+'</b> + Expected <b>'+RUPEE.format(expected)+'</b>';
   $('#statExpected').textContent=RUPEE.format(expected);
   $('#statExpectedSub').innerHTML='<b>'+f.n+'</b> scheduled class'+(f.n===1?'':'es')+' \u00b7 '+left+' day'+(left===1?'':'s')+' left'+
     (expected ? '<br>Personal <b>'+RUPEE.format(f.p)+'</b> + RAGA <b>'+RUPEE.format(f.r)+'</b>' : '')+
-    (f.unmarked ? '<br>'+f.unmarked+' held, not marked Completed' : '')+
-    (f.est ? '<br>'+f.est+' USD class'+(f.est===1?'':'es')+' estimated at the last class\u2019s rupee amount' : '')+
-    (f.usd ? '<br>'+f.usd+' USD class'+(f.usd===1?'':'es')+' not counted (no earlier class)' : '');
+    (f.unmarked ? '<br>'+f.unmarked+' held, not marked Completed' : '');
+  // USD-estimate remarks live in a small footnote under the boxes instead of inside the box
+  const note=[];
+  if(f.est) note.push(f.est+' USD class'+(f.est===1?'':'es')+' estimated at the last class\u2019s rupee amount');
+  if(f.usd) note.push(f.usd+' USD class'+(f.usd===1?'':'es')+' not counted (no earlier class)');
+  const nb=$('#statNote'); nb.style.display=note.length?'':'none'; nb.innerHTML=note.length ? '* '+note.join('<br>* ') : '';
 }
 function renderStats(){
   const pInc = S.payments.filter(p=>monthKey(p.date)===CURM).reduce((t,p)=>t+p.amount,0);
@@ -5011,7 +5024,7 @@ function renderStats(){
   const bankPending = ragaBankPending();
   $('#statReceivable').textContent = RUPEE.format(outT + relig + bankPending);
   $('#statReceivableSub').innerHTML = '<b>'+RUPEE.format(outT)+'</b> Personal + <b>'+RUPEE.format(relig)+'</b> RAGA'+(bankPending?' + <b>'+RUPEE.format(bankPending)+'</b> in transit':'')+'<br>incl. dues carried forward from earlier months';
-  renderExpectedCard();
+  renderExpectedCard(outT+relig+bankPending);
 }
 function renderTimeline(){
   const el=$('#timeline'); el.innerHTML='';
@@ -7222,10 +7235,12 @@ let rsPanelSort = 'student', rsPanelStatus = new Set();   // empty set = show al
 const rsKey = e => e.v || 'yet';
 const rsNm = e => rsUnitNames(e);
 const rsGroupKey = e => e.batch ? 'B:'+e.sids.slice().sort().join('+') : 'S:'+e.sid;
+let rsTrkPick=new Set(), rsTrkVisible=[];   // tracker multi-select (by class id; a batch is one class)
 function rsRowHTML(e, showName){
   const c=e.c, note=rsNoCreditNote(e);
   const noteHtml=note ? '<div class="tiny" style="font-weight:400;color:var(--gold-ink)">'+esc(note)+'</div>' : '';
   return '<div style="display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line)" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
+    '<input type="checkbox" data-trkpick="'+c.cid+'"'+(rsTrkPick.has(c.cid)?' checked':'')+' aria-label="Select this class">'+
     '<span style="min-width:96px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-size:.78rem;color:var(--muted)">'+fmtTime12(c.time)+'</span></span>'+
     (showName ? '<span style="flex:1 1 100px;min-width:0"><b>'+esc(rsNm(e))+'</b>'+rsBatchTag(e)+noteHtml+'</span>' : (note ? '<span style="flex:1 1 100px;min-width:0">'+noteHtml+'</span>' : ''))+
     '<span style="display:flex;gap:5px;flex-wrap:wrap;margin-left:auto">'+rsBtnsHTML(e,'data-rsval','full')+rsRemindBtns(e)+'</span></div>';
@@ -7251,6 +7266,20 @@ function renderRsPanel(){
     const lbl = rsPanelRange==='nextweek' ? 'Next week ('+fmtD(mondayOf(1))+' \u2013 '+fmtD(addDaysS(mondayOf(1),6))+')' : ({'7':'Next 7 days','30':'Next 30 days',all:'All upcoming'}[rsPanelRange]||'');
     html+='<div style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.88rem"><b>'+lbl+'</b> \u2014 <b>'+sumBase.length+'</b> class'+(sumBase.length===1?'':'es')+': '+
       '<span style="color:var(--red);font-weight:700">'+cy+' not yet scheduled</span>'+(cn?' \u00b7 '+cn+' waiting on credits':'')+' \u00b7 <span style="color:var(--green);font-weight:700">'+cd+' scheduled</span></div>';
+  }
+  // Select all / bulk status for everything currently shown (respects the range, search and Show filters)
+  const vis=new Set(attn.map(e=>e.c.cid)); rsPanelEntries().filter(nameOk).filter(statOk).forEach(e=>vis.add(e.c.cid));
+  rsTrkVisible=Array.from(vis); rsTrkPick.forEach(k=>{ if(!vis.has(k)) rsTrkPick.delete(k); });
+  if(vis.size){
+    const n=rsTrkPick.size;
+    html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 12px;border:1px solid var(--line);border-radius:10px">'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;cursor:pointer"><input type="checkbox" data-trkall'+(n===vis.size?' checked':'')+'> Select all ('+vis.size+')</label>'+
+      (n ? '<span class="tiny" style="color:var(--muted)">'+n+' selected \u2014 set to:</span>'+
+           '<button type="button" class="mat-btn" data-trkbulk="done">&#10003; Scheduled</button>'+
+           '<button type="button" class="mat-btn" data-trkbulk="nocredit" title="Batch classes are skipped: choose the student on the batch itself">No credits</button>'+
+           '<button type="button" class="mat-btn" data-trkbulk="">Yet to schedule</button>'+
+           '<button type="button" class="btn tiny" data-trkclear>Clear</button>' : '')+
+      '</div>';
   }
   const rowsBox=(rows,col)=>'<div style="border:1px solid '+col+';border-radius:12px;margin:0 0 12px;overflow:hidden"><div style="margin-top:-1px">'+rows+'</div></div>';
   if(attn.length) html+=remHead('Needs attention \u2014 '+attn.length,'#C2410C')+
@@ -7286,9 +7315,17 @@ function renderRsPanel(){
     html='<div class="empty" style="padding:20px 0">'+(q ? 'No student matches \u201c'+esc(qRaw)+'\u201d with these filters.' : 'No Raga Shiksha classes match these filters in this range.')+'</div>';
   }
   body.innerHTML=html;
+  const ta=body.querySelector('[data-trkall]'); if(ta) ta.indeterminate = rsTrkPick.size>0 && rsTrkPick.size<vis.size;
 }
-$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus.clear(); if(parseD(TODAY).getDay()===0) rsPanelRange='nextweek'; renderRsPanel(); openModal('m-raga-site'); });
+$('#btnRagaTracker').addEventListener('click',()=>{ $('#rsPanelSearch').value=''; rsPanelSort='student'; rsPanelStatus.clear(); rsTrkPick.clear(); if(parseD(TODAY).getDay()===0) rsPanelRange='nextweek'; renderRsPanel(); openModal('m-raga-site'); });
 $('#rsPanelSearch').addEventListener('input', renderRsPanel);
+$('#m-raga-site').addEventListener('change',e=>{
+  const keep=fn=>{ const m=$('#m-raga-site .modal'), y=m?m.scrollTop:0; fn(); if(m) m.scrollTop=y; };
+  const pick=e.target.closest('[data-trkpick]');
+  if(pick){ if(pick.checked) rsTrkPick.add(pick.dataset.trkpick); else rsTrkPick.delete(pick.dataset.trkpick); keep(renderRsPanel); return; }
+  const all=e.target.closest('[data-trkall]');
+  if(all){ if(all.checked) rsTrkVisible.forEach(k=>rsTrkPick.add(k)); else rsTrkPick.clear(); keep(renderRsPanel); }
+});
 $('#m-raga-site').addEventListener('click',e=>{
   const keep=fn=>{ const m=$('#m-raga-site .modal'), y=m?m.scrollTop:0; fn(); if(m) m.scrollTop=y; };
   const chip=e.target.closest('[data-rsrange]');
@@ -7302,6 +7339,19 @@ $('#m-raga-site').addEventListener('click',e=>{
     else{ if(rsPanelStatus.has(k)) rsPanelStatus.delete(k); else rsPanelStatus.add(k); if(rsPanelStatus.size===3) rsPanelStatus.clear(); }   // all three ticked = All
     renderRsPanel(); return;
   }
+  const bulk=e.target.closest('[data-trkbulk]');
+  if(bulk){
+    const val=bulk.dataset.trkbulk; let done=0, skipped=0;
+    Array.from(rsTrkPick).forEach(cid=>{
+      const u=ragaUnit(S.classes.find(x=>x.cid===cid)); if(!u) return;
+      if(val==='nocredit' && u.batch){ skipped++; return; }     // which student of the batch? set it on the batch itself
+      setRsStatus(cid,u.sid,val); done++;
+    });
+    rsTrkPick.clear(); renderAll(); keep(renderRsPanel);
+    toast('Updated '+done+' class'+(done===1?'':'es')+(skipped?' \u00b7 '+skipped+' batch class'+(skipped===1?'':'es')+' skipped \u2014 tap "No credits: <name>" on the batch':''));
+    return;
+  }
+  if(e.target.closest('[data-trkclear]')){ rsTrkPick.clear(); keep(renderRsPanel); return; }
   const b=e.target.closest('[data-rsval]');
   if(b){ const row=b.closest('[data-rs-cid]'); if(!row) return; setRsStatus(row.dataset.rsCid,row.dataset.rsSid,b.dataset.rsval); renderAll(); keep(renderRsPanel); return; }
   const all=e.target.closest('[data-rsall]');
