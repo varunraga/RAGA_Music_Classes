@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Build: 2026-10-17 -->
+<!-- Build: 2026-10-18 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -2955,6 +2955,17 @@ function setMatStatus(cid, sid, val){
   cl.mat ||= {};
   if(val) cl.mat[sid]=val; else delete cl.mat[sid];
   cl.updatedAt=Date.now();
+}
+// The same pending material, grouped by student — overdue first, then oldest — for the Heads Up's name list.
+function materialPendingByStudent(){
+  const m={};
+  S.classes.forEach(c=>c.studentIds.forEach(sid=>{
+    if(c.att[sid]!=='Completed' || matStatus(c,sid) || c.date>TODAY) return;
+    const o = m[sid] || (m[sid]={sid, today:0, overdue:0, oldest:c.date});
+    if(c.date===TODAY) o.today++; else o.overdue++;
+    if(c.date<o.oldest) o.oldest=c.date;
+  }));
+  return Object.values(m).filter(o=>sById(o.sid)).sort((a,b)=> ((b.overdue>0)-(a.overdue>0)) || a.oldest.localeCompare(b.oldest) || sById(a.sid).name.localeCompare(sById(b.sid).name));
 }
 function materialPending(){
   let today=0, overdue=0;
@@ -7332,37 +7343,31 @@ function renderRagaTrackerBadge(){
   b.textContent = n;
 }
 const remHead = (txt,color,right)=>'<div class="rem-head" style="color:'+color+'"><span>'+txt+'</span>'+(right||'')+'</div>';
+// Heads Up: just WHO still needs scheduling on the Raga Shiksha website, one row per student (or batch) with a
+// Review button that opens the tracker — the detail and the actions live there.
 function ragaSiteSectionHTML(todo, no){
-  const row=(e,isTodo)=>{
-    const c=e.c, key=c.cid+'|'+e.sid;
-    return '<div class="rem-item" style="flex-wrap:wrap;gap:8px 12px" data-rs-cid="'+c.cid+'" data-rs-sid="'+e.sid+'">'+
-      '<input type="checkbox" data-rspick="'+key+'" aria-label="Select '+esc(rsUnitNames(e))+'"'+(rsPick.has(key)?' checked':'')+'>'+
-      '<span class="t" style="min-width:90px">'+esc(rsWhen(c))+'<span class="num" style="display:block;font-weight:400;color:var(--muted);font-size:.78rem">'+fmtTime12(c.time)+'</span></span>'+
-      '<span style="flex:1 1 110px;min-width:0"><b>'+esc(rsUnitNames(e))+'</b>'+rsBatchTag(e)+(rsNoCreditNote(e)?'<div class="tiny" style="color:var(--gold-ink)">'+esc(rsNoCreditNote(e))+'</div>':'')+'</span>'+
-      '<span style="display:flex;gap:5px;flex-wrap:wrap">'+rsBtnsHTML(e,'data-rsset',isTodo?'todo':'nocr')+rsRemindBtns(e)+
-      '</span></div>';
-  };
-  const total=todo.length+no.length;
-  const n=rsPick.size;
-  const bar = !total ? '' : '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">'+
-      '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:600;cursor:pointer"><input type="checkbox" data-rspickall'+(n===total?' checked':'')+'> Select all</label>'+
-      (n ? '<span class="tiny" style="color:var(--muted)">'+n+' selected</span>'+
-           '<button type="button" class="mat-btn" data-rsbulk="done">&#10003; Scheduled</button>'+
-           '<button type="button" class="mat-btn" data-rsbulk="nocredit">No credits</button>'+
-           '<button type="button" class="mat-btn" data-rsbulk="">Yet to schedule</button>' : '')+
-      '</div>';
-  let h='';
-  if(todo.length){
-    h+=remHead('Not yet scheduled on Raga Shiksha \u2014 '+todo.length,'#C2410C',rsLink('Schedule now'))+
-      '<div class="tiny" style="color:var(--muted);margin-bottom:8px">Students aren&#39;t notified (and can&#39;t attend) until each class is also scheduled on ragashiksha.com. Reminders start 3 days before each class. A batch class counts once &mdash; you book both students together.</div>'+
-      bar+'<div class="rem-list">'+todo.map(e=>row(e,true)).join('')+'</div>';
-  }
-  if(no.length){
-    h+=remHead('No credits yet \u2014 '+no.length,'var(--gold-ink)')+
-      '<div class="tiny" style="color:var(--muted);margin-bottom:8px">Can&#39;t be scheduled on the website until the student has credits &mdash; for a batch class, until both students do.</div>'+
-      (todo.length ? '' : bar)+'<div class="rem-list">'+no.map(e=>row(e,false)).join('')+'</div>';
-  }
-  return h;
+  const groups={};
+  todo.concat(no).forEach(e=>{
+    const k=rsGroupKey(e), g = groups[k] || (groups[k]={name:rsNm(e), todo:0, no:0, first:e.c.date+' '+e.c.time});
+    if(e.v==='nocredit') g.no++; else g.todo++;
+    const f=e.c.date+' '+e.c.time; if(f<g.first) g.first=f;
+  });
+  const list=Object.values(groups).sort((a,b)=>a.first.localeCompare(b.first));
+  if(!list.length) return '';
+  const shown=list.slice(0,5);
+  return remHead('Raga Shiksha website \u2014 '+list.length+' student'+(list.length===1?'':'s'),'#C2410C')+
+    '<div class="rem-list">'+shown.map(g=>{
+      const bits=(g.todo ? g.todo+' to schedule' : '')+(g.todo&&g.no ? ' \u00b7 ' : '')+(g.no ? g.no+' no credits' : '');
+      return '<div class="rem-item" style="border-color:'+(g.todo?'#C2410C':'var(--gold)')+'"><span class="t">'+(g.todo?'!':'&#8987;')+'</span>'+
+        '<span><b>'+esc(g.name)+'</b> <span class="tiny" style="color:var(--muted)">\u00b7 '+bits+'</span></span>'+
+        '<button type="button" class="btn tiny" style="margin-left:auto" data-remrs="'+esc(g.name)+'">Review</button></div>';
+    }).join('')+'</div>'+
+    (list.length>shown.length ? '<button type="button" class="btn tiny" id="remRsAll" style="margin-bottom:4px">+ '+(list.length-shown.length)+' more \u2014 Review all</button>' : '');
+}
+function openRagaTrackerFor(name){
+  $('#rsPanelSearch').value=name||''; rsPanelSort='student'; rsPanelStatus.clear(); rsTrkPick.clear();
+  rsPanelRange = parseD(TODAY).getDay()===0 ? 'nextweek' : '30';
+  renderRsPanel(); openModal('m-raga-site');
 }
 /* ---------- Raga Shiksha tracker: all upcoming RAGA classes grouped by student ---------- */
 let rsPanelRange = '30';
@@ -7555,16 +7560,18 @@ function fillReminder(manual){
       '<div class="rem-list" id="remUnupd">'+shown.map(c=>unupdatedItemHTML(c)).join('')+'</div>'+
       '<button type="button" class="btn tiny" id="remUnupdAll" style="margin-bottom:4px">'+(un.length>shown.length ? '+ '+(un.length-shown.length)+' more \u2014 view all &amp; ' : '')+'Update in bulk</button>';
   }
-  if(matP.overdue){
-    html += remHead('Material pending to send','#0E7490')+
-      '<div class="rem-item" style="border-color:var(--red)"><span class="t">!</span>'+
-      '<span><b>'+matP.overdue+' class'+(matP.overdue===1?'':'es')+' overdue for material</b> \u2014 recording/notation not yet sent</span>'+
-      '<button class="btn tiny" style="margin-left:auto" id="remGoMat">Review</button></div>';
-  } else if(matP.today){
-    html += remHead('Material pending to send','#0E7490')+
-      '<div class="rem-item" style="border-color:var(--gold)"><span class="t">&#9834;</span>'+
-      '<span><b>'+matP.today+' class'+(matP.today===1?'':'es')+' today still need material sent</b></span>'+
-      '<button class="btn tiny" style="margin-left:auto" id="remGoMat">Review</button></div>';
+  const mats=(matP.overdue||matP.today) ? materialPendingByStudent() : [];
+  if(mats.length){
+    const shown=mats.slice(0,5);
+    html += remHead('Material pending to send \u2014 '+mats.length+' student'+(mats.length===1?'':'s'),'#0E7490')+
+      '<div class="rem-list">'+shown.map(m=>{
+        const st=sById(m.sid);
+        const detail=(m.overdue ? m.overdue+' overdue' : '')+(m.overdue&&m.today ? ' \u00b7 ' : '')+(m.today ? m.today+' today' : '');
+        return '<div class="rem-item" style="border-color:'+(m.overdue?'var(--red)':'var(--gold)')+'"><span class="t">'+(m.overdue?'!':'&#9834;')+'</span>'+
+          '<span><b>'+esc(st.name)+'</b> <span class="tiny" style="color:var(--muted)">\u00b7 '+detail+'</span></span>'+
+          '<button type="button" class="btn tiny" style="margin-left:auto" data-remmat="'+m.sid+'">Review</button></div>';
+      }).join('')+'</div>'+
+      (mats.length>shown.length ? '<button type="button" class="btn tiny" id="remMatAll" style="margin-bottom:4px">+ '+(mats.length-shown.length)+' more \u2014 Review all</button>' : '');
   }
   html += ragaSiteSectionHTML(rsTodo, rsNo);
   if(bOver){
@@ -7582,42 +7589,21 @@ function fillReminder(manual){
   }
   $('#remBody').innerHTML=html;
   const gw=$('#remGoWeek'); if(gw) gw.addEventListener('click',()=>{ closeModal('m-reminder'); goAndHighlight('calendar','#weekCheckPanel'); });
-  const gm=$('#remGoMat'); if(gm) gm.addEventListener('click',()=>{ closeModal('m-reminder'); openAllCompleted('pending'); });
   const gb=$('#remBackup'); if(gb) gb.addEventListener('click',()=>{ doExport(); closeModal('m-reminder'); });
   if(un.length){
     wireUnupdatedItems($('#remBody'));
     const ga=$('#remUnupdAll'); if(ga) ga.addEventListener('click',openUnupdatedList);
     unupdatedMarkSeen(un.map(c=>c.cid));
   }
-  const rb=$('#remBody'), validKeys=new Set(rsTodo.concat(rsNo).map(e=>e.c.cid+'|'+e.sid));
-  rsPick.forEach(k=>{ if(!validKeys.has(k)) rsPick.delete(k); });
-  const redraw=()=>{ const sc=[rb, rb.closest('.modal')].filter(Boolean).map(el=>[el,el.scrollTop]); fillReminder(true); sc.forEach(([el,y])=>{ el.scrollTop=y; }); };
-  rb.querySelectorAll('[data-rsset]').forEach(b=>b.addEventListener('click',()=>{
-    const row=b.closest('[data-rs-cid]'); if(!row) return;
-    setRsStatus(row.dataset.rsCid, row.dataset.rsSid, b.dataset.rsset);
-    rsPick.delete(row.dataset.rsCid+'|'+row.dataset.rsSid);
-    renderAll(); redraw();
+  const rb=$('#remBody');
+  rb.querySelectorAll('[data-remmat]').forEach(b=>b.addEventListener('click',()=>{
+    const st=sById(b.dataset.remmat);
+    closeModal('m-reminder'); openAllCompleted('pending');       // the pending-material list, narrowed to this student
+    $('#acSearch').value = st ? st.name : ''; renderAllCompletedList();
   }));
-  rb.querySelectorAll('[data-rspick]').forEach(cb=>cb.addEventListener('change',()=>{
-    if(cb.checked) rsPick.add(cb.dataset.rspick); else rsPick.delete(cb.dataset.rspick);
-    redraw();
-  }));
-  const all=rb.querySelector('[data-rspickall]');
-  if(all) all.addEventListener('change',()=>{
-    if(all.checked) validKeys.forEach(k=>rsPick.add(k)); else rsPick.clear();
-    redraw();
-  });
-  rb.querySelectorAll('[data-rsbulk]').forEach(b=>b.addEventListener('click',()=>{
-    const keys=Array.from(rsPick); if(!keys.length) return;
-    let skipped=0, done=0;
-    keys.forEach(k=>{
-      const [cid,sid]=k.split('|'), u=ragaUnit(S.classes.find(x=>x.cid===cid));
-      if(b.dataset.rsbulk==='nocredit' && u && u.batch){ skipped++; return; }   // a batch needs the specific student chosen
-      setRsStatus(cid,sid,b.dataset.rsbulk); done++;
-    });
-    rsPick.clear(); renderAll(); redraw();
-    toast('Updated '+done+' class'+(done===1?'':'es')+(skipped?' · '+skipped+' batch class'+(skipped===1?'':'es')+' skipped — tap "No credits: <name>" on the batch to say which student':''));
-  }));
+  const gma=$('#remMatAll'); if(gma) gma.addEventListener('click',()=>{ closeModal('m-reminder'); openAllCompleted('pending'); });
+  rb.querySelectorAll('[data-remrs]').forEach(b=>b.addEventListener('click',()=>{ closeModal('m-reminder'); openRagaTrackerFor(b.dataset.remrs); }));
+  const gra=$('#remRsAll'); if(gra) gra.addEventListener('click',()=>{ closeModal('m-reminder'); openRagaTrackerFor(''); });
   return true;
 }
 $('#btnHeadsUp').addEventListener('click',()=>{ if(!$('#m-reminder').classList.contains('open')) maybeShowReminder(true); });
