@@ -2175,7 +2175,7 @@
       <div class="field span2" id="tzComputedLines" style="display:none"></div>
       <div class="field"><label for="cDur">Duration (min)</label><select id="cDur"><option>30</option><option>45</option><option selected>60</option><option>90</option><option>120</option><option>150</option><option>180</option></select></div>
       <div class="field"><label for="cMode">Mode</label><select id="cMode"><option>Offline</option><option>Online</option></select></div>
-      <div class="field span2" id="linkField" style="display:none"><label for="cLink">Class link (Zoom / Meet)</label><input id="cLink" type="url" placeholder="https://…"></div>
+      <div class="field span2" id="linkField" style="display:none"><label for="cLink">Class link (Zoom / Meet)</label><input id="cLink" type="url" placeholder="https://…"><div class="tiny" id="cLinkHint" style="margin-top:5px;color:var(--muted)"></div><div id="cLinkSend" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div></div>
     </div>
     <div id="ownStatusBlock" style="margin-top:14px;display:none">
       <div class="form-grid2">
@@ -4255,7 +4255,7 @@ function openClassModal(cid, presetDate, presetStu){
   $('#cTime').value = c ? c.time : '17:00';
   $('#cDur').value  = c ? String(c.dur) : '60';
   $('#cMode').value = c ? c.mode : 'Offline';
-  $('#cLink').value = c ? (c.link||'') : '';
+  $('#cLink').value = c ? (c.link||'') : ''; $('#cLink').dataset.auto=''; $('#cLinkHint').textContent='';
   $('#cTopic').value = c ? (c.topic||'') : '';
   $('#cHw').value = c ? (c.hw||'') : '';
   refreshLastLesson(c);
@@ -4272,6 +4272,7 @@ function openClassModal(cid, presetDate, presetStu){
   toggleLinkField();
   if(!c && presetStu){ $('#cStu1').value = presetStu; }
   if(!c) autofillFromPrimary();
+  prefillClassLink();
   updateTzComputedLines();
   // Only meaningful when editing an existing class that's actually part of a recurring series,
   // and only future classes ever get touched — past/completed ones in the series keep whatever
@@ -4346,6 +4347,49 @@ function renderAttRows(c){
     }));
   });
 }
+/* ---------- Class link: remembered per student, refilled for new classes, and sent on WhatsApp ---------- */
+// The link a new class should start with: the one used by this student's closest class ON OR BEFORE that date (so a new link
+// takes over "from that point" and an earlier date still gets the old link). With nothing earlier, their latest link.
+function suggestedLinkFor(sid, date, excludeCid){
+  const cls=S.classes.filter(c=>c.cid!==excludeCid && c.kind!=='own-lesson' && c.studentIds.includes(sid) && (c.link||'').trim())
+    .sort((a,b)=>a.date===b.date ? toMin(a.time)-toMin(b.time) : (a.date<b.date?-1:1));
+  if(!cls.length) return '';
+  let best=null; cls.forEach(c=>{ if(c.date<=date) best=c; });
+  return (best||cls[cls.length-1]).link.trim();
+}
+const classLinkPeople = () => [$('#cStu1').value,$('#cStu2').value].filter(Boolean).map(sById).filter(st=>st && st.cat==='Personal');
+function prefillClassLink(){
+  const el=$('#cLink'), hint=$('#cLinkHint'); if(!el) return;
+  if(editingClassId || clsKind!=='teaching' || $('#cMode').value!=='Online'){ hint.textContent=''; refreshLinkSend(); return; }
+  const cur=el.value.trim();
+  if(cur && cur!==(el.dataset.auto||'')){ refreshLinkSend(); return; }            // you typed / pasted your own: leave it
+  const date=$('#cDate').value||TODAY; let link='', from=null;
+  for(const st of classLinkPeople()){ link=suggestedLinkFor(st.id,date); if(link){ from=st; break; } }
+  el.value=link; el.dataset.auto=link;
+  hint.textContent = link ? 'Filled in from '+firstName(from.id)+'\u2019s earlier class \u2014 change it if the link has expired.' : '';
+  refreshLinkSend();
+}
+const classLinkMessage = (st,date,time,link) => 'Hello '+firstName(st.id)+',\n\nHere is the link for your class on '+fmtD(date)+' at '+fmtTime12(time)+':\n'+link;
+function refreshLinkSend(){
+  const box=$('#cLinkSend'); if(!box) return;
+  const link=$('#cLink').value.trim(), ppl=classLinkPeople();
+  if(clsKind!=='teaching' || $('#cMode').value!=='Online' || !link || !ppl.length){ box.innerHTML=''; return; }
+  box.innerHTML=ppl.map(st=>'<button type="button" class="btn tiny" data-sendlink="'+st.id+'" title="Opens WhatsApp with the link ready to send">&#128172; Send link'+(ppl.length>1?' to '+esc(firstName(st.id)):' on WhatsApp')+'</button>').join('');
+}
+function sendClassLink(sid,date,time,link){
+  const st=sById(sid); if(!st) return;
+  const num=waDigits(st.mobile);
+  if(!num){ toast(st.name+' has no mobile number saved'); return; }
+  openWhatsApp(num, classLinkMessage(st,date,time,link));
+  toast('WhatsApp opened for '+st.name+' \u2014 press send');
+}
+$('#cLinkSend').addEventListener('click',e=>{
+  const b=e.target.closest('[data-sendlink]'); if(!b) return;
+  sendClassLink(b.dataset.sendlink,$('#cDate').value,$('#cTime').value,$('#cLink').value.trim());
+});
+$('#cLink').addEventListener('input',()=>{ $('#cLinkHint').textContent=''; refreshLinkSend(); });
+['cStu2','cDate','cMode'].forEach(id=>$('#'+id).addEventListener('change',prefillClassLink));
+$('#cTime').addEventListener('change',refreshLinkSend);
 function toggleLinkField(){
   $('#linkField').style.display = $('#cMode').value==='Online' ? '' : 'none';
 }
@@ -4401,7 +4445,7 @@ function autofillFromPrimary(){
     }
   }
 }
-$('#cStu1').addEventListener('change',()=>{ if(!editingClassId) autofillFromPrimary(); });
+$('#cStu1').addEventListener('change',()=>{ if(!editingClassId){ autofillFromPrimary(); prefillClassLink(); } });
 
 function overlapWarning(date,time,dur,excludeCid){
   const a1=toMin(time), a2=a1+dur;
@@ -4594,15 +4638,25 @@ $('#clsSave').addEventListener('click', async ()=>{
       const v = grp ? grp.dataset.selected : '';
       if(v) newMat[sid]=v; else delete newMat[sid];
     });
+    const oldLink=(c.link||'').trim();
     Object.assign(c,{kind:'teaching', studentIds:ids, att:newAtt, inr:newInr, mat:newMat, rs:rsCollect(ids,c.rs), date, time, dur, mode, link,
       topic:$('#cTopic').value.trim(), hw:$('#cHw').value.trim(), updatedAt:Date.now()});
     let seriesCount = 0;
     if($('#cApplySeries').checked && c.seriesId){
       seriesCount = applyToFutureSeries(c, {studentIds:ids.slice(), time, dur, mode, link});
     }
+    // A replaced (e.g. expired) link: offer to use the new one on this student's other upcoming online classes too
+    let linkMsg='';
+    if(link && link!==oldLink && mode==='Online' && !($('#cApplySeries').checked && c.seriesId) && ids.some(id=>(sById(id)||{}).cat==='Personal')){
+      const later=S.classes.filter(x=>x.cid!==c.cid && x.kind!=='own-lesson' && x.date>c.date && x.date>=TODAY && x.mode==='Online' && sessionStatus(x)==='scheduled' && x.studentIds.some(id=>ids.includes(id)) && (x.link||'').trim()!==link);
+      if(later.length && confirm('You changed the class link.\n\nUse the new link for the '+later.length+' later upcoming online class'+(later.length===1?'':'es')+' of '+ids.map(firstName).join(' & ')+' as well?')){
+        later.forEach(x=>{ x.link=link; x.updatedAt=Date.now(); });
+        linkMsg=' \u00b7 new link set on '+later.length+' later class'+(later.length===1?'':'es');
+      }
+    }
     let repeatCount = 0;
     if(repeatDates.length) repeatCount = addWeeklyRepeats(c, repeatDates);
-    toast('Class updated — '+sessionNames(c)+(seriesCount?' · applied to '+seriesCount+' more upcoming class'+(seriesCount===1?'':'es'):'')+(repeatCount?' · '+repeatCount+' weekly class'+(repeatCount===1?'':'es')+' added':''));
+    toast('Class updated — '+sessionNames(c)+(seriesCount?' · applied to '+seriesCount+' more upcoming class'+(seriesCount===1?'':'es'):'')+(repeatCount?' · '+repeatCount+' weekly class'+(repeatCount===1?'':'es')+' added':'')+linkMsg);
     closeModal('m-class'); renderAll(); return;
   }
 
@@ -7545,7 +7599,8 @@ function fillReminder(manual){
   $('#remSub').textContent = fmtDFull(TODAY);
   const item = c => '<div class="rem-item"><span class="t num">'+fmtTime12(c.time)+'</span>'+
     '<span><b>'+esc(sessionNames(c))+'</b>'+(c.studentIds.length>1?' (batch)':'')+'</span>'+
-    '<span class="badge '+(c.mode==='Online'?'online':'offline')+'" style="margin-left:auto">'+c.mode+'</span></div>';
+    '<span class="badge '+(c.mode==='Online'?'online':'offline')+'" style="margin-left:auto">'+c.mode+'</span>'+
+    (c.mode==='Online' && (c.link||'').trim() ? c.studentIds.map(sid=>sById(sid)).filter(st=>st && st.cat==='Personal').map(st=>'<button type="button" class="btn tiny" data-sendcls="'+c.cid+'|'+st.id+'" title="Send the class link on WhatsApp">&#128172; '+(c.studentIds.length>1?esc(firstName(st.id)):'Send link')+'</button>').join('') : '')+'</div>';
   let html='';
   if(manual && !un.length && !bOver && !needCount && !matP.today && !matP.overdue && !rsTodo.length && !rsNo.length)
     html += '<div class="rem-item" style="border-color:var(--green)"><span class="t">&#10003;</span><span><b>All clear</b> \u2014 nothing pending right now.</span></div>';
@@ -7596,6 +7651,9 @@ function fillReminder(manual){
     unupdatedMarkSeen(un.map(c=>c.cid));
   }
   const rb=$('#remBody');
+  rb.querySelectorAll('[data-sendcls]').forEach(b=>b.addEventListener('click',()=>{
+    const [cid,sid]=b.dataset.sendcls.split('|'), c=S.classes.find(x=>x.cid===cid); if(c) sendClassLink(sid,c.date,c.time,(c.link||'').trim());
+  }));
   rb.querySelectorAll('[data-remmat]').forEach(b=>b.addEventListener('click',()=>{
     const st=sById(b.dataset.remmat);
     closeModal('m-reminder'); openAllCompleted('pending');       // the pending-material list, narrowed to this student
