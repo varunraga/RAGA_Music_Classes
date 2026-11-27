@@ -5118,64 +5118,82 @@ function exportCalendarIncomeWorkings(){
   aoaDownload('raga-calendar-expected-income-'+per.from+'_to_'+addDaysS(per.to,-1),'Expected Income \u2014 '+per.label+(filt?' (legend filter on)':''),[sh]);
 }
 function exportForecastWorkings(){
-  const f=forecastScheduled(), rows=incomeWorkingRows('dash', CURM+'-01', addDaysS(f.end,1), false);
-  // --- Personal outstanding, student by student ---
-  const debtors=S.students.filter(s=>s.cat==='Personal' && outstandingFor(s)>0).sort((a,b)=>outstandingFor(b)-outstandingFor(a));
-  const po=[['S.No','Student','Level','Billed (\u20B9)','Paid (\u20B9)','Outstanding (\u20B9)']];
-  debtors.forEach((s,i)=>po.push([i+1,s.name,s.level||'',dueAllTime(s),paidAllTime(s),{f:'D{rr}-E{rr}',v:outstandingFor(s)}]));
-  po.push(['','Total','',debtors.reduce((t,s)=>t+dueAllTime(s),0),debtors.reduce((t,s)=>t+paidAllTime(s),0),debtors.reduce((t,s)=>t+outstandingFor(s),0)]);
-  const outT=debtors.reduce((t,s)=>t+outstandingFor(s),0);
-  // --- RAGA: class by class, less what has been withdrawn ---
-  // Withdrawals are one lump sum, not tied to particular classes, so they are applied to the OLDEST completed classes first.
-  // Classes whose earnings are fully withdrawn drop off; what's left (class by class) is what is still withdrawable.
-  const rItems=[];
-  S.classes.forEach(c=>{
-    if(c.kind==='own-lesson') return;
-    c.studentIds.forEach(sid=>{ const stu=sById(sid); if(!stu || stu.cat!=='RAGA' || c.att[sid]!=='Completed') return; rItems.push({c,sid,stu,amt:classAmount(stu,c)}); });
+  // THIS MONTH ONLY. Nothing from earlier months appears anywhere in this workbook.
+  const f=forecastScheduled(), first=CURM+'-01', nextFirst=addDaysS(f.end,1);
+  const rows=incomeWorkingRows('dash', first, nextFirst, false);
+  const inMonth=c=>c.date>=first && c.date<nextFirst;
+  const byTime=(x,y)=> x.c.date===y.c.date ? (toMin(x.c.time)-toMin(y.c.time) || x.stu.name.localeCompare(y.stu.name)) : (x.c.date<y.c.date?-1:1);
+  const doneItems=isRaga=>{
+    const out=[];
+    S.classes.forEach(c=>{
+      if(c.kind==='own-lesson' || !inMonth(c)) return;
+      c.studentIds.forEach(sid=>{
+        const stu=sById(sid); if(!stu || (stu.cat==='RAGA')!==isRaga || c.att[sid]!=='Completed') return;
+        out.push({c,sid,stu,amt:classAmount(stu,c)});
+      });
+    });
+    return out.sort(byTime);
+  };
+  const lineHead=['S.No','Date','Day','Timings','Student','Class format'];
+  const lineCells=(it,i)=>{ const c=it.c, partner=c.studentIds.filter(x=>x!==it.sid).map(firstName).join(', ');
+    return [i+1,fmtDMY(c.date),dowName(c.date),timingsOf(c),it.stu.name+(partner?' (with '+partner+')':''),classFormat(c)]; };
+  const usdNote=it=> (isUSD(it.stu) && classINR(it.c,it.sid)==null) ? 'USD \u2014 rupee amount not entered yet' : '';
+  const sumOf=(list,k)=>list.reduce((t,x)=>t+x[k],0);
+
+  // --- Personal: this month's completed classes, class by class, less the fees received for the month (oldest class first) ---
+  const pItems=doneItems(false), paidLeft={};
+  pItems.forEach(it=>{
+    if(!(it.sid in paidLeft)) paidLeft[it.sid]=paidMonth(it.sid,CURM);
+    const used=Math.min(paidLeft[it.sid],it.amt); it.rec=used; it.bal=it.amt-used; paidLeft[it.sid]-=used;
   });
-  rItems.sort((x,y)=> x.c.date===y.c.date ? (toMin(x.c.time)-toMin(y.c.time) || x.stu.name.localeCompare(y.stu.name)) : (x.c.date<y.c.date?-1:1));
-  const accrued=ragaAccruedAll(), wdn=ragaWithdrawnAll(), relig=ragaEligible(), bank=ragaBankPending();
-  let left=wdn; rItems.forEach(it=>{ const used=Math.min(left,it.amt); it.wd=used; it.rem=it.amt-used; left-=used; });
-  const rOpen=rItems.filter(it=>it.rem>0.005);
-  const re=[['S.No','Date','Day','Timings','Student','Class format','Earned (\u20B9)','Withdrawn against it (\u20B9)','Withdrawable (\u20B9)']];
-  rOpen.forEach((it,i)=>{
-    const c=it.c, partner=c.studentIds.filter(x=>x!==it.sid).map(firstName).join(', ');
-    re.push([i+1,fmtDMY(c.date),dowName(c.date),timingsOf(c),it.stu.name+(partner?' (with '+partner+')':''),classFormat(c),it.amt,it.wd,{f:'G{rr}-H{rr}',v:it.rem}]);
-  });
-  re.push(['','','','','Total','','',rOpen.reduce((t,it)=>t+it.amt,0),rOpen.reduce((t,it)=>t+it.wd,0),rOpen.reduce((t,it)=>t+it.rem,0)]);
-  const reNote=t=>re.push(['',t,'','','','','','','']);
-  reNote(''); reNote('Notes');
-  reNote('Withdrawals are not recorded against individual classes, so they are applied to the oldest completed classes first.');
-  reNote('Classes whose earnings are fully withdrawn are not listed. Withdrawn so far: '+RUPEE.format(wdn)+' of '+RUPEE.format(accrued)+' earned since the start.');
-  if(left>0.005) reNote('Withdrawals exceed the earnings recorded by '+RUPEE.format(left)+', so nothing is withdrawable right now.');
-  const rb=[['S.No','Item','Amount (\u20B9)','Note'],
-    [1,'Earned from all completed RAGA classes (since the start)',accrued,'Every completed RAGA class'],
-    [2,'Already withdrawn',wdn,'From the Earnings page'],
-    [3,'Withdrawable from Raga Shiksha',{f:'C{p2}-C{p1}',v:relig},'Earned minus withdrawn'],
-    [4,'In transit to bank (withdrawn, not received yet)',bank,'Still receivable'],
-    [5,'Listed class by class (sheet: RAGA withdrawable)',{f:"'RAGA withdrawable'!I"+(4+rOpen.length),v:rOpen.reduce((t,it)=>t+it.rem,0)},'Matches line 3 unless withdrawals exceed earnings']];
-  // --- Expected from upcoming classes ---
+  const advance=S.students.filter(s=>s.cat==='Personal').map(s=>({s,left:(s.id in paidLeft)?paidLeft[s.id]:paidMonth(s.id,CURM)})).filter(x=>x.left>0.005);
+  const pc=[lineHead.concat(['Fee (\u20B9)','Received against it (\u20B9)','Balance (\u20B9)','Note'])];
+  pItems.forEach((it,i)=>pc.push(lineCells(it,i).concat([it.amt,it.rec,{f:'G{rr}-H{rr}',v:it.bal},usdNote(it)])));
+  pc.push(['','','','','Total','',sumOf(pItems,'amt'),sumOf(pItems,'rec'),sumOf(pItems,'bal'),'']);
+  const pcNote=t=>pc.push(['',t,'','','','','','','','']);
+  pcNote(''); pcNote('Notes');
+  pcNote('Only classes completed this month are listed. Fees received for this month are applied to a student\u2019s classes oldest first.');
+  if(advance.length) pcNote('Received for this month beyond the fees above (paid in advance): '+advance.map(x=>x.s.name+' '+RUPEE.format(x.left)).join(', ')+'.');
+
+  // --- RAGA: this month's completed classes, class by class, less what has been withdrawn this month (oldest class first) ---
+  const rItems=doneItems(true);
+  const wThis=S.withdrawals.filter(w=>monthKey(w.date)===CURM).sort((x,y)=>x.date<y.date?-1:1);
+  let wLeft=sumOf(wThis,'amount');
+  rItems.forEach(it=>{ const used=Math.min(wLeft,it.amt); it.wd=used; it.rem=it.amt-used; wLeft-=used; });
+  const rc=[lineHead.concat(['Earned (\u20B9)','Withdrawn against it (\u20B9)','Withdrawable (\u20B9)','Note'])];
+  rItems.forEach((it,i)=>rc.push(lineCells(it,i).concat([it.amt,it.wd,{f:'G{rr}-H{rr}',v:it.rem},usdNote(it)])));
+  rc.push(['','','','','Total','',sumOf(rItems,'amt'),sumOf(rItems,'wd'),sumOf(rItems,'rem'),'']);
+  const rcNote=t=>rc.push(['',t,'','','','','','','','']);
+  rcNote(''); rcNote('Notes');
+  rcNote('Only classes completed this month are listed. Withdrawals are not recorded against individual classes, so this month\u2019s withdrawals are applied to this month\u2019s classes oldest first.');
+
+  // --- RAGA: this month's withdrawals and what is still on its way to the bank ---
+  const wd=[['S.No','Date','Mode','Withdrawn (\u20B9)','Received in bank (\u20B9)','In transit (\u20B9)']];
+  wThis.forEach((w,i)=>wd.push([i+1,fmtDMY(w.date),w.mode||'',w.amount,w.amount-wdOutstanding(w),{f:'D{rr}-E{rr}',v:wdOutstanding(w)}]));
+  wd.push(['','Total','',sumOf(wThis,'amount'),wThis.reduce((t,w)=>t+(w.amount-wdOutstanding(w)),0),wThis.reduce((t,w)=>t+wdOutstanding(w),0)]);
+  const transit=wThis.reduce((t,w)=>t+wdOutstanding(w),0);
+
+  // --- Expected from upcoming classes (this month) ---
   const up=incomeWorkingsSheet('Upcoming classes','dash',rows), m=rows.length;
   const expP=rows.filter(r=>r.stu.cat!=='RAGA').reduce((t,r)=>t+(r.fee||0),0), expR=rows.filter(r=>r.stu.cat==='RAGA').reduce((t,r)=>t+(r.fee||0),0);
   const upRef=cat=> m ? {f:"SUMIFS('Upcoming classes'!J4:J"+(3+m)+",'Upcoming classes'!F4:F"+(3+m)+',"'+cat+'")',v:cat==='RAGA'?expR:expP} : 0;
-  const total=outT+relig+bank+expP+expR;
-  const received=S.payments.filter(p=>monthKey(p.date)===CURM).reduce((t,p)=>t+p.amount,0)+ragaReceivedInMonth(CURM);
-  // (S.No is written as text on this sheet so a line that starts with the word "Outstanding" isn't mistaken for a total row)
+  const pBal=sumOf(pItems,'bal'), rBal=sumOf(rItems,'rem'), total=pBal+rBal+transit+expP+expR;
+  // (S.No is written as text on this sheet so the first line isn't mistaken for a total row)
   const sm=[['S.No','Component','Amount (\u20B9)','Where it comes from'],
-    ['1','Outstanding from Personal Students',{f:"'Personal outstanding'!F"+(4+debtors.length),v:outT},'Sheet: Personal outstanding'],
-    ['2','Withdrawable from Raga Shiksha',{f:"'RAGA balance'!C6",v:relig},'Sheets: RAGA withdrawable (class by class), RAGA balance'],
-    ['3','In transit to bank (RAGA)',{f:"'RAGA balance'!C7",v:bank},'Sheet: RAGA balance'],
+    ['1','Personal students \u2014 this month\u2019s fees still to collect',{f:"'Personal classes'!I"+(4+pItems.length),v:pBal},'Sheet: Personal classes'],
+    ['2','Raga Shiksha \u2014 this month\u2019s earnings still withdrawable',{f:"'RAGA classes'!I"+(4+rItems.length),v:rBal},'Sheet: RAGA classes'],
+    ['3','Raga Shiksha \u2014 withdrawn this month, in transit to bank',{f:"'RAGA withdrawals'!F"+(4+wThis.length),v:transit},'Sheet: RAGA withdrawals'],
     ['4','Expected from upcoming classes \u2014 Personal',upRef('Personal'),'Sheet: Upcoming classes'],
     ['5','Expected from upcoming classes \u2014 RAGA',upRef('RAGA'),'Sheet: Upcoming classes'],
     ['','Total income forecast for the month',total,''],
     ['','','',''],
-    ['','Dues carried forward from earlier months are part of the first three lines.','',''],
-    ['','Money already received this month ('+RUPEE.format(received)+') is not included in this forecast.','','']];
+    ['','Only this month\u2019s classes and withdrawals are included \u2014 nothing from earlier months.','',''],
+    ['','Fees already received for this month\u2019s classes ('+RUPEE.format(sumOf(pItems,'rec'))+' from Personal students) are deducted in line 1.','','']];
   aoaDownload('raga-income-forecast-'+CURM,'Income Forecast for the Month \u2014 '+monthLabel(CURM),[
     {name:'Forecast',aoa:sm,money:[3]},
-    {name:'Personal outstanding',aoa:po,money:[4,5,6]},
-    {name:'RAGA withdrawable',aoa:re,money:[7,8,9]},
-    {name:'RAGA balance',aoa:rb,money:[3]},
+    {name:'Personal classes',aoa:pc,money:[7,8,9]},
+    {name:'RAGA classes',aoa:rc,money:[7,8,9]},
+    {name:'RAGA withdrawals',aoa:wd,money:[4,5,6]},
     up]);
 }
 // capture phase: the box itself is clickable (it opens another page), so the download symbol must win
