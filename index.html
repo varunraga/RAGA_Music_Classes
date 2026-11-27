@@ -980,11 +980,13 @@
               <span class="sep"></span>
               <span class="legend-key" title="Shown on a RAGA class within 7 days that is not yet scheduled on the Raga Shiksha website (including when a student has no credits). Tap the sign to mark it scheduled."><span class="rs-warn" style="margin-right:6px">&#9888;</span>Not scheduled on Raga Shiksha website</span>
             </div>
-            <button class="btn small seg on" id="calWeekBtn" aria-pressed="true">Week</button>
-            <button class="btn small seg" id="calMonthBtn" aria-pressed="false">Month</button>
-            <button class="btn small" id="calPrev" aria-label="Previous">‹</button>
-            <button class="btn small" id="calToday">Today</button>
-            <button class="btn small" id="calNext" aria-label="Next week">›</button>
+            <div id="calNavRow" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-start;flex:1 1 100%">
+              <button class="btn small seg on" id="calWeekBtn" aria-pressed="true">Week</button>
+              <button class="btn small seg" id="calMonthBtn" aria-pressed="false">Month</button>
+              <button class="btn small" id="calPrev" aria-label="Previous">‹</button>
+              <button class="btn small" id="calToday">Today</button>
+              <button class="btn small" id="calNext" aria-label="Next week">›</button>
+            </div>
             <div style="display:flex;gap:8px 16px;flex-wrap:wrap;justify-content:space-between;align-items:center;flex:1 1 100%">
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button class="btn small" id="btnRecentlyDeletedClasses">Recently deleted<span id="recentlyDeletedClassesBadge" class="badge hold" style="display:none;margin-left:5px"></span></button>
