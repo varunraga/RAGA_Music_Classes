@@ -864,39 +864,34 @@
         <div class="panel-body"><div class="tl-scroll" id="tlScroll"><div class="timeline" id="timeline"></div></div></div>
       </div>
 
-      <div class="two-col">
-        <div>
-          <div class="panel">
-            <div class="panel-head"><h3>Coming up this week</h3><span class="hint" id="weekCountHint"></span></div>
-            <div class="tscroll"><table id="upcomingTable">
-              <thead><tr><th>When</th><th>Student(s)</th><th>Category</th><th>Mode</th><th class="r">Action</th></tr></thead>
-              <tbody></tbody>
-            </table></div>
-            <div class="empty" id="upcomingEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="12" cy="15.5" r="1.7" fill="currentColor" stroke="none"/></svg>No classes scheduled for the next 7 days — click "Schedule class" to add one.</div>
-          </div>
-          <div class="panel" id="recentPanel">
-            <div class="panel-head"><h3>Recently completed</h3><span class="hint">latest 5</span></div>
-            <div class="tscroll"><table id="recentTable">
-              <thead><tr><th>Date</th><th>Student</th><th>Topic</th><th class="r">Billed</th><th>Material</th></tr></thead>
-              <tbody></tbody>
-            </table></div>
-            <div class="empty" id="recentEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5.3"/></svg>Nothing completed yet — completed classes will appear here.</div>
-            <div style="padding:10px 20px 4px"><a href="#" class="foot-link" id="lnkViewAllCompleted">View all completed classes →</a></div>
-          </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Quick actions</h3></div>
+        <div class="panel-body quick-grid">
+          <button class="quick" data-goto="personal" id="qaPay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></svg>Record payment</button>
+          <button class="quick" id="qaWithdraw" title="Opens Earnings &rarr; Raga Shiksha, ready to record a withdrawal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M7.5 10l4.5 4.5L16.5 10"/><path d="M4 19h16"/></svg>Raga withdrawal</button>
+          <button class="quick" id="qaNewRec" title="Studio &rarr; Recordings &rarr; New recording"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>Add new recording</button>
+          <button class="quick" id="qaNewComp" title="Studio &rarr; Notation &rarr; Add composition"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>Add new composition</button>
+          <button class="quick" id="qaTanpura" title="Studio &rarr; Tanpura"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M8 6c-2 3-2 9 0 12M16 6c2 3 2 9 0 12"/></svg>Play tanpura</button>
+          <button class="quick" id="qaTala" title="Studio &rarr; Tala"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V6.5a1.5 1.5 0 0 1 3 0V11M10 10V5a1.5 1.5 0 0 1 3 0v6M13 10V6a1.5 1.5 0 0 1 3 0v6M16 11V8.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L5 14.5a1.5 1.5 0 0 1 2.4-1.8L9 14"/></svg>Play tala</button>
         </div>
-        <div>
-          <div class="panel">
-            <div class="panel-head"><h3>Quick actions</h3></div>
-            <div class="panel-body quick-grid">
-              <button class="quick" id="qaAddStudent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add student</button>
-              <button class="quick" id="qaSchedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>Schedule class</button>
-              <button class="quick" data-goto="personal" id="qaPay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></svg>Record payment</button>
-              <button class="quick" data-goto="personal" id="qaBill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Monthly billing</button>
-              <button class="quick" data-goto="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-3"/></svg>Calendar</button>
-              <button class="quick" data-goto="students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>Find student</button>
-            </div>
-          </div>
-        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Coming up this week</h3><span class="hint" id="weekCountHint"></span></div>
+        <div class="tscroll"><table id="upcomingTable">
+          <thead><tr><th>When</th><th>Student(s)</th><th>Category</th><th>Mode</th><th class="r">Action</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div class="empty" id="upcomingEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="12" cy="15.5" r="1.7" fill="currentColor" stroke="none"/></svg>No classes scheduled for the next 7 days — click "Schedule class" to add one.</div>
+      </div>
+      <div class="panel" id="recentPanel">
+        <div class="panel-head"><h3>Recently completed</h3><span class="hint">latest 5</span></div>
+        <div class="tscroll"><table id="recentTable">
+          <thead><tr><th>Date</th><th>Student</th><th>Topic</th><th class="r">Billed</th><th>Material</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div class="empty" id="recentEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5.3"/></svg>Nothing completed yet — completed classes will appear here.</div>
+        <div style="padding:10px 20px 4px"><a href="#" class="foot-link" id="lnkViewAllCompleted">View all completed classes →</a></div>
       </div>
     </section>
 
@@ -9433,10 +9428,21 @@ $('#dayRollDismiss').addEventListener('click',()=>{ dayRollDismissed=true; $('#d
    ===================================================== */
 $('#btnAddStudent').addEventListener('click',()=>openStudentModal());
 $('#btnAddStudentTop').addEventListener('click',()=>openStudentModal());
-$('#qaAddStudent').addEventListener('click',()=>openStudentModal());
 $('#btnSchedule').addEventListener('click',()=>openClassModal());
 $('#btnScheduleTop').addEventListener('click',()=>openClassModal());
-$('#qaSchedule').addEventListener('click',()=>openClassModal());
+/* Dashboard quick actions: each one lands you on the exact screen, ready to use */
+function goStudio(pane){
+  go('studio');
+  const pill=document.querySelector('#studioPills .studio-pill[data-pane="'+pane+'"]'); if(pill) showStudioPane(pane,pill);
+}
+$('#qaWithdraw').addEventListener('click',()=>{
+  goEarnings('raga');
+  setTimeout(()=>{ const t=$('#wdFormTitle'); if(t){ t.scrollIntoView({behavior:'smooth',block:'start'}); const d=$('#wdAmount'); if(d) d.focus({preventScroll:true}); } },80);
+});
+$('#qaNewRec').addEventListener('click',()=>{ goStudio('recordings'); $('#btnNewRecording').click(); });
+$('#qaNewComp').addEventListener('click',()=>{ goStudio('notation'); $('#btnAddNotation').click(); });
+$('#qaTanpura').addEventListener('click',()=>goStudio('tanpura'));
+$('#qaTala').addEventListener('click',()=>goStudio('tala'));
 
 /* ---------- global search / quick-jump ---------- */
 const gs=$('#gsearch'), gsr=$('#gsearchResults');
