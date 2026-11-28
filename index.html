@@ -886,15 +886,6 @@
         </div>
         <div>
           <div class="panel">
-            <div class="panel-head"><h3>Pending fees</h3></div>
-            <div class="tscroll"><table id="pendingTable"><thead><tr><th style="width:30px"><input type="checkbox" id="pendPickAll" aria-label="Select all students shown"></th><th>Student</th><th class="r">Outstanding</th></tr></thead><tbody></tbody></table></div>
-            <div id="pendSelBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:10px 16px 14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)">
-              <div id="pendSelText" style="font-size:.88rem"></div>
-              <button type="button" class="btn tiny" id="pendPickClear" style="display:none">Clear</button>
-            </div>
-            <div class="empty" id="pendingEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.4 2.4 4.6-5.3"/></svg>No pending fees. All settled.</div>
-          </div>
-          <div class="panel">
             <div class="panel-head"><h3>Quick actions</h3></div>
             <div class="panel-body quick-grid">
               <button class="quick" id="qaAddStudent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add student</button>
@@ -1032,13 +1023,13 @@
           <h3>Monthly billing</h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="billMonth" class="search-input" aria-label="Billing month"></select>
-            <button class="btn small" id="btnRegister">Print class register</button>
           </div>
         </div>
         <div class="tscroll"><table id="billingTable">
-          <thead><tr><th>Student</th><th class="r">Completed</th><th class="r">Fee / class</th><th class="r">Due this month</th><th class="r">Carried fwd</th><th class="r">Paid</th><th class="r">Balance</th><th class="r">Invoice</th></tr></thead>
+          <thead><tr><th style="width:30px"><input type="checkbox" id="billPickAll" aria-label="Select all students shown"></th><th>Student</th><th class="r">Completed</th><th class="r">Fee / class</th><th class="r">Due this month</th><th class="r">Carried fwd</th><th class="r">Paid</th><th class="r">Balance</th><th class="r">Invoice</th></tr></thead>
           <tbody></tbody>
         </table></div>
+        <div id="billSelBar" style="display:none;margin:10px 16px 6px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.9rem;line-height:1.6"></div>
         <div class="empty" id="billingEmpty" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>No Personal students yet — billing applies only to Personal students.</div>
         <div class="note">Only completed Personal classes are billed — each student at their own fee (Online and Offline can differ), even inside a batch class. Cancelled classes and absences are never billed. A negative balance means an advance; it rolls into the next month automatically.</div>
       </div>
@@ -5599,63 +5590,6 @@ $('#acAllTimeChk').addEventListener('change',e=>{
 });
 $('#lnkViewAllCompleted').addEventListener('click',e=>{ e.preventDefault(); openAllCompleted(); });
 
-let pendPicked = new Set(), pendShown = [], pendOut = {};
-function renderPending(){
-  const tb=$('#pendingTable tbody'); tb.innerHTML='';
-  const rows = S.students.filter(s=>s.cat==='Personal' && (dueAllTime(s)>0 || paidAllTime(s)>0))
-    .map(s=>({s,o:outstandingFor(s)})).sort((a,b)=>b.o-a.o);
-  $('#pendingEmpty').style.display = rows.length?'none':'';
-  $('#pendingTable').style.display = rows.length?'':'none';
-  $('#pendSelBar').style.display = rows.length?'flex':'none';
-  pendShown = rows.map(({s})=>s.id); pendOut = {};
-  rows.forEach(({s,o})=>{
-    pendOut[s.id]=o;
-    const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
-    tr.title = "View "+s.name+"'s profile";
-    tr.innerHTML = '<td><input type="checkbox" data-pendpick="'+s.id+'" aria-label="Select '+esc(s.name)+'"'+(pendPicked.has(s.id)?' checked':'')+'></td>'+
-      '<td>'+esc(s.name)+'<div class="muted" style="font-size:.75rem">'+s.level+'</div></td>'+
-      '<td class="r num '+(o>0?'amount-due':'amount-ok')+'">'+(o>0?RUPEE.format(o):(o<0?RUPEE.format(-o)+' advance':'Settled'))+'</td>';
-    tr.addEventListener('click', e=>{ if(e.target.closest('[data-pendpick]')) return; openProfile(s.id); });
-    const chk = tr.querySelector('[data-pendpick]');
-    chk.addEventListener('click', e=>e.stopPropagation());
-    chk.addEventListener('change', ()=>{ if(chk.checked) pendPicked.add(s.id); else pendPicked.delete(s.id); pendUpdateTotals(); });
-    tb.appendChild(tr);
-  });
-  pendUpdateTotals();
-}
-// Total pending for just the ticked students (same rule as the "PERSONAL outstanding" card: only what is
-// actually owed counts; an advance paid by a ticked student is mentioned but not netted off).
-function pendUpdateTotals(){
-  pendPicked.forEach(id=>{ if(!(id in pendOut)) pendPicked.delete(id); });
-  let n=0, total=0, owing=0, adv=0;
-  pendPicked.forEach(id=>{ n++; const o=pendOut[id]; if(o>0){ total+=o; owing++; } else if(o<0) adv++; });
-  const el=$('#pendSelText');
-  if(!n) el.innerHTML='<span style="color:var(--muted)">Tick students to see the total pending for just those.</span>';
-  else{
-    let h='<b>'+n+'</b> student'+(n===1?'':'s')+' selected \u2014 Pending <b class="num amount-due">'+RUPEE.format(total)+'</b>';
-    const bits=[];
-    if(owing<n) bits.push(owing+' with fees pending');
-    if(adv) bits.push(adv+' paid in advance, not netted off');
-    if(bits.length) h+='<div class="tiny" style="color:var(--muted);margin-top:2px">'+bits.join(' \u00b7 ')+'</div>';
-    el.innerHTML=h;
-  }
-  $('#pendPickClear').style.display = n ? '' : 'none';
-  const all=$('#pendPickAll'), shownPicked=pendShown.filter(id=>pendPicked.has(id)).length;
-  all.checked = pendShown.length>0 && shownPicked===pendShown.length;
-  all.indeterminate = shownPicked>0 && shownPicked<pendShown.length;
-}
-$('#pendPickAll').addEventListener('change',e=>{
-  pendShown.forEach(id=>{ if(e.target.checked) pendPicked.add(id); else pendPicked.delete(id); });
-  document.querySelectorAll('#pendingTable [data-pendpick]').forEach(c=>{ c.checked=pendPicked.has(c.dataset.pendpick); });
-  pendUpdateTotals();
-});
-$('#pendPickClear').addEventListener('click',()=>{
-  pendPicked.clear();
-  document.querySelectorAll('#pendingTable [data-pendpick]').forEach(c=>{ c.checked=false; });
-  pendUpdateTotals();
-});
-
 /* =====================================================
    RENDER — CALENDAR
    ===================================================== */
@@ -5931,6 +5865,7 @@ function refreshMonthSelect(sel, includeAll){
   monthsWithData().forEach(m=>sel.insertAdjacentHTML('beforeend','<option value="'+m+'">'+monthLabel(m)+'</option>'));
   sel.value = [...sel.options].some(o=>o.value===cur) ? cur : CURM;
 }
+let billPicked = new Set(), billStats = {}, billShown = [];
 function renderBilling(){
   refreshMonthSelect($('#billMonth'), true);
   const m=$('#billMonth').value;
@@ -5939,6 +5874,7 @@ function renderBilling(){
   const personal = S.students.filter(s=>s.cat==='Personal');
   $('#billingEmpty').style.display = personal.length?'none':'';
   $('#billingTable').style.display = personal.length?'':'none';
+  billStats={}; billShown=personal.map(s=>s.id);
   personal.forEach(s=>{
     const done = bAll ? S.classes.filter(c=>c.att[s.id]==='Completed').length : completedCount(s.id,m);
     const due = bAll ? sumCompleted(s,null) : sumCompleted(s,m);
@@ -5946,7 +5882,9 @@ function renderBilling(){
     const cf = bAll ? 0 : carriedForward(s,m);
     const paid = bAll ? paidAllTime(s) : paidMonth(s.id,m);
     const bal = bAll ? outstandingFor(s) : due+cf-paid;
+    billStats[s.id]={done,due,paid,bal,pend:bPend};
     tb.insertAdjacentHTML('beforeend','<tr'+(s.archived?' style="opacity:.55"':'')+'>'+
+      '<td><input type="checkbox" data-billpick="'+s.id+'" aria-label="Select '+esc(s.name)+'"'+(billPicked.has(s.id)?' checked':'')+'></td>'+
       '<td><b>'+esc(s.name)+'</b>'+(s.archived?'<div class="muted" style="font-size:.75rem">archived</div>':'')+'</td>'+
       '<td class="r num">'+done+(bPend?' <span class="badge hold" title="awaiting ₹ entry">'+bPend+' ₹?</span>':'')+'</td>'+
       '<td class="r num">'+fmtFee(s,s.fee)+'</td>'+
@@ -5957,7 +5895,37 @@ function renderBilling(){
       '<td class="r">'+(bAll?'<span class="muted" title="Pick a specific month to invoice">—</span>':'<button class="btn tiny" data-inv="'+s.id+'">Generate invoice</button>')+'</td></tr>');
   });
   tb.querySelectorAll('[data-inv]').forEach(b=>b.addEventListener('click',()=>openInvoice(b.dataset.inv,$('#billMonth').value)));
+  tb.querySelectorAll('[data-billpick]').forEach(c=>c.addEventListener('change',()=>{ if(c.checked) billPicked.add(c.dataset.billpick); else billPicked.delete(c.dataset.billpick); billUpdateTotals(); }));
+  billUpdateTotals();
 }
+// Tick students to total their completed classes and fees for the month shown (or all months when "All" is chosen)
+function billUpdateTotals(){
+  billPicked.forEach(id=>{ if(!(id in billStats)) billPicked.delete(id); });
+  const bar=$('#billSelBar'), n=billPicked.size, m=$('#billMonth').value;
+  let done=0, due=0, paid=0, bal=0, adv=0, pend=0;
+  billPicked.forEach(id=>{ const x=billStats[id]; done+=x.done; due+=x.due; paid+=x.paid; pend+=x.pend||0; if(x.bal>0) bal+=x.bal; else if(x.bal<0) adv++; });
+  bar.style.display = billShown.length ? '' : 'none';
+  bar.innerHTML = n
+    ? '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"><div>'+
+      '<b>'+n+'</b> student'+(n===1?'':'s')+' selected \u2014 <b>'+done+'</b> class'+(done===1?'':'es')+' completed \u00b7 Fees <b class="num">'+RUPEE.format(due)+'</b> <span class="muted">('+(m==='all'?'all months':monthLabel(m))+')</span>'+
+      '<div class="tiny" style="color:var(--muted)">Paid '+RUPEE.format(paid)+' \u00b7 Balance '+RUPEE.format(bal)+(adv?' ('+adv+' paid in advance, not netted off)':'')+(pend?' \u00b7 '+pend+' class'+(pend===1?'':'es')+' still awaiting the \u20B9 amount':'')+'</div></div>'+
+      '<button type="button" class="btn tiny" id="billPickClear">Clear</button></div>'
+    : '<span style="color:var(--muted)">Tick students to see their total classes completed and fees.</span>';
+  const all=$('#billPickAll'), shownPicked=billShown.filter(id=>billPicked.has(id)).length;
+  all.checked = billShown.length>0 && shownPicked===billShown.length;
+  all.indeterminate = shownPicked>0 && shownPicked<billShown.length;
+}
+$('#billPickAll').addEventListener('change',e=>{
+  billShown.forEach(id=>{ if(e.target.checked) billPicked.add(id); else billPicked.delete(id); });
+  document.querySelectorAll('#billingTable [data-billpick]').forEach(c=>{ c.checked=billPicked.has(c.dataset.billpick); });
+  billUpdateTotals();
+});
+$('#billSelBar').addEventListener('click',e=>{
+  if(!e.target.closest('#billPickClear')) return;
+  billPicked.clear();
+  document.querySelectorAll('#billingTable [data-billpick]').forEach(c=>{ c.checked=false; });
+  billUpdateTotals();
+});
 $('#billMonth').addEventListener('change',renderBilling);
 
 function invoiceHTML(st,m){
@@ -6028,7 +5996,6 @@ function openRegister(){
   $('#invBody').innerHTML='<div class="docwrap" style="max-height:55vh;overflow:auto">'+printCtx+'</div>';
   openModal('m-invoice');
 }
-$('#btnRegister').addEventListener('click',openRegister);
 $('#invPrint').addEventListener('click',()=>{
   if(!printCtx) return;
   $('#printSheet').innerHTML = printCtx;
@@ -13799,7 +13766,7 @@ function renderAll(force){
   }
   renderAllDeferredPending = false;
   persist();
-  renderStats(); renderTimeline(); renderUpcoming(); renderRecent(); renderPending();
+  renderStats(); renderTimeline(); renderUpcoming(); renderRecent();
   renderStudents(); renderCalendar(); renderBilling(); renderPersonalCards(); renderPayments(); renderRaga(); renderMyLessons(); renderReports(); renderInsights(); renderWeekCheck(); renderNavBadge(); renderBackupStatus();
   renderNotationFilters(); renderNotationList(); renderRecordingsFilters(); renderRecordingsList(); renderTalaSavedRow(); renderTalaVideoList();
   scheduleSync();
